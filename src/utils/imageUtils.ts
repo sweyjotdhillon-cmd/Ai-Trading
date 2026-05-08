@@ -155,8 +155,8 @@ export function cropRightByRatio(
     img.crossOrigin = 'anonymous';
     img.onload = () => {
       // 2. Make crop logic smarter: increase default right-side crop window if it is too narrow
-      // so we use a minimum of 15% to ensure candles are actually visible
-      cropRatio = Math.max(0.15, Math.min(0.4, cropRatio)); 
+      // so we use a minimum of 35% to ensure candles are actually visible alongside the Y-axis padding
+      cropRatio = Math.max(0.35, Math.min(0.5, cropRatio)); 
       
       const cutWidth = Math.floor(img.width * cropRatio);
       const leftWidth = img.width - cutWidth;

@@ -545,10 +545,10 @@ export function LiveAnalysis() {
               console.debug(`[TEST_MODE] rawDuration=${investmentDuration}, parseDuration=${parseDuration}m, detectedCandles=${estimatedCandles}, timeframe=${parseTimeframeToMinutes(graphTimeframe)}m`);
               
               try {
-                let ratio = 0.1; // default 10%
+                let ratio = 0.35; // default 35% minimum
                 const gDuration = parseTimeframeToMinutes(graphTimeframe);
                 if (!isNaN(parseDuration) && !isNaN(gDuration) && gDuration > 0) {
-                    ratio = parseDuration / gDuration;
+                    ratio = Math.max(0.35, parseDuration / gDuration);
                 }
                 
                 const { leftSliceBase64, rightSliceBase64: rightSlice, cropRatio } = await cropRightByRatio(
@@ -826,7 +826,9 @@ export function LiveAnalysis() {
       } else {
         setAutoGradeStatus('failed');
       }
-    } catch {
+    } catch(e: any) {
+      console.error('handleRegrade error', e);
+      setAutoGradeReason(`Network or Server Error: ${e.message}`);
       setAutoGradeStatus('failed');
     }
   };

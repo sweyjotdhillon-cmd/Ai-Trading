@@ -775,7 +775,7 @@ Ignore grid lines, watermarks, text, and UI decorations. Focus ONLY on the net d
 - If the price is clearly LOWER at the right side than the left side -> "DOWN"
 - If the price completely flatlines without movement or the image is 100% unreadable -> "FLAT"
 
-Note: "FLAT" should be rare. If there is a slight directional bias, give it UP or DOWN but rate the confidence appropriately.
+Note: "FLAT" should be rare. If there is a slight directional bias, give it UP or DOWN but rate the confidence appropriately. If the image mostly shows a Y-axis with very few candles, try your best to judge the trend of what little is visible.
 
 Respond ONLY in strictly valid JSON:
 {
@@ -805,9 +805,9 @@ Respond ONLY in strictly valid JSON:
       if (!validOutcomes.includes(outcome)) outcome = 'FLAT';
       
       // If it says FLAT but confidence is extremely low, maybe we still consider it inconclusive
-      // Lower the confidence threshold to 45 so we don't reject decent but slightly ambiguous crops
+      // Lower the confidence threshold to 15 so we don't reject decent but slightly ambiguous crops
       const confidenceNum = Number(parsed.confidence) || 0;
-      const isInconclusive = outcome === 'FLAT' || confidenceNum < 45;
+      const isInconclusive = outcome === 'FLAT' || confidenceNum < 15;
 
       console.log(`[ReadOutcome] rawOutcome=${outcome}, conf=${confidenceNum}, isInconclusive=${isInconclusive}`);
 
