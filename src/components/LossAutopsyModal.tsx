@@ -151,6 +151,10 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, e
     return 'CRITICAL';
   };
 
+  useEffect(() => {
+    console.log('LossAutopsyModal isOpen check:', isOpen, 'analysisData?', !!analysisData);
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   return (
@@ -160,31 +164,31 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, e
         animate={{ opacity: 1 }} 
         exit={{ opacity: 0 }} 
         transition={{ duration: prefersReducedMotion ? 0 : 0.25 }}
-        style={tw`flex-1 bg-black/90 justify-center items-center py-10 px-4`}
+        style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100vw', backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'center', alignItems: 'center', padding: '40px 16px' }}
       >
         <motion.div 
           initial={{ opacity: 0, scale: prefersReducedMotion ? 1 : 0.94, y: prefersReducedMotion ? 0 : 16 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: prefersReducedMotion ? 1 : 0.94, y: prefersReducedMotion ? 0 : 16 }}
           transition={prefersReducedMotion ? { duration: 0 } : { type: "spring", stiffness: 320, damping: 26 }}
-          className="bg-[#14161C] w-full max-w-4xl border border-red-500/30 rounded-2xl flex-1 max-h-[90vh] overflow-hidden flex flex-col shadow-2xl relative"
+          className="bg-[#14161C] w-full max-w-4xl border border-red-500 border-opacity-30 rounded-2xl flex-1 max-h-[90vh] overflow-hidden flex flex-col shadow-2xl relative"
         >
           {Platform.OS === 'web' && (
             <input type="file" ref={fileInputRef} accept="image/*" onChange={handleFileChange} style={{ display: 'none' }} />
           )}
 
           {/* Header */}
-          <div style={tw`flex-row items-center justify-between p-6 border-b border-white/5`}>
+          <View style={tw`flex-row items-center justify-between p-6 border-b border-white border-opacity-5`}>
             <View>
               <Text style={tw`text-red-500 font-black text-2xl tracking-[2px] uppercase`}>LOSS AUTOPSY</Text>
-              <Text style={tw`text-white/60 text-sm`}>Signal was {tradeSignal}. Running CONTRARIAN review against original Judge.</Text>
+              <Text style={tw`text-white text-opacity-60 text-sm`}>Signal was {tradeSignal}. Running CONTRARIAN review against original Judge.</Text>
             </View>
-            <Pressable onPress={onClose} style={tw`p-2 bg-white/5 rounded-full hover:bg-white/10`}>
+            <Pressable onPress={onClose} style={tw`p-2 bg-white bg-opacity-10 rounded-full hover:bg-white bg-opacity-10`}>
               <motion.div whileHover={buttonHoverProps} whileTap={buttonTapProps} transition={springProps} style={{ display: 'contents' }}>
                 <X size={24} color="#8B95B0" />
               </motion.div>
             </Pressable>
-          </div>
+          </View>
 
           <ScrollView style={tw`flex-1 p-6`} contentContainerStyle={tw`pb-10`}>
             
@@ -209,14 +213,14 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, e
                     </Pressable>
                     <Pressable onPress={handlePickResultImage} style={tw`mt-4`}>
                       <motion.div whileHover={buttonHoverProps} whileTap={buttonTapProps} transition={springProps} style={{ display: 'contents' }}>
-                        <Text style={tw`text-white/60 text-sm underline`}>Change Image</Text>
+                        <Text style={tw`text-white text-opacity-60 text-sm underline`}>Change Image</Text>
                       </motion.div>
                     </Pressable>
                   </View>
                 ) : (
                   <Pressable 
                     onPress={handlePickResultImage}
-                    style={tw`border-2 border-dashed border-white/20 p-10 rounded-2xl items-center bg-white/5 hover:bg-white/10`}
+                    style={tw`border-2 border-dashed border-white border-opacity-20 p-10 rounded-2xl items-center bg-white bg-opacity-10 hover:bg-white bg-opacity-10`}
                   >
                     <motion.div whileHover={buttonHoverProps} whileTap={buttonTapProps} transition={springProps} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
                       <Upload size={32} color="#8B95B0" style={tw`mb-4`} />
@@ -235,7 +239,7 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, e
               <View style={tw`items-center justify-center py-20`}>
                 <ActivityIndicator size="large" color="#EF4444" style={tw`mb-6 scale-150`} />
                 <Text style={tw`text-red-400 font-black tracking-[4px] text-xl animate-pulse`}>RUNNING CONTRARIAN AUDIT...</Text>
-                <Text style={tw`text-white/60 text-xs mt-4`}>Building counter-case against the original Judge's verdict.</Text>
+                <Text style={tw`text-white text-opacity-60 text-xs mt-4`}>Building counter-case against the original Judge's verdict.</Text>
               </View>
             )}
 
@@ -243,31 +247,31 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, e
               <View>
                 {/* CONTRARIAN COUNTER-VERDICT */}
                 {autopsyResult.contrarianSignal && (
-                  <View style={tw`bg-gradient-to-r from-purple-900/40 to-amber-900/20 border border-amber-400/50 p-6 rounded-2xl mb-8`}>
+                  <View style={tw`bg-indigo-900 bg-opacity-30 border border-yellow-400 border-opacity-50 p-6 rounded-2xl mb-8`}>
                     <View style={tw`flex-row items-center justify-between mb-3`}>
-                      <Text style={tw`text-amber-300 font-black text-lg uppercase tracking-[2px]`}>
+                      <Text style={tw`text-yellow-300 font-black text-lg uppercase tracking-[2px]`}>
                         Contrarian Counter-Verdict
                       </Text>
-                      <View style={tw`px-3 py-1 rounded-md bg-amber-500/20 border border-amber-400`}>
-                        <Text style={tw`text-amber-200 font-black text-xs`}>
+                      <View style={tw`px-3 py-1 rounded-md bg-yellow-500 bg-opacity-20 border border-yellow-400`}>
+                        <Text style={tw`text-yellow-200 font-black text-xs`}>
                           DEVIL'S ADVOCATE
                         </Text>
                       </View>
                     </View>
 
                     <View style={tw`flex-row items-center gap-4 mb-4`}>
-                      <View style={tw`flex-1 bg-black/40 p-3 rounded-lg border border-white/10`}>
-                        <Text style={tw`text-white/40 text-[10px] uppercase tracking-wider mb-1`}>Original Judge</Text>
+                      <View style={tw`flex-1 bg-black bg-opacity-40 p-3 rounded-lg border border-white border-opacity-10`}>
+                        <Text style={tw`text-white text-opacity-40 text-[10px] uppercase tracking-wider mb-1`}>Original Judge</Text>
                         <Text style={tw`text-red-400 font-black text-xl`}>{autopsyResult.tradeSignal}</Text>
-                        <Text style={tw`text-white/60 text-xs mt-1`}>
+                        <Text style={tw`text-white text-opacity-60 text-xs mt-1`}>
                           Total: {autopsyResult.rebutScores?.originalJudge?.total ?? '—'}/11
                         </Text>
                       </View>
-                      <Text style={tw`text-amber-400 text-2xl font-black`}>vs</Text>
-                      <View style={tw`flex-1 bg-black/40 p-3 rounded-lg border border-amber-400/30`}>
-                        <Text style={tw`text-amber-300 text-[10px] uppercase tracking-wider mb-1`}>Contrarian Says</Text>
-                        <Text style={tw`text-amber-300 font-black text-xl`}>{autopsyResult.contrarianSignal}</Text>
-                        <Text style={tw`text-white/60 text-xs mt-1`}>
+                      <Text style={tw`text-yellow-400 text-2xl font-black`}>vs</Text>
+                      <View style={tw`flex-1 bg-black bg-opacity-40 p-3 rounded-lg border border-yellow-400 border-opacity-30`}>
+                        <Text style={tw`text-yellow-300 text-[10px] uppercase tracking-wider mb-1`}>Contrarian Says</Text>
+                        <Text style={tw`text-yellow-300 font-black text-xl`}>{autopsyResult.contrarianSignal}</Text>
+                        <Text style={tw`text-white text-opacity-60 text-xs mt-1`}>
                           Total: {autopsyResult.rebutScores?.contrarianJudge?.total ?? '—'}/11
                           {' · '}
                           {autopsyResult.contrarianConfidence}% conf
@@ -275,17 +279,17 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, e
                       </View>
                     </View>
 
-                    <Text style={tw`text-amber-100 text-sm leading-relaxed mb-4`}>
+                    <Text style={tw`text-yellow-100 text-sm leading-relaxed mb-4`}>
                       {autopsyResult.contrarianRuling}
                     </Text>
 
                     {Array.isArray(autopsyResult.judgeFlaws) && autopsyResult.judgeFlaws.length > 0 && (
-                      <View style={tw`bg-black/30 p-3 rounded-lg border border-amber-400/20`}>
-                        <Text style={tw`text-amber-300 font-black text-xs uppercase tracking-wider mb-2`}>
+                      <View style={tw`bg-black bg-opacity-30 p-3 rounded-lg border border-yellow-400 border-opacity-20`}>
+                        <Text style={tw`text-yellow-300 font-black text-xs uppercase tracking-wider mb-2`}>
                           Flaws in Original Judge's Reasoning
                         </Text>
                         {autopsyResult.judgeFlaws.map((flaw: string, i: number) => (
-                          <Text key={i} style={tw`text-white/80 text-xs leading-relaxed mb-1`}>
+                          <Text key={i} style={tw`text-white text-opacity-80 text-xs leading-relaxed mb-1`}>
                             • {flaw}
                           </Text>
                         ))}
@@ -305,26 +309,26 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, e
                     ))}
                   </View>
                   
-                  <div style={tw`bg-black/40 p-4 rounded-xl border border-red-500/30 flex-row`}>
+                  <View style={tw`bg-black bg-opacity-40 p-4 rounded-xl border border-red-500 border-opacity-30 flex-row`}>
                     <AlertTriangle size={24} color="#FCA5A5" style={tw`mr-4 mt-1`} />
                     <View style={tw`flex-1`}>
                       <Text style={tw`text-red-300 font-bold mb-1`}>System Recommendation</Text>
                       <Text style={tw`text-red-100 text-sm leading-relaxed`}>{autopsyResult.systemRecommendation}</Text>
                     </View>
-                  </div>
+                  </View>
                 </View>
 
                 {/* Autopsy Verdict */}
                 <View style={tw`mb-8`}>
-                   <Text style={tw`text-white/40 text-xs font-black uppercase tracking-[2px] mb-2`}>Final Verdict</Text>
+                   <Text style={tw`text-white text-opacity-40 text-xs font-black uppercase tracking-[2px] mb-2`}>Final Verdict</Text>
                    <Text style={tw`text-white text-base leading-relaxed`}>{autopsyResult.autopsyVerdict}</Text>
                 </View>
 
                 {/* Categories breakdown */}
-                <Text style={tw`text-white/40 text-xs font-black uppercase tracking-[2px] mb-4`}>Forensic Breakdown (7 Layers)</Text>
+                <Text style={tw`text-white text-opacity-40 text-xs font-black uppercase tracking-[2px] mb-4`}>Forensic Breakdown (7 Layers)</Text>
                 <motion.div variants={prefersReducedMotion ? {} : listContainerVariants} initial="hidden" animate="show" style={tw`gap-3 mb-8`}>
                   {Object.entries(autopsyResult.categories || {}).map(([key, val]: any) => (
-                    <motion.div variants={prefersReducedMotion ? {} : listItemVariants} key={key} style={tw`bg-white/5 border border-white/10 rounded-xl p-4`}>
+                    <motion.div variants={prefersReducedMotion ? {} : listItemVariants} key={key} style={tw`bg-white bg-opacity-10 border border-white border-opacity-10 rounded-xl p-4`}>
                       <View style={tw`flex-row items-center justify-between mb-2`}>
                         <Text style={tw`text-[#D9B382] font-bold text-sm uppercase`}>{val.label || key}</Text>
                         <View style={tw`px-2 py-1 rounded-sm border ${getSeverityColor(val.severity)}`}>
@@ -333,18 +337,18 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, e
                           </Text>
                         </View>
                       </View>
-                      <Text style={tw`text-white/70 text-sm leading-relaxed`}>{val.explanation}</Text>
+                      <Text style={tw`text-white text-opacity-70 text-sm leading-relaxed`}>{val.explanation}</Text>
                     </motion.div>
                   ))}
                 </motion.div>
 
                 {/* Footer buttons */}
-                <View style={tw`flex-row flex-wrap gap-4 border-t border-white/10 pt-6`}>
+                <View style={tw`flex-row flex-wrap gap-4 border-t border-white border-opacity-10 pt-6`}>
                   <Pressable 
                     onPress={logToSheets}
                     disabled={isLogged}
                     style={({pressed}) => [tw`flex-1 py-4 justify-center items-center rounded-xl flex-row transition-all`, 
-                      isLogged ? tw`bg-green-600/20 border border-green-500/50` : tw`bg-white/10 border border-white/20 hover:bg-white/20`,
+                      isLogged ? tw`bg-green-800 bg-opacity-40 border border-green-500 border-opacity-50` : tw`bg-white bg-opacity-10 border border-white border-opacity-20 hover:bg-white bg-opacity-20`,
                       { opacity: pressed && !isLogged ? 0.7 : 1}
                     ]}
                   >
@@ -365,7 +369,7 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, e
                   
                   <Pressable 
                     onPress={onClose}
-                    style={({pressed}) => [tw`py-4 px-8 bg-white/5 border border-white/10 justify-center items-center rounded-xl transition-all hover:bg-white/10`, { opacity: pressed ? 0.7 : 1}]}
+                    style={({pressed}) => [tw`py-4 px-8 bg-white bg-opacity-10 border border-white border-opacity-10 justify-center items-center rounded-xl transition-all hover:bg-white bg-opacity-10`, { opacity: pressed ? 0.7 : 1}]}
                   >
                     <motion.div whileHover={buttonHoverProps} whileTap={buttonTapProps} transition={springProps} style={{ display: 'contents' }}>
                       <Text style={tw`text-white font-bold uppercase`}>Close</Text>

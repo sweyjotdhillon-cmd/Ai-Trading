@@ -146,7 +146,7 @@ export function SystemSettingsModal({ show, onClose }: Props) {
         {show && (
           <View style={tw`flex-1 justify-center items-center px-4`}>
               <Pressable 
-                style={tw`absolute inset-0 bg-black/60`}
+                style={tw`absolute inset-0 bg-black bg-opacity-20`}
                 onPress={() => setTimeout(onClose, 10)}
               >
                 <motion.div
@@ -161,17 +161,17 @@ export function SystemSettingsModal({ show, onClose }: Props) {
               initial={{ scale: 0.9, opacity: 0, y: 20 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.9, opacity: 0, y: 20 }}
-              className="w-full max-w-md bg-[#14161C] border border-white/10 rounded-2xl shadow-2xl overflow-hidden relative z-10 flex flex-col"
+              className="w-full max-w-md bg-[#14161C] border border-white border-opacity-10 rounded-2xl shadow-2xl overflow-hidden relative z-10 flex flex-col"
               style={{ maxHeight: '85%' }}
             >
-              <View style={tw`flex-row items-center justify-between p-4 border-b border-white/5`}>
+              <View style={tw`flex-row items-center justify-between p-4 border-b border-white border-opacity-10`}>
                 <View style={tw`flex-row items-center`}>
                   <ShieldAlert style={tw`mr-2 text-[#D9B382]`} size={20} />
                   <Text style={tw`text-lg font-bold text-white`}>System Settings</Text>
                 </View>
                 <Pressable 
                   onPress={() => setTimeout(onClose, 10)} 
-                  style={({ pressed }) => [tw`p-2 hover:bg-white/5 rounded-full`, { opacity: pressed ? 0.7 : 1 }]}
+                  style={({ pressed }) => [tw`p-2 hover:bg-white bg-opacity-20 rounded-full`, { opacity: pressed ? 0.7 : 1 }]}
                 >
                   <X size={20} color="#8B95B0" />
                 </Pressable>
@@ -182,7 +182,7 @@ export function SystemSettingsModal({ show, onClose }: Props) {
                   <Text style={tw`text-sm font-semibold text-[#8B95B0] uppercase tracking-wider mb-4`}>
                     Share Application
                   </Text>
-                  <View style={tw`border border-white/5 p-4 rounded-xl bg-black/20 mb-4`}>
+                  <View style={tw`border border-white border-opacity-10 p-4 rounded-xl bg-black bg-opacity-20 mb-4`}>
                     <View style={tw`flex-row items-center justify-between`}>
                       <View style={tw`flex-row items-center gap-3`}>
                         <View style={tw`w-10 h-10 rounded-lg bg-[#D9B382]/10 items-center justify-center`}>
@@ -219,10 +219,10 @@ export function SystemSettingsModal({ show, onClose }: Props) {
                     AI Engine Configuration
                   </Text>
                   
-                  <View style={tw`border border-white/5 p-4 rounded-xl bg-black/20 mb-4`}>
+                  <View style={tw`border border-white border-opacity-10 p-4 rounded-xl bg-black bg-opacity-20 mb-4`}>
                     <View style={tw`relative`}>
                       <Text style={tw`text-xs text-[#8B95B0] mb-2`}>Active AI Model</Text>
-                      <View style={tw`w-full px-4 py-3 bg-black/40 border border-white/10 rounded-xl flex-row flex-wrap justify-between items-center gap-2`}>
+                      <View style={tw`w-full px-4 py-3 bg-black bg-opacity-20 border border-white border-opacity-10 rounded-xl flex-row flex-wrap justify-between items-center gap-2`}>
                         <Text style={tw`text-sm text-[#8B95B0]`}>Llama 3.2 90B Vision Instruct</Text>
                         <View style={tw`flex-row items-center gap-2`}>
                           <View style={tw`w-2 h-2 rounded-full ${systemTokenCount > 0 ? 'bg-green-500' : 'bg-red-500'}`} />
@@ -247,13 +247,13 @@ export function SystemSettingsModal({ show, onClose }: Props) {
                         </Text>
                       </View>
                       
-                      <View style={tw`border border-red-500/20 p-4 rounded-xl bg-black/40`}>
+                      <View style={tw`border border-red-500 border-opacity-10 p-4 rounded-xl bg-black bg-opacity-20`}>
                         <Text style={tw`text-[10px] text-red-400/80 mb-4 leading-4`}>
                           Tokens added here are used chronologically for all users in the system to prevent rate limiting. These are hidden from standard users.
                         </Text>
 
                         {adminTokens.map((token, index) => (
-                          <View key={index} style={tw`flex-row items-center gap-2 mb-2 p-3 bg-white/5 rounded-lg border border-white/10`}>
+                          <View key={index} style={tw`flex-row items-center gap-2 mb-2 p-3 bg-white bg-opacity-20 rounded-lg border border-white border-opacity-10`}>
                             <Text style={tw`flex-1 text-white text-xs`}>
                               {token}
                             </Text>
@@ -272,12 +272,12 @@ export function SystemSettingsModal({ show, onClose }: Props) {
                             placeholderTextColor="#4B5570"
                             value={newAdminToken}
                             onChangeText={setNewAdminToken}
-                            style={tw`flex-1 px-4 py-3 bg-black/40 border border-white/10 rounded-xl text-sm text-white`}
+                            style={tw`flex-1 px-4 py-3 bg-black bg-opacity-20 border border-white border-opacity-10 rounded-xl text-sm text-white`}
                           />
                           <Pressable
                             onPress={addAdminToken}
                             style={({ pressed }) => [
-                              tw`p-3 bg-red-500/20 border border-red-500/30 rounded-xl`,
+                              tw`p-3 bg-red-500/20 border border-red-500 border-opacity-10 rounded-xl`,
                               { opacity: pressed ? 0.7 : 1 }
                             ]}
                           >
@@ -293,7 +293,7 @@ export function SystemSettingsModal({ show, onClose }: Props) {
                     style={({ pressed }) => [
                       tw`mt-8 w-full py-4 rounded-xl flex-row items-center justify-center`,
                       saveStatus === 'saved' 
-                        ? tw`bg-green-500/20 border border-green-500/30` 
+                        ? tw`bg-green-500/20 border border-green-500 border-opacity-10` 
                         : tw`bg-[#D9B382]`,
                       { opacity: pressed ? 0.7 : 1 }
                     ]}
@@ -308,7 +308,7 @@ export function SystemSettingsModal({ show, onClose }: Props) {
                   </Pressable>
                 </View>
 
-                <View style={tw`bg-black/10 p-4 rounded-xl mb-4`}>
+                <View style={tw`bg-black bg-opacity-20 p-4 rounded-xl mb-4`}>
                   <Text style={tw`text-[10px] text-[#8B95B0] text-center italic`}>
                     AI analysis is powered by Google AI Studio. Models use an external API.
                   </Text>

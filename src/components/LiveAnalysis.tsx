@@ -912,7 +912,7 @@ export function LiveAnalysis() {
                    </Text>
                  </motion.div>
                  
-                 <View style={tw`h-1 w-48 bg-white/60 mb-6`} />
+                 <View style={tw`h-1 w-48 bg-white bg-opacity-20 mb-6`} />
                  
                  <motion.div
                    initial={{ y: 20, opacity: 0 }}
@@ -964,7 +964,7 @@ export function LiveAnalysis() {
           <View style={tw`flex-row gap-2`}>
             <Pressable 
               onPress={handlePickTechnique}
-              style={({ pressed }) => [tw`w-9 h-9 rounded-lg items-center justify-center`, techFileName ? tw`bg-[#D9B382]` : tw`bg-white/5 border border-white/10`, { opacity: pressed ? 0.7 : 1 }]}
+              style={({ pressed }) => [tw`w-9 h-9 rounded-lg items-center justify-center`, techFileName ? tw`bg-[#D9B382]` : tw`bg-white bg-opacity-20 border border-white border-opacity-10`, { opacity: pressed ? 0.7 : 1 }]}
             >
               <motion.div whileHover={buttonHoverProps} whileTap={buttonTapProps} transition={springProps} style={{ display: 'contents' }}>
                 <FileText size={16} color={techFileName ? "#1A1308" : "#8B95B0"} />
@@ -974,7 +974,7 @@ export function LiveAnalysis() {
         </View>
 
         {/* Compact Dashboard Grid */}
-        <motion.div whileHover={cardHoverProps} style={tw`bg-[#121419] rounded-2xl border border-white/10 p-4 shadow-2xl mb-4 z-100`}>
+        <motion.div whileHover={cardHoverProps} style={tw`bg-[#121419] rounded-2xl border border-white border-opacity-10 p-4 shadow-2xl mb-4 z-100`}>
            <View style={tw`mb-4`}>
               <View style={tw`flex-row justify-between items-center mb-2`}>
                 <Text style={tw`text-[8px] font-black text-[#4B5570] uppercase tracking-widest`}>Asset Selection</Text>
@@ -986,7 +986,7 @@ export function LiveAnalysis() {
                     onPress={() => setStockName(s.name)}
                     style={({ pressed }) => [
                       tw`flex-1 min-w-[28%] py-2.5 rounded-lg border items-center flex-row justify-center`,
-                      stockName === s.name ? tw`bg-[#D9B382] border-[#D9B382]` : tw`bg-black/20 border-white/5`,
+                      stockName === s.name ? tw`bg-[#D9B382] border-[#D9B382]` : tw`bg-black bg-opacity-20 border-white border-opacity-10`,
                       { opacity: pressed ? 0.7 : 1 }
                     ]}
                   >
@@ -1005,7 +1005,7 @@ export function LiveAnalysis() {
                  <View style={tw`relative`}>
                       <Pressable 
                       onPress={() => { setShowTfPicker(!showTfPicker); setShowDurPicker(false); }}
-                      style={({ pressed }) => [tw`bg-black/60 border border-white/10 h-10 rounded-lg px-3 flex-row items-center justify-between`, { opacity: pressed ? 0.7 : 1 }]}
+                      style={({ pressed }) => [tw`bg-black bg-opacity-20 border border-white border-opacity-10 h-10 rounded-lg px-3 flex-row items-center justify-between`, { opacity: pressed ? 0.7 : 1 }]}
                     >
                       <Text style={{ color: '#D9B382', fontWeight: '900', fontSize: 11 }}>{graphTimeframe}</Text>
                       <ChevronDown size={12} color="#D9B382" />
@@ -1016,7 +1016,7 @@ export function LiveAnalysis() {
                           <Pressable
                             key={tf}
                             onPress={() => { setGraphTimeframe(tf); setShowTfPicker(false); }}
-                            style={({ pressed }) => [tw`py-4 px-3 rounded-lg border-b border-white/10`, graphTimeframe === tf && tw`bg-[#D9B382]/20`, { opacity: pressed ? 0.7 : 1 }]}
+                            style={({ pressed }) => [tw`py-4 px-3 rounded-lg border-b border-white border-opacity-10`, graphTimeframe === tf && tw`bg-[#D9B382]/20`, { opacity: pressed ? 0.7 : 1 }]}
                           >
                             <Text style={[tw`text-sm font-black`, graphTimeframe === tf ? tw`text-[#D9B382]` : tw`text-white`]}>{tf}</Text>
                           </Pressable>
@@ -1030,7 +1030,7 @@ export function LiveAnalysis() {
                  <View style={tw`relative`}>
                     <Pressable 
                       onPress={() => { setShowDurPicker(!showDurPicker); setShowTfPicker(false); }}
-                      style={({ pressed }) => [tw`bg-black/60 border border-white/10 h-10 rounded-lg px-3 flex-row items-center justify-between`, { opacity: pressed ? 0.7 : 1 }]}
+                      style={({ pressed }) => [tw`bg-black bg-opacity-20 border border-white border-opacity-10 h-10 rounded-lg px-3 flex-row items-center justify-between`, { opacity: pressed ? 0.7 : 1 }]}
                     >
                       <Text style={{ color: '#D9B382', fontWeight: '900', fontSize: 11 }}>{investmentDuration}</Text>
                       <ChevronDown size={12} color="#D9B382" />
@@ -1041,7 +1041,7 @@ export function LiveAnalysis() {
                           <Pressable
                             key={d}
                             onPress={() => { setInvestmentDuration(d); setShowDurPicker(false); }}
-                            style={({ pressed }) => [tw`py-4 px-3 rounded-lg border-b border-white/10`, investmentDuration === d && tw`bg-[#D9B382]/20`, { opacity: pressed ? 0.7 : 1 }]}
+                            style={({ pressed }) => [tw`py-4 px-3 rounded-lg border-b border-white border-opacity-10`, investmentDuration === d && tw`bg-[#D9B382]/20`, { opacity: pressed ? 0.7 : 1 }]}
                           >
                             <Text style={[tw`text-sm font-black`, investmentDuration === d ? tw`text-[#D9B382]` : tw`text-white`]}>{d}</Text>
                           </Pressable>
@@ -1056,7 +1056,7 @@ export function LiveAnalysis() {
               <View style={tw`flex-1 min-w-[45%]`}>
                  <Text style={tw`text-[8px] font-black text-[#4B5570] uppercase tracking-wider mb-1.5`}>Capital</Text>
                  <TextInput
-                   style={tw`bg-black/60 border border-white/10 h-10 rounded-lg px-3 text-white font-black text-xs w-full`}
+                   style={tw`bg-black bg-opacity-20 border border-white border-opacity-10 h-10 rounded-lg px-3 text-white font-black text-xs w-full`}
                    value={investmentAmount}
                    onChangeText={setInvestmentAmount}
                    keyboardType="numeric"
@@ -1066,7 +1066,7 @@ export function LiveAnalysis() {
               <View style={tw`flex-1 min-w-[45%]`}>
                  <Text style={tw`text-[8px] font-black text-[#4B5570] uppercase tracking-wider mb-1.5`}>Payout (%)</Text>
                  <TextInput
-                   style={tw`bg-black/60 border border-white/10 h-10 rounded-lg px-3 text-[#22C55E] font-black text-xs w-full`}
+                   style={tw`bg-black bg-opacity-20 border border-white border-opacity-10 h-10 rounded-lg px-3 text-[#22C55E] font-black text-xs w-full`}
                    value={profitabilityPercent}
                    onChangeText={setProfitabilityPercent}
                    keyboardType="numeric"
@@ -1076,10 +1076,10 @@ export function LiveAnalysis() {
          </motion.div>
 
          {/* Dense Evidence Row */}
-         <View style={tw`bg-[#121419] rounded-2xl border border-white/10 p-4 mb-4`}>
+         <View style={tw`bg-[#121419] rounded-2xl border border-white border-opacity-10 p-4 mb-4`}>
              <View style={tw`flex-row flex-wrap justify-between items-center gap-2 mb-3`}>
                 <Text style={tw`text-[8px] font-black text-[#4B5570] uppercase tracking-widest`}>Chart Feed</Text>
-                <View style={tw`flex-row flex-wrap bg-black/40 rounded-lg p-0.5 border border-white/5`}>
+                <View style={tw`flex-row flex-wrap bg-black bg-opacity-20 rounded-lg p-0.5 border border-white border-opacity-10`}>
                    {(['camera', 'upload', 'test'] as const).map((m) => (
                      <Pressable
                        key={m}
@@ -1094,7 +1094,7 @@ export function LiveAnalysis() {
             </View>
 
             {mode === 'camera' ? (
-               <View style={tw`w-full bg-black/60 rounded-xl overflow-hidden border border-white/10 items-center justify-center`}>
+               <View style={tw`w-full bg-black bg-opacity-20 rounded-xl overflow-hidden border border-white border-opacity-10 items-center justify-center`}>
                  {Platform.OS === 'web' && (
                    <video 
                      ref={videoRef} 
@@ -1105,7 +1105,7 @@ export function LiveAnalysis() {
                    />
                  )}
                  {!isCameraActive && (
-                   <View style={tw`absolute inset-0 bg-black/80 items-center justify-center`}>
+                   <View style={tw`absolute inset-0 bg-black bg-opacity-20 items-center justify-center`}>
                      <Pressable
                         onPress={startCamera}
                         style={({ pressed }) => [tw`bg-[#D9B382] px-6 py-3 rounded-lg flex-row items-center`, { opacity: pressed ? 0.7 : 1 }]}
@@ -1124,7 +1124,7 @@ export function LiveAnalysis() {
                    </Pressable>
                  )}
                  {scoutActive && (
-                   <View style={tw`absolute bottom-2 left-2 right-2 bg-black/90 p-2 rounded-lg border ${scoutData?.action === 'ABORT' ? 'border-red-500' : scoutData?.action === 'WAIT' ? 'border-orange-500' : 'border-[#00FFFF]/30'}`}>
+                   <View style={tw`absolute bottom-2 left-2 right-2 bg-black bg-opacity-20 p-2 rounded-lg border ${scoutData?.action === 'ABORT' ? 'border-red-500' : scoutData?.action === 'WAIT' ? 'border-orange-500' : 'border-[#00FFFF]/30'}`}>
                       <View style={tw`flex-row justify-between items-center mb-1`}>
                          <View style={tw`flex-row items-center`}>
                            <View style={tw`w-2 h-2 rounded-full ${scoutData?.action === 'ABORT' ? 'bg-red-500' : scoutData?.action === 'WAIT' ? 'bg-orange-500' : 'bg-[#00FFFF]'} mr-2`} />
@@ -1135,7 +1135,7 @@ export function LiveAnalysis() {
                          </Text>
                       </View>
                       {scoutData && (
-                        <Text style={tw`text-white/80 text-[9px] leading-3 font-medium`}>{scoutData.reason}</Text>
+                        <Text style={tw`text-white text-opacity-60 text-[9px] leading-3 font-medium`}>{scoutData.reason}</Text>
                       )}
                    </View>
                  )}
@@ -1144,8 +1144,8 @@ export function LiveAnalysis() {
               <Pressable
                 onPress={handlePickImage}
                 style={({ pressed }) => [
-                  tw`h-32 w-full rounded-xl bg-black/60 overflow-hidden border items-center justify-center`,
-                  selectedImage ? tw`border-[#D9B382]/20` : tw`border-dashed border-white/10`,
+                  tw`h-32 w-full rounded-xl bg-black bg-opacity-20 overflow-hidden border items-center justify-center`,
+                  selectedImage ? tw`border-[#D9B382] border-opacity-20 ` : tw`border-dashed border-white border-opacity-10`,
                   { opacity: pressed ? 0.7 : 1 }
                 ]}
               >
@@ -1166,7 +1166,7 @@ export function LiveAnalysis() {
           <motion.div 
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="bg-[#14161C] rounded-2xl border border-[#D9B382]/30 p-4 mt-4 shadow-2xl relative overflow-hidden"
+            className="bg-[#14161C] rounded-2xl border border-[#D9B382] border-opacity-20  p-4 mt-4 shadow-2xl relative overflow-hidden"
           >
             {/* Visual Scanning Background */}
             <div className="absolute inset-0 opacity-10 pointer-events-none">
@@ -1178,7 +1178,7 @@ export function LiveAnalysis() {
               />
             </div>
 
-            <div style={tw`flex-row items-center justify-between mb-4 border-b border-white/10 pb-3 relative z-10`}>
+            <div style={tw`flex-row items-center justify-between mb-4 border-b border-white border-opacity-10 pb-3 relative z-10`}>
               <div style={tw`flex-row items-center gap-2`}>
                  <ActivityIndicator color="#D9B382" size="small" />
                  <motion.div animate={prefersReducedMotion ? {} : { scale: [1, 1.15, 1], opacity: [0.7, 1, 0.7] }} transition={{ duration: 1.6, repeat: Infinity, ease: "easeInOut" }} style={{ display: 'contents' }}>
@@ -1203,7 +1203,7 @@ export function LiveAnalysis() {
                   initial={{ x: -20, opacity: 0 }}
                   animate={{ x: 0, opacity: 1 }}
                   transition={{ delay: idx * 0.1 }}
-                  className="bg-black/80 p-3 rounded-lg flex-row items-center justify-between border-l-4"
+                  className="bg-black bg-opacity-20 p-3 rounded-lg flex-row items-center justify-between border-l-4"
                   style={{ borderColor: item.color, backgroundColor: item.bg }}
                 >
                   <div style={tw`flex-1`}>
@@ -1231,7 +1231,7 @@ export function LiveAnalysis() {
                           key={i}
                           animate={{ height: [2, 8, 2] }}
                           transition={{ duration: 0.8, repeat: Infinity, delay: i * 0.2 }}
-                          className="w-0.5 bg-white/30"
+                          className="w-0.5 bg-white/20"
                         />
                       ))}
                     </div>
@@ -1264,7 +1264,7 @@ export function LiveAnalysis() {
         )}
 
         {analysisError && (
-          <View style={tw`bg-red-500/10 border border-red-500/30 p-4 rounded-xl mt-4 flex-row items-center`}>
+          <View style={tw`bg-red-500/10 border border-red-500 border-opacity-10 p-4 rounded-xl mt-4 flex-row items-center`}>
             <AlertTriangle size={20} color="#EF4444" style={tw`mr-3`} />
             <View style={tw`flex-1`}>
               <Text style={tw`text-red-400 font-bold mb-1`}>Analysis Error</Text>
@@ -1277,12 +1277,12 @@ export function LiveAnalysis() {
           <motion.div 
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="bg-[#14161C] rounded-[24px] border border-white/10 p-6 shadow-2xl mb-8 overflow-hidden relative"
+            className="bg-[#14161C] rounded-[24px] border border-white border-opacity-10 p-6 shadow-2xl mb-8 overflow-hidden relative"
           >
             {/* Visual Polish: Glassmorphism/Tactical Background */}
             <div className="absolute top-0 right-0 w-64 h-64 bg-[#D9B382]/5 rounded-full -mr-32 -mt-32 blur-3xl pointer-events-none" />
             
-            <div style={tw`flex-row items-center justify-between mb-6 pb-4 border-b border-white/5 relative z-10`}>
+            <div style={tw`flex-row items-center justify-between mb-6 pb-4 border-b border-white border-opacity-10 relative z-10`}>
               <div style={tw`flex-row items-center`}>
                 <motion.div
                   animate={{ rotate: [0, 10, -10, 0] }}
@@ -1312,7 +1312,7 @@ export function LiveAnalysis() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.3 }}
-              className="bg-black/60 rounded-2xl p-4 border border-[#D9B382]/20 mb-6 group hover:border-[#D9B382]/40 transition-colors"
+              className="bg-black bg-opacity-20 rounded-2xl p-4 border border-[#D9B382] border-opacity-20  mb-6 group hover:border-[#D9B382] border-opacity-20  transition-colors"
             >
                <div className="absolute top-2 right-2 opacity-20"><Terminal size={12} color="#D9B382" /></div>
                <Text style={tw`text-[#D9B382] font-mono text-xs mb-2`}>{analysis.judge.formattedReport}</Text>
@@ -1332,7 +1332,7 @@ export function LiveAnalysis() {
                       initial={{ opacity: 0, x: side === 'bull' ? -20 : 20 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: 0.4 + (idx * 0.1) }}
-                      className={`flex-1 min-w-[200px] bg-black/40 rounded-2xl p-4 border relative overflow-hidden ${isWinner ? (side === 'bull' ? 'border-green-500/40' : 'border-red-500/40') : 'border-white/5'}`}
+                      className={`flex-1 min-w-[200px] bg-black bg-opacity-20 rounded-2xl p-4 border relative overflow-hidden ${isWinner ? (side === 'bull' ? 'border-green-500/40' : 'border-red-500/40') : 'border-white/5'}`}
                     >
                       {isWinner && (
                         <div className="absolute top-0 right-0 p-1">
@@ -1356,7 +1356,7 @@ export function LiveAnalysis() {
                             <Text style={tw`text-[8px] text-[#8B95B0] uppercase font-bold`}>{j.label}</Text>
                             <Text style={tw`text-white text-[9px] font-mono`}>{j.val}/{j.max}</Text>
                           </div>
-                          <div className="h-1 bg-white/5 rounded-full overflow-hidden">
+                          <div className="h-1 bg-white bg-opacity-20 rounded-full overflow-hidden">
                             <motion.div 
                               initial={{ width: 0 }}
                               animate={{ width: `${(j.val / j.max) * 100}%` }}
@@ -1368,7 +1368,7 @@ export function LiveAnalysis() {
                         </div>
                       ))}
                       
-                      <div className="mt-3 pt-3 border-t border-white/5 flex flex-row justify-between items-center">
+                      <div className="mt-3 pt-3 border-t border-white border-opacity-10 flex flex-row justify-between items-center">
                         <Text style={tw`text-[8px] font-black text-[#D9B382] uppercase`}>Total</Text>
                         <motion.p 
                           animate={isWinner ? { scale: [1, 1.1, 1] } : {}}
@@ -1383,7 +1383,7 @@ export function LiveAnalysis() {
                 })}
               </div>
             ) : (
-              <View style={tw`bg-black/40 rounded-2xl p-4 border border-white/5 mb-6`}>
+              <View style={tw`bg-black bg-opacity-20 rounded-2xl p-4 border border-white border-opacity-10 mb-6`}>
                 <View style={tw`flex-row items-center mb-4`}>
                     <Terminal size={14} color="#D9B382" style={tw`mr-2`} />
                     <Text style={tw`text-[#D9B382] text-[10px] font-black uppercase tracking-widest`}>Judge Deliberations</Text>
@@ -1416,7 +1416,7 @@ export function LiveAnalysis() {
                  initial={{ opacity: 0, x: -10 }}
                  animate={{ opacity: 1, x: 0 }}
                  transition={{ delay: 1 }}
-                 className="mb-8 bg-[#D9B382]/10 p-4 rounded-xl border border-[#D9B382]/30 border-l-4 border-l-[#D9B382]"
+                 className="mb-8 bg-[#D9B382]/10 p-4 rounded-xl border border-[#D9B382] border-opacity-20  border-l-4 border-l-[#D9B382]"
                >
                  <div style={tw`flex-row items-center mb-2`}>
                    <Zap size={14} color="#D9B382" style={tw`mr-2`} />
@@ -1428,7 +1428,7 @@ export function LiveAnalysis() {
 
             {/* Market Physics & Geometric Oracles Section */}
             {(analysis.structuralPriors || analysis.geometricOracles) && (
-              <View style={tw`bg-black/20 rounded-2xl p-4 border border-blue-500/10 mb-8`}>
+              <View style={tw`bg-black bg-opacity-20 rounded-2xl p-4 border border-blue-500/10 mb-8`}>
                 <View style={tw`flex-row items-center mb-3`}>
                   <Zap size={14} color="#60A5FA" style={tw`mr-2`} />
                   <Text style={tw`text-[#60A5FA] text-[10px] font-black uppercase tracking-widest`}>Market Physics & Geometric Oracles</Text>
@@ -1451,14 +1451,14 @@ export function LiveAnalysis() {
             {analysis.judge.tradeDetails?.techniquesUsed && (
               <View style={tw`mb-8`}>
                  <Text style={tw`text-[10px] font-black text-[#8B95B0] uppercase tracking-widest mb-2`}>Technique Recognition ({analysis.techUsedCount} Found)</Text>
-                 <View style={tw`bg-black/30 p-4 rounded-xl border border-[#D9B382]/10`}>
+                 <View style={tw`bg-black bg-opacity-20 p-4 rounded-xl border border-[#D9B382] border-opacity-20 `}>
                     <Text style={tw`text-white text-xs leading-5 font-bold italic text-[#D9B382]`}>{analysis.judge.tradeDetails.techniquesUsed}</Text>
                  </View>
               </View>
             )}
 
             <View style={tw`flex-row flex-wrap gap-4 mb-8`}>
-              <View style={tw`flex-1 min-w-[120px] p-3 bg-black/20 rounded-xl border border-white/5`}>
+              <View style={tw`flex-1 min-w-[120px] p-3 bg-black bg-opacity-20 rounded-xl border border-white border-opacity-10`}>
                 <Text style={tw`text-[8px] font-black text-[#8B95B0] uppercase mb-1`}>Confidence</Text>
                 <Text style={tw`text-white font-black text-lg`}>
                   <motion.span key={analysis.judge.finalConfidence} initial={{ y: prefersReducedMotion ? 0 : -6, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: prefersReducedMotion ? 0 : 0.2 }}>
@@ -1466,7 +1466,7 @@ export function LiveAnalysis() {
                   </motion.span>
                 </Text>
               </View>
-              <View style={tw`flex-1 min-w-[120px] p-3 bg-black/20 rounded-xl border border-white/5`}>
+              <View style={tw`flex-1 min-w-[120px] p-3 bg-black bg-opacity-20 rounded-xl border border-white border-opacity-10`}>
                 <Text style={tw`text-[8px] font-black text-[#8B95B0] uppercase mb-1`}>Potential Profit</Text>
                 <Text style={tw`text-[#22C55E] font-black text-lg`}>
                   <motion.span key={((Number(profitabilityPercent)/100) * Number(investmentAmount)).toFixed(2)} initial={{ y: prefersReducedMotion ? 0 : -6, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: prefersReducedMotion ? 0 : 0.2 }}>
@@ -1478,7 +1478,7 @@ export function LiveAnalysis() {
 
             {/* Manual Trade Result Declaration */}
             {mode !== 'test' && (
-              <View style={tw`mt-4 bg-black/40 rounded-2xl p-6 border border-[#D9B382]/30 shadow-lg`}>
+              <View style={tw`mt-4 bg-black bg-opacity-20 rounded-2xl p-6 border border-[#D9B382] border-opacity-20  shadow-lg`}>
                   <Text style={tw`text-[#D9B382] font-black uppercase tracking-[2px] text-xs mb-4 text-center`}>
                       {confirmedOutcome ? 'TRADE RESULT FINALIZED' : 'DECLARE TRADE OUTCOME'}
                   </Text>
@@ -1507,14 +1507,17 @@ export function LiveAnalysis() {
                     </View>
                   ) : (
                     <View style={tw`items-center`}>
-                      <View style={tw`${confirmedOutcome === 'WIN' ? 'bg-green-600' : 'bg-red-600'} px-6 py-3 rounded-xl mb-4 flex-row items-center border border-white/20 shadow-xl`}>
+                      <View style={tw`${confirmedOutcome === 'WIN' ? 'bg-green-600' : 'bg-red-600'} px-6 py-3 rounded-xl mb-4 flex-row items-center border border-white border-opacity-10 shadow-xl`}>
                         {confirmedOutcome === 'WIN' ? <CheckCircle size={24} color="white" style={tw`mr-3`} /> : <XCircle size={24} color="white" style={tw`mr-3`} />}
                         <Text style={tw`text-white text-xl font-black uppercase tracking-[3px]`}>{confirmedOutcome}</Text>
                       </View>
                       
                       {confirmedOutcome === 'LOSS' && (
                         <Pressable 
-                          onPress={() => setShowAutopsyModal(true)}
+                          onPress={() => {
+                            console.log('RUN LOSS AUTOPSY manual button clicked!');
+                            setShowAutopsyModal(true);
+                          }}
                           style={({ pressed }) => [tw`bg-red-600 h-10 px-6 rounded-xl flex-row items-center justify-center shadow-xl mb-4`, { opacity: pressed ? 0.7 : 1 }]}
                         >
                           <AlertTriangle size={16} color="white" style={tw`mr-2`} />
@@ -1527,7 +1530,7 @@ export function LiveAnalysis() {
             )}
 
             {mode === 'test' && (
-              <View style={tw`mt-4 bg-black/40 rounded-2xl p-6 border border-[#D9B382]/30 shadow-lg`}>
+              <View style={tw`mt-4 bg-black bg-opacity-20 rounded-2xl p-6 border border-[#D9B382] border-opacity-20  shadow-lg`}>
                 <Text style={tw`text-[#D9B382] font-black uppercase tracking-[2px] text-xs mb-4 text-center`}>
                   AUTO-TEST RESULT
                 </Text>
@@ -1537,13 +1540,13 @@ export function LiveAnalysis() {
                   <View style={tw`flex-row gap-2 mb-4 justify-center`}>
                     {testModeLeftSlice && (
                       <View style={tw`items-center`}>
-                        <Text style={tw`text-white/40 text-[9px] uppercase mb-1`}>Analyzed (Past)</Text>
+                        <Text style={tw`text-white text-opacity-60 text-[9px] uppercase mb-1`}>Analyzed (Past)</Text>
                         <img src={testModeLeftSlice} style={{ height: 60, borderRadius: 6, border: '1px solid rgba(217,179,130,0.4)' }} />
                       </View>
                     )}
                     {testModeRightSlice && (
                       <View style={tw`items-center`}>
-                        <Text style={tw`text-amber-300 text-[9px] uppercase mb-1`}>Outcome Window</Text>
+                        <Text style={tw`text-yellow-400 text-[9px] uppercase mb-1`}>Outcome Window</Text>
                         <img src={testModeRightSlice} style={{ height: 60, borderRadius: 6, border: '1px solid rgba(239,68,68,0.5)' }} />
                       </View>
                     )}
@@ -1564,10 +1567,10 @@ export function LiveAnalysis() {
                 {autoGradeStatus === 'failed' && !confirmedOutcome && (
                   <View style={tw`items-center py-2`}>
                     <AlertTriangle size={28} color="#f59e0b" style={tw`mb-2`} />
-                    <Text style={tw`text-amber-300 font-black uppercase text-xs tracking-widest text-center mb-1`}>
+                    <Text style={tw`text-yellow-400 font-black uppercase text-xs tracking-widest text-center mb-1`}>
                       AUTO-GRADE INCONCLUSIVE
                     </Text>
-                    <Text style={tw`text-white/50 text-xs text-center mb-4 px-4`}>
+                    <Text style={tw`text-white text-opacity-60 text-xs text-center mb-4 px-4`}>
                       {autoGradeReason || 'Right slice was unreadable or price was flat. Declare manually below.'}
                       {autoGradeRawOutcome && ` (Raw: ${autoGradeRawOutcome}, Conf: ${autoGradeConfidence}%)`}
                     </Text>
@@ -1592,7 +1595,7 @@ export function LiveAnalysis() {
 
                     <Pressable
                       onPress={handleRegrade}
-                      style={({ pressed }) => [tw`px-4 py-2 rounded-lg border border-[#D9B382]/40 bg-[#D9B382]/10`, { opacity: pressed ? 0.7 : 1 }]}
+                      style={({ pressed }) => [tw`px-4 py-2 rounded-lg border border-[#D9B382] border-opacity-20  bg-[#D9B382]/10`, { opacity: pressed ? 0.7 : 1 }]}
                     >
                       <Text style={tw`text-[#D9B382] text-[11px] font-black uppercase tracking-wider`}>
                         🔄 RETRY AUTO-GRADE
@@ -1610,7 +1613,7 @@ export function LiveAnalysis() {
                         {autoGradeStatus === 'done' ? `AUTO-GRADED (${autoGradeConfidence || '—'}% conf)` : 'MANUALLY LOGGED'}
                       </Text>
                     </View>
-                    <View style={tw`${confirmedOutcome === 'WIN' ? 'bg-green-600' : 'bg-red-600'} px-6 py-3 rounded-xl mb-3 flex-row items-center border border-white/20 shadow-xl`}>
+                    <View style={tw`${confirmedOutcome === 'WIN' ? 'bg-green-600' : 'bg-red-600'} px-6 py-3 rounded-xl mb-3 flex-row items-center border border-white border-opacity-10 shadow-xl`}>
                       {confirmedOutcome === 'WIN'
                         ? <CheckCircle size={24} color="white" style={tw`mr-3`} />
                         : <XCircle size={24} color="white" style={tw`mr-3`} />}
@@ -1619,13 +1622,16 @@ export function LiveAnalysis() {
                       </Text>
                     </View>
                     {autoGradeReason && autoGradeStatus === 'done' && (
-                      <Text style={tw`text-white/50 text-[11px] italic text-center px-4 mb-3`}>
+                      <Text style={tw`text-white text-opacity-60 text-[11px] italic text-center px-4 mb-3`}>
                         “{autoGradeReason}”
                       </Text>
                     )}
                     {confirmedOutcome === 'LOSS' && (
                       <Pressable
-                        onPress={() => setShowAutopsyModal(true)}
+                        onPress={() => {
+                          console.log('RUN LOSS AUTOPSY button clicked!');
+                          setShowAutopsyModal(true);
+                        }}
                         style={({ pressed }) => [tw`bg-red-600 h-10 px-6 rounded-xl flex-row items-center justify-center shadow-xl mb-2`, { opacity: pressed ? 0.7 : 1 }]}
                       >
                         <AlertTriangle size={16} color="white" style={tw`mr-2`} />
@@ -1643,7 +1649,7 @@ export function LiveAnalysis() {
                         }}
                         style={tw`mt-1`}
                       >
-                        <Text style={tw`text-white/40 text-[10px] underline`}>Override this grade</Text>
+                        <Text style={tw`text-white text-opacity-60 text-[10px] underline`}>Override this grade</Text>
                       </Pressable>
                     )}
                   </View>
@@ -1673,7 +1679,7 @@ export function LiveAnalysis() {
 
             <Pressable 
               onPress={handleReset}
-              style={({ pressed }) => [tw`mt-6 bg-[#1A1308] border border-white/10 h-14 rounded-2xl items-center justify-center flex-row shadow-2xl`, { opacity: pressed ? 0.7 : 1 }]}
+              style={({ pressed }) => [tw`mt-6 bg-[#1A1308] border border-white border-opacity-10 h-14 rounded-2xl items-center justify-center flex-row shadow-2xl`, { opacity: pressed ? 0.7 : 1 }]}
             >
               <motion.div whileHover={buttonHoverProps} whileTap={buttonTapProps} transition={springProps} style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
                 <Sparkles size={20} color="#D9B382" style={tw`mr-3`} />
