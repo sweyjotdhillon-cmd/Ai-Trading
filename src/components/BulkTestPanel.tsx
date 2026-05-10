@@ -58,6 +58,13 @@ export function BulkTestPanel({
     }
   };
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const filesArray = Array.from(e.target.files).filter(f => f.type.startsWith('image/'));
+      setImages(prev => [...prev, ...filesArray]);
+    }
+  };
+
   const handleGenerateManifest = () => {
     if (images.length === 0) return;
     
@@ -355,11 +362,21 @@ export function BulkTestPanel({
             <div 
               onDragOver={handleDragOver} 
               onDrop={handleDropImages}
-              className="border-2 border-dashed border-white/10 rounded-xl p-8 flex flex-col items-center justify-center bg-black/20 hover:border-[#D9B382]/30 transition-colors cursor-pointer"
+              onClick={() => document.getElementById('bulk-image-upload')?.click()}
+              className="border-2 border-dashed border-white/10 rounded-xl p-8 flex flex-col items-center justify-center bg-black/20 hover:border-[#D9B382]/30 transition-colors cursor-pointer relative"
             >
+              <input 
+                id="bulk-image-upload" 
+                type="file" 
+                multiple 
+                accept="image/*" 
+                onChange={handleFileSelect} 
+                className="hidden" 
+                style={{ display: 'none' }}
+              />
               <UploadCloud size={32} color="#D9B382" className="opacity-80 mb-4" />
               <Text style={tw`text-white font-black text-sm uppercase tracking-widest mb-2`}>
-                Drag & Drop Images
+                Drag & Drop or Click to Upload
               </Text>
               <Text style={tw`text-white text-opacity-50 text-xs text-center px-4`}>
                 Drop chart screenshots here to generate a matching JSON manifest sequence.

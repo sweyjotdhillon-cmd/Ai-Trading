@@ -4,7 +4,7 @@ import { motion, useReducedMotion } from 'motion/react';
 import { ChevronDown, ArrowRight } from 'lucide-react';
 import * as THREE from 'three';
 
-const HeroScene = lazy(() => import('./HeroScene'));
+import HeroScene from './HeroScene';
 
 interface HeroMotionProps {
   onStart: () => void;
@@ -41,9 +41,7 @@ export function HeroMotion({ onStart }: HeroMotionProps) {
             gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.05 }}
             camera={{ fov: 35, position: [0, 0, 14] }}
           >
-            <Suspense fallback={null}>
-              <HeroScene isHovered={isHovered} warpPhase={warpPhase} reducedMotion={reducedMotion} />
-            </Suspense>
+            <HeroScene isHovered={isHovered} warpPhase={warpPhase} reducedMotion={reducedMotion} />
           </Canvas>
       </div>
 
