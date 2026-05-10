@@ -1,6 +1,7 @@
+import { runSingleAnalysis } from '../utils/singleAnalysis';
+import { BulkTestPanel } from './BulkTestPanel';
 import { useState, useRef, useEffect } from 'react';
-import { 
-  View, 
+import {   View, 
   Text, 
   Pressable, 
   ScrollView, 
@@ -21,6 +22,7 @@ import {
   FileText,
   Terminal,
   Activity,
+  Layers,
   XCircle,
   ChevronDown,
   Check,
@@ -30,48 +32,10 @@ import tw from 'twrnc';
 import { db } from '../firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { LossAutopsyModal } from './LossAutopsyModal';
-import { parseTimeframeToMinutes, autoDetectCandles, cropRightByRatio } from '../utils/imageUtils';
 
-const JUDGE_TASKS = {
-  judge1: ["Scanning support nodes...", "Evaluating volume nodes...", "Mapping price patterns...", "Analyzing breakouts...", "Finalizing Bullish Case..."],
-  judge2: ["Locating resistance zones...", "Analyzing selling pressure...", "Checking candle patterns...", "Projecting crash vectors...", "Finalizing Bearish Case..."],
-  judge3: ["Searching for local traps...", "Calculating failure risk...", "Checking volume leaks...", "Scanning wick rejections...", "Finalizing Risk Verdict..."],
-  judge4: ["Locating chart boundaries...", "Detecting trend extremes...", "Scanning for exhaustion...", "Calculating reversal probability...", "Finalizing Boundary Verdict..."],
-  system: ["Syncing live vision feed...", "Extracting OHLC data...", "Computing math oracles...", "Aligning market priors...", "Synthesizing full report..."]
-};
+
 
 // Utility to downscale images on the web before sending to server
-const downscaleImage = (dataUrl: string, maxDim: number = 900): Promise<string> => {
-  return new Promise((resolve) => {
-    const img = new window.Image();
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
-      let { width, height } = img;
-      if (width > maxDim || height > maxDim) {
-        if (width > height) {
-          height = (height / width) * maxDim;
-          width = maxDim;
-        } else {
-          width = (width / height) * maxDim;
-          height = maxDim;
-        }
-      }
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.fillStyle = 'black'; // Fill background
-        ctx.fillRect(0, 0, width, height);
-        ctx.drawImage(img, 0, 0, width, height);
-      }
-      // Higher quality (0.88) to preserve chart fidelity
-      resolve(canvas.toDataURL('image/jpeg', 0.88));
-    };
-    img.onerror = () => resolve(dataUrl); 
-    img.src = dataUrl;
-  });
-};
-
 export function LiveAnalysis() {
   const [stockName, setStockName] = useState('Bitcoin');
   const [graphTimeframe, setGraphTimeframe] = useState('30 minutes');
@@ -79,7 +43,7 @@ export function LiveAnalysis() {
   const [isBusy, setIsBusy] = useState(false);
   const [analysisStep, setAnalysisStep] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<any | null>(null);
-  const [mode, setMode] = useState<'camera' | 'upload' | 'test'>('camera');
+  const [mode, setMode] = useState<'camera' | 'upload' | 'test' | 'bulk'>('camera');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
   // Live Trading Loop States
@@ -479,7 +443,6 @@ export function LiveAnalysis() {
 
     let finalImageToAnalyze = selectedImage;
 
-    // Capture from live video feed if camera is active
     if (mode === 'camera' && isCameraActive && videoRef.current) {
       if (Platform.OS === 'web') {
         const canvas = document.createElement('canvas');
@@ -492,350 +455,113 @@ export function LiveAnalysis() {
     }
 
     if (!finalImageToAnalyze) {
-      setTimeout(() => {
-        alert("Please start the camera or upload a chart image first.");
-      }, 300);
+      setTimeout(() => alert("Please start the camera or upload a chart image first."), 300);
       setIsBusy(false);
       return;
     }
 
-    // Increased delay (250ms) to ensure the gesture system releases the button properly 
-    // before the component unmounts for the loading screen.
     setTimeout(() => {
       (async () => {
         let controller: AbortController | undefined;
         let timeoutId: any;
         try {
           setLoading(true);
-        setAnalysisError(null);
-        setAutoGradeStatus('idle');
-        setAnalysis(null);
-        setTradingPhase('ANALYSING_DIRECTION');
-        setAnalysisStep(`SYNCHRONIZING ${techniquesList.length} TECHNIQUES...`);
+          setAnalysisError(null);
+          setAutoGradeStatus('idle');
+          setAnalysis(null);
+          setTradingPhase('ANALYSING_DIRECTION');
+          setAnalysisStep(`SYNCHRONIZING ${techniquesList.length} TECHNIQUES...`);
 
-        const fetchWithRetry = async (url: string, options: any, retries: number = 2): Promise<Response> => {
-        if (options.signal?.aborted) {
-          throw new Error("Request aborted before retry");
-        }
-        try {
-          const res = await fetch(url, options);
-          if (!res.ok && retries > 0 && (res.status >= 500 || res.status === 429)) {
-            await new Promise(r => setTimeout(r, 2000));
-            return fetchWithRetry(url, options, retries - 1);
-          }
-          return res;
-        } catch (err: any) {
-          if (retries > 0 && err.name !== 'AbortError' && !options.signal?.aborted) {
-            await new Promise(r => setTimeout(r, 2000));
-            return fetchWithRetry(url, options, retries - 1);
-          }
-          throw err;
-        }
-      };
+          controller = new AbortController();
+          timeoutId = setTimeout(() => controller?.abort(), 360000);
 
-        controller = new AbortController();
-        timeoutId = setTimeout(() => {
-          try {
-            controller?.abort();
-          } catch (e) {
-            console.warn("Manual abort failed", e);
-          }
-        }, 360000); // Increased to 360s Safety Timeout
+          if (mode === 'test') setAutoGradeStatus('grading');
 
-        // Optimize image for transmission (web canvas resize)
-        const optimizedImageForCrop = await downscaleImage(finalImageToAnalyze!);
-
-        let finalImageForAnalysis = optimizedImageForCrop;
-        let autoOutcomePromise: Promise<any> | null = null;
-
-        if (mode === 'test') setAutoGradeStatus('grading');
-        if (mode === 'test' && Platform.OS === 'web' && optimizedImageForCrop) {
-          const parseDuration = parseTimeframeToMinutes(investmentDuration);
-          const gDuration     = parseTimeframeToMinutes(graphTimeframe);
-          
-          if (isNaN(parseDuration) || isNaN(gDuration) || gDuration <= 0) {
-            setAutoGradeReason(`CROP FAILED: bad duration "${investmentDuration}" / timeframe "${graphTimeframe}".`);
-            setTradingPhase('IDLE');
-            setAnalysisStep('INVALID DURATION');
-            setAutoGradeStatus('failed');
-            return;
-          }
-          
-          // Detect candles in view from the actual screenshot (was being thrown away before)
-          const detectedCandles = await autoDetectCandles(optimizedImageForCrop);
-          
-          // Two ratio strategies — pick whichever is larger, clamped 5%–40%.
-          // Strategy 1: duration-based  -> investmentDuration / graphTimeframe
-          // Strategy 2: candle-based    -> (durationMin / candleMin) / detectedCandles
-          const candleMinutes = gDuration / Math.max(1, detectedCandles);
-          const candlesToCut  = Math.max(1, Math.round(parseDuration / candleMinutes));
-          const ratioByDuration = parseDuration / gDuration;
-          const ratioByCandles  = candlesToCut / Math.max(1, detectedCandles);
-          let ratio = Math.max(ratioByDuration, ratioByCandles);
-          ratio = Math.max(0.05, Math.min(0.40, ratio));   // <-- NO 0.35 floor!
-          
-          console.debug(`[TEST_MODE] detectedCandles=${detectedCandles}, candlesToCut=${candlesToCut}, ` +
-                        `ratioByDuration=${ratioByDuration.toFixed(3)}, ratioByCandles=${ratioByCandles.toFixed(3)}, ` +
-                        `final=${ratio.toFixed(3)}`);
-          
-          let cropResult;
-          try {
-            cropResult = await cropRightByRatio(optimizedImageForCrop, ratio);
-          } catch (err: any) {
-            setAutoGradeReason(`CROP FAILED: ${err?.message || 'unknown'}.`);
-            setTradingPhase('IDLE');
-            setAnalysisStep('CROP FAILED');
-            setAutoGradeStatus('failed');
-            return;
-          }
-          
-          const { leftSliceBase64, rightSliceBase64, entryAnchorBase64 } = cropResult;
-          finalImageForAnalysis = leftSliceBase64;
-          setTestModeRightSlice(rightSliceBase64);
-          setTestModeLeftSlice(leftSliceBase64);
-          
-          // IMPORTANT: send the ANCHOR slice (entry candle + future) to the grader,
-          // not just the right slice. This is what makes WIN/LOSS reliable.
-          autoOutcomePromise = fetchWithRetry('/api/read-outcome', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              image: entryAnchorBase64,
-              rightSliceFallback: rightSliceBase64,   // backend can use as second opinion
-              encryptedSystemTokens
-            })
-          })
-          .then(r => r.json())
-          .catch(e => { 
-            console.error('AutoOutcome error:', e); 
-            return null; 
+          const result = await runSingleAnalysis({
+            imageDataUrl: finalImageToAnalyze!,
+            stock: stockName,
+            graphTimeframe,
+            investmentDuration,
+            investmentAmount: investmentAmount as string,
+            profitabilityPercent: profitabilityPercent as string,
+            techniquesList,
+            encryptedSystemTokens,
+            signal: controller.signal,
+            onProgress: setAnalysisStep,
+            onJudgeLogs: setJudgeLogs,
+            isTestMode: mode === 'test'
           });
-        }
 
-        const base64Data = finalImageForAnalysis.split(',')[1];
-        
-        setJudgeLogs({
-          judge1: { text: "Initializing Deep Scan...", status: 'active' },
-          judge2: { text: "Initializing Deep Scan...", status: 'active' },
-          judge3: { text: "Initializing Deep Scan...", status: 'active' },
-          judge4: { text: "Initializing Deep Scan...", status: 'active' },
-          system: { text: "Injecting global context...", status: 'active' }
-        });
+          clearTimeout(timeoutId);
+          setLoading(false);
+          setIsBusy(false);
 
-      // 1. START DATA FETCH
-      const apiCall = fetchWithRetry('/api/debate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          image: base64Data,
-          symbol: stockName,
-          timeframe: graphTimeframe,
-          investment: {
-            amount: investmentAmount,
-            duration: investmentDuration,
-            profit: profitabilityPercent
-          },
-          structuralPriors: `Macro context for ${stockName} on ${graphTimeframe} timeframe.`,
-          geometricOracles: "Standard geometric extraction.",
-          techniqueData: techniquesList,
-          encryptedSystemTokens
-        }),
-        signal: controller.signal
-      });
-      // Attach a dummy catch handler to prevent 'unhandledrejection' events
-      // if the fetch fails while the simulation loop below is still running.
-      apiCall.catch(() => {});
+          setJudgeLogs({
+            judge1: { text: `Bull: ${(result.analysis.bull?.reasoning || "Analyzing...").substring(0, 30)}...`, status: 'done' },
+            judge2: { text: `Bear: ${(result.analysis.bear?.reasoning || "Analyzing...").substring(0, 30)}...`, status: 'done' },
+            judge3: { text: `Risk: ${(result.analysis.skeptic?.riskVerdict || result.analysis.skeptic?.skepticVerdict || "Analyzing...").substring(0, 30)}...`, status: 'done' },
+            judge4: { text: `Boundary: ${result.analysis.judge?.ruling?.substring(0, 30) || "Detected"}...`, status: 'done' },
+            system: { text: `${result.analysis.techUsedCount} Patterns Identified ✅`, status: 'done' }
+          });
 
-      // 2. RUN SIMULATION (Progressively show what judges are doing)
-      for (let i = 0; i <= 3; i++) {
-        setJudgeLogs({
-          judge1: { text: JUDGE_TASKS.judge1[i], status: 'active' },
-          judge2: { text: JUDGE_TASKS.judge2[i], status: 'active' },
-          judge3: { text: JUDGE_TASKS.judge3[i], status: 'active' },
-          judge4: { text: JUDGE_TASKS.judge4[i], status: 'active' },
-          system: { text: JUDGE_TASKS.system[i], status: 'active' },
-        });
-        await new Promise(r => setTimeout(r, 2000));
-      }
+          setAnalysisStep(`Analysis Complete: ${result.analysis.techUsedCount}/${techniquesList.length} Techniques Found`);
 
-      setAnalysisStep(`FINALIZING VERDICT (${techniquesList.length} TECHNIQUES AUDITED)`);
-      setJudgeLogs({
-        judge1: { text: JUDGE_TASKS.judge1[4], status: 'active' },
-        judge2: { text: JUDGE_TASKS.judge2[4], status: 'active' },
-        judge3: { text: JUDGE_TASKS.judge3[4], status: 'active' },
-        judge4: { text: JUDGE_TASKS.judge4[4], status: 'active' },
-        system: { text: "Simultaneously synthesizing neural nodes...", status: 'active' },
-      });
+          if (mode === 'test') {
+            setTestModeRightSlice(result.testModeRightSlice);
+            setTestModeLeftSlice(result.finalImageForAnalysis);
+            setAutoGradeReason(result.reason);
+            setAutoGradeConfidence(result.confidence);
+            setAutoGradeRawOutcome(result.rawOutcome || '');
 
-      const minTimer = new Promise(r => setTimeout(r, 7000));
-      const [response, , autoOutcomeResult] = await Promise.all([
-        apiCall, 
-        minTimer,
-        autoOutcomePromise || Promise.resolve(null)
-      ]) as [Response, any, any];
-      clearTimeout(timeoutId);
-
-      const contentType = response.headers.get('content-type');
-      if (!response.ok) {
-        let errorMsg = `Server Error: ${response.status}`;
-        try {
-          if (contentType && contentType.includes('application/json')) {
-            const err = await response.json();
-            errorMsg = err.error || errorMsg;
-          } else {
-            const text = await response.text();
-            console.error("Non-JSON Error Response:", text.substring(0, 500));
-            errorMsg = `Server Error (${response.status}): The backend returned an invalid response.`;
-          }
-        } catch (e) {
-          console.error("Error parsing error response:", e);
-        }
-        throw new Error(errorMsg);
-      }
-
-      if (!contentType || !contentType.includes('application/json')) {
-        const text = await response.text();
-        console.error("Expected JSON but got:", text.substring(0, 500));
-        
-        // Extract title or body from HTML if possible
-        const titleMatch = text.match(/<title>(.*?)<\/title>/i);
-        const title = titleMatch ? titleMatch[1] : null;
-        
-        if (title) {
-          throw new Error(`Server Error (${response.status}): ${title}`);
-        }
-        throw new Error(`Server Error (${response.status}): The backend returned an unexpected HTML response. This usually happens during a server restart or timeout.`);
-      }
-
-      const data = await response.json();
-
-      if (data && data.judge) {
-        setLoading(false); // CLOSE LOADING IMMEDIATELY ON SUCCESS
-        setIsBusy(false);
-        setJudgeLogs({
-          judge1: { text: `Bull: ${(data.bull?.reasoning || "Analyzing...").substring(0, 30)}...`, status: 'done' },
-          judge2: { text: `Bear: ${(data.bear?.reasoning || "Analyzing...").substring(0, 30)}...`, status: 'done' },
-          judge3: { text: `Risk: ${(data.skeptic?.riskVerdict || data.skeptic?.skepticVerdict || "Analyzing...").substring(0, 30)}...`, status: 'done' },
-          judge4: { text: `Boundary: ${data.judge?.ruling?.substring(0, 30) || "Detected"}...`, status: 'done' },
-          system: { text: `${data.techUsedCount} Patterns Identified ✅`, status: 'done' }
-        });
-        
-        setAnalysisStep(`Analysis Complete: ${data.techUsedCount}/${techniquesList.length} Techniques Found`);
-        
-        // Robust Direction Detection with Confidence Threshold
-        const rawWinner = (data.judge.winner || '').toUpperCase();
-        const rawSignal = (data.judge.tradeDetails?.signal || '').toUpperCase();
-        const finalConfidence = Number(data.judge.finalConfidence) || 0;
-        
-        let direction: 'UP' | 'DOWN' | 'NO_TRADE' = 'NO_TRADE';
-        
-        if (finalConfidence >= 70) {
-          if (rawWinner === 'BULL' || rawSignal === 'CALL' || rawSignal === 'UP') {
-            direction = 'UP';
-          } else if (rawWinner === 'BEAR' || rawSignal === 'PUT' || rawSignal === 'DOWN') {
-            direction = 'DOWN';
-          }
-        } else {
-          console.log(`Signal blocked: Confidence level (${finalConfidence}%) below threshold (70%)`);
-        }
-
-        setTradingDirection(direction);
-        
-        if (mode === 'camera') {
-          // Live Analysis: Arrow phase then Entry phase
-          setTradingPhase('WAITING_FOR_ENTRY');
-          if (direction === 'NO_TRADE') {
-            setAnalysisStep(finalConfidence < 70 ? `LOW CONFIDENCE (${finalConfidence}%) - NO TRADE` : 'CONFIRMING NO-TRADE SIGNAL...');
-          } else {
-            setAnalysisStep('HUNTING PERFECT ENTRY POINT...');
+            if (result.outcome === 'WIN' || result.outcome === 'LOSS') {
+              setTimeout(() => {
+                saveToStats(result.analysis, result.outcome);
+                setAutoGradeStatus('done');
+                setAnalysisStep(`AUTO-GRADED: Signal=${result.direction} | ${result.outcome === 'WIN' ? '✅ WIN' : '❌ LOSS'} (${result.confidence}%)`);
+              }, 800);
+            } else {
+              setAutoGradeStatus('failed');
+              setAnalysisStep(`AUTO-GRADE INCONCLUSIVE — please declare WIN or LOSS manually.`);
+            }
           }
           
-          await new Promise(r => setTimeout(r, 4000)); // Show arrows for 4 seconds
-          setTradingPhase('ENTRY_CONFIRMED');
-          setAnalysisStep(direction === 'NO_TRADE' ? 'SIGNAL ABORTED' : 'EXECUTE NOW!');
-          setScoutActive(true); // START THE FAST BACKGROUND TICKER
-        } else {
-          // Screenshot Analysis: Direct to Entry phase
-          setTradingPhase('ENTRY_CONFIRMED');
-          if (direction === 'NO_TRADE') {
-             setAnalysisStep(finalConfidence < 70 ? `LOW CONFIDENCE (${finalConfidence}%) - ABORTED` : 'SIGNAL ABORTED');
+          setTradingDirection(result.direction);
+          
+          if (mode === 'camera') {
+            setTradingPhase('WAITING_FOR_ENTRY');
+            setAnalysisStep(result.direction === 'NO_TRADE' ? (result.analysis.judge.finalConfidence < 70 ? `LOW CONFIDENCE (${result.analysis.judge.finalConfidence}%) - NO TRADE` : 'CONFIRMING NO-TRADE SIGNAL...') : 'HUNTING PERFECT ENTRY POINT...');
+            await new Promise(r => setTimeout(r, 4000));
+            setTradingPhase('ENTRY_CONFIRMED');
+            setAnalysisStep(result.direction === 'NO_TRADE' ? 'SIGNAL ABORTED' : 'EXECUTE NOW!');
+            setScoutActive(true);
           } else {
-             setAnalysisStep('SIGNAL CONFIRMED - EXECUTE NOW!');
-          }
-        }
-        
-        if (mode === 'test') {
-          const oc      = autoOutcomeResult?.outcome;
-          const confNum = Number(autoOutcomeResult?.confidence) || 0;
-          setAutoGradeReason(autoOutcomeResult?.reason || '');
-          setAutoGradeConfidence(confNum);
-          setAutoGradeRawOutcome(autoOutcomeResult?.rawOutcome || '');
-
-          let resolvedOutcome: 'UP' | 'DOWN' | null =
-            (oc === 'UP' || oc === 'DOWN') ? oc : null;
-
-          // RESCUE 1: re-call read-outcome on the plain right slice if the anchor
-          // slice was inconclusive
-          if (!resolvedOutcome && testModeRightSlice) {
-            try {
-              const r = await fetch('/api/read-outcome', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ image: testModeRightSlice, encryptedSystemTokens })
-              });
-              const j = await r.json();
-              if (j.outcome === 'UP' || j.outcome === 'DOWN') resolvedOutcome = j.outcome;
-            } catch { /* fall through */ }
+            setTradingPhase('ENTRY_CONFIRMED');
+            setAnalysisStep(result.direction === 'NO_TRADE' ? (result.analysis.judge.finalConfidence < 70 ? `LOW CONFIDENCE (${result.analysis.judge.finalConfidence}%) - ABORTED` : 'SIGNAL ABORTED') : 'SIGNAL CONFIRMED - EXECUTE NOW!');
           }
 
-          if (resolvedOutcome) {
-            const isWin =
-              (direction === 'UP'   && resolvedOutcome === 'UP') ||
-              (direction === 'DOWN' && resolvedOutcome === 'DOWN');
-            setTimeout(() => {
-              saveToStats(data, isWin ? 'WIN' : 'LOSS');
-              setAutoGradeStatus('done');
-              setAnalysisStep(
-                `AUTO-GRADED: Signal=${direction} | Market=${resolvedOutcome} | ` +
-                `${isWin ? '✅ WIN' : '❌ LOSS'} (${confNum}%)`
-              );
-            }, 800);
-          } else {
-            setAutoGradeStatus('failed');
-            setAnalysisStep(`AUTO-GRADE INCONCLUSIVE — please declare WIN or LOSS manually.`);
+          setAnalysis(result.analysis);
+
+          setTimeout(() => {
+            setTradingPhase('IDLE');
+            setAnalysisStep('LIVE TICK SCOUT ACTIVE');
+            if (mode !== 'test') setTradingDirection(null);
+          }, 6000);
+
+        } catch (error: any) {
+          clearTimeout(timeoutId);
+          let msg = error.message || "Unknown error";
+          const lowerMsg = msg.toLowerCase();
+          
+          if (error.name === 'AbortError' || lowerMsg.includes('aborted') || lowerMsg.includes('abort')) {
+            msg = "Analysis timed out (360s limit). The models are deep in thought. Please try again.";
+          } else if (lowerMsg.includes('failed to fetch') || lowerMsg.includes('fetch failed') || lowerMsg.includes('network error') || lowerMsg.includes('load failed')) {
+            msg = "Network connection dropped (took too long or backend reset). Please try again or use a smaller chart timeframe.";
           }
-        }
-
-        setAnalysis(data);
-        
-        // Return phase back to idle after display, but keep scout running until reset 
-        setTimeout(() => {
-           setTradingPhase('IDLE');
-           setAnalysisStep('LIVE TICK SCOUT ACTIVE');
-           if (mode !== 'test') { // Guard against clobbering in test mode
-             setTradingDirection(null);
-           }
-        }, 6000);
-
-      } else {
-        throw new Error("Analysis failed. Arbitrator did not return a valid decision.");
-      }
-
-    } catch (error: any) {
-      clearTimeout(timeoutId);
-      let msg = error.message || "Unknown error";
-      const lowerMsg = msg.toLowerCase();
-      
-      if (error.name === 'AbortError' || lowerMsg.includes('aborted') || lowerMsg.includes('abort')) {
-        msg = "Analysis timed out (360s limit). The models are deep in thought. Please try again.";
-      } else if (lowerMsg.includes('failed to fetch') || lowerMsg.includes('fetch failed') || lowerMsg.includes('network error') || lowerMsg.includes('load failed')) {
-        msg = "Network connection dropped (took too long or backend reset). Please try again or use a smaller chart timeframe.";
-      }
-      console.error("Analysis Debug Info:", msg);
-      setAnalysisError(msg);
-      setTradingPhase('IDLE');
-      setLoading(false);
-      setIsBusy(false);
+          console.error("Analysis Debug Info:", msg);
+          setAnalysisError(msg);
+          setTradingPhase('IDLE');
+          setLoading(false);
+          setIsBusy(false);
         }
       })().catch(console.error);
     }, 10);
@@ -1080,20 +806,20 @@ export function LiveAnalysis() {
              <View style={tw`flex-row flex-wrap justify-between items-center gap-2 mb-3`}>
                 <Text style={tw`text-[8px] font-black text-[#4B5570] uppercase tracking-widest`}>Chart Feed</Text>
                 <View style={tw`flex-row flex-wrap bg-black bg-opacity-20 rounded-lg p-0.5 border border-white border-opacity-10`}>
-                   {(['camera', 'upload', 'test'] as const).map((m) => (
+                   {(['camera', 'upload', 'test', 'bulk'] as const).map((m) => (
                      <Pressable
                        key={m}
                        onPress={() => setMode(m)}
                        style={({ pressed }) => [tw`px-3 py-1 rounded-md flex-row items-center`, mode === m ? tw`bg-[#D9B382]` : tw`bg-transparent`, { opacity: pressed ? 0.7 : 1 }]}
                     >
-                      {m === 'camera' ? <Camera size={12} color={mode === m ? '#1A1308' : '#4B5570'} /> : m === 'upload' ? <Upload size={12} color={mode === m ? '#1A1308' : '#4B5570'} /> : <Activity size={12} color={mode === m ? '#1A1308' : '#4B5570'} />}
+                      {m === 'camera' ? <Camera size={12} color={mode === m ? '#1A1308' : '#4B5570'} /> : m === 'upload' ? <Upload size={12} color={mode === m ? '#1A1308' : '#4B5570'} /> : m === 'bulk' ? <Layers size={12} color={mode === m ? '#1A1308' : '#4B5570'} /> : <Activity size={12} color={mode === m ? '#1A1308' : '#4B5570'} />}
                       <Text style={[tw`ml-1.5 text-[8px] font-black uppercase`, mode === m ? tw`text-[#1A1308]` : tw`text-[#4B5570]`]}>{m}</Text>
                     </Pressable>
                   ))}
                </View>
             </View>
 
-            {mode === 'camera' ? (
+            {mode === 'camera' && (
                <View style={tw`w-full bg-black bg-opacity-20 rounded-xl overflow-hidden border border-white border-opacity-10 items-center justify-center`}>
                  {Platform.OS === 'web' && (
                    <video 
@@ -1140,7 +866,9 @@ export function LiveAnalysis() {
                    </View>
                  )}
                </View>
-            ) : (
+            )}
+            
+            {(mode === 'upload' || mode === 'test') && (
               <Pressable
                 onPress={handlePickImage}
                 style={({ pressed }) => [
@@ -1158,6 +886,10 @@ export function LiveAnalysis() {
                   </View>
                 )}
               </Pressable>
+            )}
+
+            {mode === 'bulk' && (
+              <BulkTestPanel techniquesList={techniquesList} encryptedSystemTokens={encryptedSystemTokens} saveToStats={saveToStats} />
             )}
         </View>
 

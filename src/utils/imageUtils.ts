@@ -274,3 +274,35 @@ export const createTemporalDelta = (currentBase64: string, cachedBase64: string)
     img2.src = `data:image/jpeg;base64,${currentBase64}`;
   });
 };
+
+
+export const downscaleImage = async (dataUrl: string, maxDim: number = 800): Promise<string> => {
+  return new Promise((resolve) => {
+    if (typeof window === 'undefined') return resolve(dataUrl);
+    const img = new window.Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      let { width, height } = img;
+      if (width > maxDim || height > maxDim) {
+        if (width > height) {
+          height = (height / width) * maxDim;
+          width = maxDim;
+        } else {
+          width = (width / height) * maxDim;
+          height = maxDim;
+        }
+      }
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.fillStyle = 'black'; // Fill background
+        ctx.fillRect(0, 0, width, height);
+        ctx.drawImage(img, 0, 0, width, height);
+      }
+      resolve(canvas.toDataURL('image/jpeg', 0.88));
+    };
+    img.onerror = () => resolve(dataUrl); 
+    img.src = dataUrl;
+  });
+};

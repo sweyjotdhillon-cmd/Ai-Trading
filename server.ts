@@ -57,7 +57,7 @@ function decryptTokens(encryptedText: string): string[] {
     let decrypted = decipher.update(encrypted);
     decrypted = Buffer.concat([decrypted, decipher.final()]);
     return JSON.parse(decrypted.toString());
-  } catch (e) {
+  } catch {
     console.error("Token decryption failed", e);
     return [];
   }
@@ -634,7 +634,7 @@ JUDGE 4 (Boundary Reversal) Bias: ${boundaryResult.label} -> ALREADY CALCULATED 
         (async () => {
           try {
             return await safeCall(bullPrompt, undefined, true, isHighReq);
-          } catch (e) {
+          } catch {
             console.error("[DEBATE] Bull Agent failed permanently:", e);
             return null;
           }
@@ -643,7 +643,7 @@ JUDGE 4 (Boundary Reversal) Bias: ${boundaryResult.label} -> ALREADY CALCULATED 
           try {
             await new Promise(r => setTimeout(r, 6000)); // 6s stagger
             return await safeCall(bearPrompt, undefined, true, isHighReq);
-          } catch (e) {
+          } catch {
             console.error("[DEBATE] Bear Agent failed permanently:", e);
             return null;
           }
@@ -652,7 +652,7 @@ JUDGE 4 (Boundary Reversal) Bias: ${boundaryResult.label} -> ALREADY CALCULATED 
           try {
             await new Promise(r => setTimeout(r, 12000)); // 12s stagger
             return await safeCall(skepticPrompt, undefined, true, isHighReq);
-          } catch (e) {
+          } catch {
             console.error("[DEBATE] Skeptic Agent failed permanently:", e);
             return null;
           }
@@ -1077,6 +1077,65 @@ ${JSON.stringify(debateData, null, 2)}
   // Catch-all for unhandled API routes to prevent fallback to HTML index
   app.use("/api", (req, res) => {
     res.status(404).json({ error: `Route ${req.method} ${req.url} not found on this server.` });
+  });
+
+  // --- New Endpoint: AUTOPSY SUMMARY (Master Narrative for Batch Runs) ---
+  app.post("/api/autopsy-summary", async (req, res) => {
+    try {
+      await verifyAdminToken(req.headers.authorization);
+      const { allLosses } = req.body; // Array of LossAutopsy JSON results
+
+      if (!allLosses || typeof allLosses !== 'object' || allLosses.length === 0) {
+         return res.json({
+           title: 'No Data',
+           narrative: 'No loss items to summarize.',
+           coreWeakness: 'N/A',
+           recommendedAction: 'N/A'
+         });
+      }
+
+      console.log(`Generating Master Loss Autopsy for ${allLosses.length} losses...`);
+
+      const promptStr = `
+You are the AI Trading Chief Risk Officer.
+You are given an array of JSON objects representing individual "Loss Autopsies" from a recent batch test.
+Your job is to identify the COMMON THREADS across all these losses.
+
+AUTOPISES DATA:
+${JSON.stringify(allLosses)}
+
+Output exactly valid JSON without backticks or markdown, matching this TypeScript interface:
+{
+  "title": string; // catchy title for the systematic failure (e.g. 'False Breakout Bias')
+  "narrative": string; // 2-3 paragraph explanation of the recurring theme
+  "coreWeakness": string; // The single biggest flaw in the AI's current logic
+  "recommendedAction": string; // A specific instruction on how to fix the prompts or judging rules
+}
+`;
+
+      const summaryText = await callGeminiWithFallback(
+        promptStr, 
+        req.body.encryptedSystemTokens || ''
+      );
+
+      let parsed = {};
+      try {
+         parsed = JSON.parse(summaryText.replace(/\r\n/g, '\n').replace(/^\s*\\?```[a-z]*\n/i, '').replace(/\n\\?```\s*$/, '').trim());
+      } catch {
+         parsed = {
+           title: 'Parsing Error',
+           narrative: 'Failed to parse JSON: ' + summaryText,
+           coreWeakness: 'N/A',
+           recommendedAction: 'Check logs'
+         };
+      }
+
+      res.json(parsed);
+
+    } catch (e: any) {
+      console.error('autopsy-summary error:', e);
+      res.status(500).json({ error: e.message || 'Autopsy summary failed' });
+    }
   });
 
   // Global Error Handler (Keep at bottom of API routes, before Vite/Static)

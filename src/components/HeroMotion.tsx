@@ -75,8 +75,7 @@ export function HeroMotion({ onStart }: HeroMotionProps) {
                   className={`text-6xl sm:text-7xl md:text-8xl font-black uppercase text-center leading-[0.9] pb-2 ${
                     isLast ? "bg-clip-text text-transparent bg-[length:200%_auto] animate-shimmer" : "text-[#E8ECF4]"
                   }`}
-                  style={isLast ? { backgroundImage: "linear-gradient(90deg, #A67C52, #E8D5B5, #D9B382, #A67C52)" } : {}}
-                  style={{ fontFamily: "'Anton', sans-serif" }}
+                  style={{ fontFamily: "'Anton', sans-serif", ...(isLast ? { backgroundImage: "linear-gradient(90deg, #A67C52, #E8D5B5, #D9B382, #A67C52)" } : {}) }}
                 >
                   {line}
                 </motion.h1>

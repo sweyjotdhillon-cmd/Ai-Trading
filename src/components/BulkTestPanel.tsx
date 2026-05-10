@@ -1,0 +1,539 @@
+import { quotaTracker } from '../utils/quotaTracker';
+import React, { useState, useRef, useEffect } from 'react';
+import { View, Text, Pressable, TextInput, ScrollView } from 'react-native';
+import tw from 'twrnc';
+import { motion } from 'motion/react';
+import { FileJson, UploadCloud, Play, AlertTriangle, Activity,  } from 'lucide-react';
+import { BatchManifest, BatchManifestEntry, validateBatchManifest } from '../types/batchManifest';
+
+import { BatchAutopsyReport } from './BatchAutopsyReport';
+
+export type MasterAutopsySummary = {
+  title: string;
+  narrative: string;
+  coreWeakness: string;
+  recommendedAction: string;
+};
+
+import { runSingleAnalysis } from '../utils/singleAnalysis';
+
+interface BulkTestPanelProps {
+  techniquesList: string[];
+  encryptedSystemTokens?: string;
+  saveToStats: (analysisData: any, outcome: 'WIN' | 'LOSS') => void;
+}
+
+export type BatchRunStatus = 'Pending' | 'Running' | 'WIN' | 'LOSS' | 'INCONCLUSIVE' | 'Error';
+
+export interface BatchRun {
+  entry: BatchManifestEntry;
+  file?: File;
+  status: BatchRunStatus;
+  result?: any;
+  error?: string;
+}
+
+export function BulkTestPanel({
+  techniquesList,
+  encryptedSystemTokens,
+  saveToStats
+}: BulkTestPanelProps) {
+  const [tab, setTab] = useState<'build' | 'run'>('build');
+  
+  // Tab 1 state
+  const [images, setImages] = useState<File[]>([]);
+  const [defaultStock, setDefaultStock] = useState('Bitcoin');
+  const [defaultTimeframe, setDefaultTimeframe] = useState('5 minutes');
+  const [defaultDuration, setDefaultDuration] = useState('5m');
+  const [defaultInvestment, setDefaultInvestment] = useState('100');
+    const [defaultPayout, setDefaultPayout] = useState('85');
+  
+  const handleDragOver = (e: React.DragEvent) => e.preventDefault();
+  
+  const handleDropImages = (e: React.DragEvent) => {
+    e.preventDefault();
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const filesArray = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
+      setImages(prev => [...prev, ...filesArray]);
+    }
+  };
+
+  const handleGenerateManifest = () => {
+    if (images.length === 0) return;
+    
+    const entries: BatchManifestEntry[] = images.map(file => ({
+      imageFilename: file.name,
+      stock: defaultStock,
+      graphTimeframe: defaultTimeframe,
+      investmentDuration: defaultDuration,
+      investmentAmount: Number(defaultInvestment),
+      profitabilityPercent: Number(defaultPayout),
+      expectedOutcome: 'UNKNOWN'
+    }));
+
+    const manifest: BatchManifest = {
+      version: '1.0',
+      createdAt: new Date().toISOString(),
+      entries
+    };
+
+    const blob = new Blob([JSON.stringify(manifest, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `manifest_${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Tab 2 State
+  const [queue, setQueue] = useState<BatchRun[]>([]);
+  const [manifestErrors, setManifestErrors] = useState<string[]>([]);
+  const [isQueueRunning, setIsQueueRunning] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  
+      const abortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    // Attempt hydration from sessionStorage
+    try {
+      const existing = sessionStorage.getItem('bulk_queue_state');
+      if (existing) {
+         setQueue(JSON.parse(existing));
+         setTab('run'); // switch to run tab if we have a persisted session
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => {
+    if (queue.length > 0) {
+       sessionStorage.setItem('bulk_queue_state', JSON.stringify(queue.map(q => ({
+          ...q,
+          file: undefined // Cannot persist File objects
+       }))));
+    }
+  }, [queue]);
+
+  const loadManifest = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const json = JSON.parse(event.target?.result as string);
+        const { valid, errors } = validateBatchManifest(json);
+        if (!valid) {
+          setManifestErrors(errors);
+        } else {
+          setManifestErrors([]);
+          const manifest = json as BatchManifest;
+          setQueue(manifest.entries.map(entry => ({
+            entry,
+            status: 'Pending'
+          })));
+        }
+      } catch (err: any) {
+        setManifestErrors([`Failed to parse JSON: ${err.message}`]);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const loadRunImages = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+    const fileArray = Array.from(files);
+    
+    setQueue(prev => {
+      const updated = [...prev];
+      let hasError = false;
+      const missingFiles: string[] = [];
+
+      for (let i = 0; i < updated.length; i++) {
+        const match = fileArray.find(f => f.name === updated[i].entry.imageFilename);
+        if (match) {
+          updated[i].file = match;
+        } else {
+          hasError = true;
+          missingFiles.push(updated[i].entry.imageFilename);
+        }
+      }
+      if (hasError) {
+         setManifestErrors([`Missing images in selection: ${missingFiles.slice(0, 3).join(', ')}${missingFiles.length > 3 ? '...' : ''}`]);
+      } else {
+         setManifestErrors(errs => errs.filter(e => !e.startsWith('Missing images')));
+      }
+      return updated;
+    });
+  };
+
+  const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const runBatch = async () => {
+    if (queue.length === 0 || manifestErrors.length > 0) return;
+    
+    // Quota Check
+    if (!quotaTracker.check('batch_run', queue.length)) {
+       alert('Insufficient quota to run this batch.');
+       return;
+    }
+    
+    const missing = queue.filter(q => !q.file && q.status === 'Pending');
+    if (missing.length > 0) {
+      alert(`Missing ${missing.length} files. Please select them first.`);
+      return;
+    }
+
+    setIsQueueRunning(true);
+    setIsPaused(false);
+    abortControllerRef.current = new AbortController();
+
+    for (let i = 0; i < queue.length; i++) {
+      if (abortControllerRef.current?.signal.aborted || isPaused) break;
+      
+      const item = queue[i];
+      if (item.status === 'WIN' || item.status === 'LOSS' || item.status === 'INCONCLUSIVE') {
+        continue; // skip completed
+      }
+
+      setQueue(q => q.map((r, idx) => idx === i ? { ...r, status: 'Running' } : r));
+
+      try {
+        let imageDataUrl = "";
+        
+        if (item.file) {
+           imageDataUrl = await fileToBase64(item.file);
+        } else if (item.result?.imageDataUrl) {
+           imageDataUrl = item.result.imageDataUrl; // recover from persistance? unlikely but safe
+        } else {
+           throw new Error("Missing image file for entry");
+        }
+
+        const result = await runSingleAnalysis({
+          imageDataUrl,
+          stock: item.entry.stock,
+          graphTimeframe: item.entry.graphTimeframe,
+          investmentDuration: item.entry.investmentDuration,
+          investmentAmount: String(item.entry.investmentAmount || 100),
+          profitabilityPercent: String(item.entry.profitabilityPercent || 85),
+          techniquesList: item.entry.techniqueOverrides || techniquesList,
+          encryptedSystemTokens,
+          signal: abortControllerRef.current.signal,
+          isTestMode: true
+        });
+
+        if (result.outcome === 'WIN' || result.outcome === 'LOSS') {
+           saveToStats(result.analysis, result.outcome);
+        }
+        
+        setQueue(q => q.map((r, idx) => idx === i ? { ...r, status: result.outcome, result } : r));
+      } catch (err: any) {
+        if (abortControllerRef.current?.signal.aborted) {
+          setQueue(q => q.map((r, idx) => idx === i ? { ...r, status: 'Pending' } : r));
+          break;
+        }
+        setQueue(q => q.map((r, idx) => idx === i ? { ...r, status: 'Error', error: err.message } : r));
+      }
+
+      // Small delay between calls to avoid banhammer
+      await new Promise(r => setTimeout(r, 1000));
+    }
+
+
+    setIsQueueRunning(false);
+
+    // After running, fetch the latest queue state logically
+    setQueue(currentQueue => {
+       const losses = currentQueue.filter(q => q.status === 'LOSS' && q.result);
+       if (losses.length > 0) {
+          runMasterAutopsyChain(losses);
+       }
+       return currentQueue;
+    });
+
+  };
+
+
+  const [autopsyingBatch, setAutopsyingBatch] = useState(false);
+  const [masterSummary, setMasterSummary] = useState<MasterAutopsySummary | null>(null);
+
+  const runMasterAutopsyChain = async (losses: BatchRun[]) => {
+     setAutopsyingBatch(true);
+     try {
+       const individualAutopsies = [];
+       // Chain individual autopsies
+       for (const loss of losses) {
+          const res = await fetch('/api/autopsy', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+               analysisData: loss.result.analysis, 
+               encryptedSystemTokens 
+            })
+          });
+          if (res.ok) {
+             const data = await res.json();
+             individualAutopsies.push(data);
+          }
+       }
+
+       if (individualAutopsies.length > 0) {
+          const sumRes = await fetch('/api/autopsy-summary', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+               allLosses: individualAutopsies,
+               encryptedSystemTokens
+            })
+          });
+          if (sumRes.ok) {
+             const summaryData = await sumRes.json();
+             setMasterSummary(summaryData);
+          }
+       }
+     } catch (e) {
+       console.error("Master autopsy chain failed:", e);
+     } finally {
+       setAutopsyingBatch(false);
+     }
+  };
+
+  const abortBatch = () => {
+    if (abortControllerRef.current) {
+       abortControllerRef.current.abort();
+    }
+    setIsQueueRunning(false);
+  };
+
+  const getStatusColor = (status: BatchRunStatus) => {
+    switch(status) {
+      case 'Running': return 'text-yellow-400';
+      case 'WIN': return 'text-green-500';
+      case 'LOSS': return 'text-red-500';
+      case 'Error': return 'text-orange-500';
+      default: return 'text-white text-opacity-50';
+    }
+  };
+
+  const clearQueue = () => {
+    if (isQueueRunning) return;
+    setQueue([]);
+    setManifestErrors([]);
+    sessionStorage.removeItem('bulk_queue_state');
+  };
+
+  return (
+    <View style={tw`w-full bg-black bg-opacity-20 rounded-2xl border border-white border-opacity-10 overflow-hidden`}>
+      {/* Tabs */}
+      <View style={tw`flex-row border-b border-white border-opacity-10`}>
+        <Pressable 
+          onPress={() => !isQueueRunning && setTab('build')}
+          style={tw`flex-1 py-4 items-center justify-center border-b-2 \${tab === 'build' ? 'border-[#D9B382]' : 'border-transparent'}`}
+        >
+          <Text style={tw`text-xs font-black tracking-widest \${tab === 'build' ? 'text-[#D9B382]' : 'text-white text-opacity-50'}`}>1. BUILD MANIFEST</Text>
+        </Pressable>
+        <Pressable 
+          onPress={() => !isQueueRunning && setTab('run')}
+          style={tw`flex-1 py-4 items-center justify-center border-b-2 \${tab === 'run' ? 'border-[#D9B382]' : 'border-transparent'}`}
+        >
+          <Text style={tw`text-xs font-black tracking-widest \${tab === 'run' ? 'text-[#D9B382]' : 'text-white text-opacity-50'}`}>2. RUN BATCH</Text>
+        </Pressable>
+      </View>
+
+      <View style={tw`p-6`}>
+        {tab === 'build' ? (
+          <View style={tw`gap-6`}>
+            {/* Same Tab 1 as before */}
+            <div 
+              onDragOver={handleDragOver} 
+              onDrop={handleDropImages}
+              className="border-2 border-dashed border-white/10 rounded-xl p-8 flex flex-col items-center justify-center bg-black/20 hover:border-[#D9B382]/30 transition-colors cursor-pointer"
+            >
+              <UploadCloud size={32} color="#D9B382" className="opacity-80 mb-4" />
+              <Text style={tw`text-white font-black text-sm uppercase tracking-widest mb-2`}>
+                Drag & Drop Images
+              </Text>
+              <Text style={tw`text-white text-opacity-50 text-xs text-center px-4`}>
+                Drop chart screenshots here to generate a matching JSON manifest sequence.
+              </Text>
+              {images.length > 0 && (
+                <View style={tw`mt-4 bg-[#D9B382] bg-opacity-10 py-1 px-3 rounded-md`}>
+                  <Text style={tw`text-[#D9B382] font-black text-[10px]`}>{images.length} IMAGES LOADED</Text>
+                </View>
+              )}
+            </div>
+
+            <View style={tw`flex-row flex-wrap gap-4`}>
+              <View style={tw`flex-1 min-w-[120px]`}>
+                <Text style={tw`text-[10px] font-black text-white text-opacity-60 mb-1 uppercase tracking-widest`}>Asset</Text>
+                <TextInput
+                  value={defaultStock}
+                  onChangeText={setDefaultStock}
+                  style={tw`bg-black bg-opacity-30 border border-white border-opacity-10 rounded-lg h-10 px-3 text-white text-xs`}
+                  placeholderTextColor="rgba(255,255,255,0.3)"
+                />
+              </View>
+              <View style={tw`flex-1 min-w-[120px]`}>
+                <Text style={tw`text-[10px] font-black text-white text-opacity-60 mb-1 uppercase tracking-widest`}>Timeframe</Text>
+                <TextInput
+                  value={defaultTimeframe}
+                  onChangeText={setDefaultTimeframe}
+                  style={tw`bg-black bg-opacity-30 border border-white border-opacity-10 rounded-lg h-10 px-3 text-white text-xs`}
+                />
+              </View>
+              <View style={tw`flex-1 min-w-[120px]`}>
+                <Text style={tw`text-[10px] font-black text-white text-opacity-60 mb-1 uppercase tracking-widest`}>Duration</Text>
+                <TextInput
+                  value={defaultDuration}
+                  onChangeText={setDefaultDuration}
+                  style={tw`bg-black bg-opacity-30 border border-white border-opacity-10 rounded-lg h-10 px-3 text-white text-xs`}
+                />
+              </View>
+              <View style={tw`flex-1 min-w-[120px]`}>
+                <Text style={tw`text-[10px] font-black text-white text-opacity-60 mb-1 uppercase tracking-widest`}>Investment $</Text>
+                <TextInput
+                  value={defaultInvestment}
+                  onChangeText={setDefaultInvestment}
+                  style={tw`bg-black bg-opacity-30 border border-white border-opacity-10 rounded-lg h-10 px-3 text-white text-xs`}
+                />
+              </View>
+              <View style={tw`flex-1 min-w-[120px]`}>
+                <Text style={tw`text-[10px] font-black text-white text-opacity-60 mb-1 uppercase tracking-widest`}>Payout %</Text>
+                <TextInput
+                  value={defaultPayout}
+                  onChangeText={setDefaultPayout}
+                  style={tw`bg-black bg-opacity-30 border border-white border-opacity-10 rounded-lg h-10 px-3 text-white text-xs`}
+                />
+              </View>
+            </View>
+
+            <View style={tw`pt-4 border-t border-white border-opacity-10`}>
+              <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                <Pressable 
+                  onPress={handleGenerateManifest}
+                  disabled={images.length === 0}
+                  style={tw`flex-row items-center justify-center bg-[#D9B382] \${images.length === 0 ? 'opacity-50' : 'opacity-100'} h-12 rounded-xl px-6`}
+                >
+                  <FileJson size={16} color="#1A1308" />
+                  <Text style={tw`text-[#1A1308] font-black text-xs uppercase tracking-widest ml-2`}>
+                    Download Manifest JSON
+                  </Text>
+                </Pressable>
+              </motion.div>
+            </View>
+          </View>
+        ) : (
+          <View style={tw`gap-6`}>
+             {queue.length === 0 ? (
+               <View style={tw`gap-4`}>
+                 <View style={tw`bg-black bg-opacity-30 border border-white border-opacity-10 rounded-xl p-6`}>
+                   <Text style={tw`text-white font-black text-[10px] uppercase tracking-widest mb-4`}>1. Load Manifest JSON</Text>
+                   <input type="file" accept=".json" onChange={loadManifest} className="text-white text-xs opacity-70" />
+                   {manifestErrors.map((err, i) => (
+                     <Text key={i} style={tw`text-red-400 text-xs mt-2`}>• {err}</Text>
+                   ))}
+                 </View>
+               </View>
+             ) : (
+               <View style={tw`gap-4`}>
+                  <View style={tw`flex-row justify-between items-center`}>
+                    <Text style={tw`text-white font-black text-[10px] uppercase tracking-widest`}>
+                      Queue ({queue.length} items)
+                    </Text>
+                    {manifestErrors.length > 0 && (
+                      <Text style={tw`text-red-400 text-[10px] font-bold`}>{manifestErrors[0]}</Text>
+                    )}
+                  </View>
+
+                  {/* Missing images check */}
+                  {queue.some(q => !q.file) && !isQueueRunning && (
+                    <View style={tw`bg-orange-500/10 border border-orange-500/30 rounded-xl p-4 flex-row items-center`}>
+                      <AlertTriangle size={16} color="#F97316" />
+                      <View style={tw`ml-3 flex-1`}>
+                        <Text style={tw`text-orange-400 font-bold text-xs mb-1`}>Missing image references</Text>
+                        <Text style={tw`text-white text-opacity-70 text-[10px]`}>Please select the images that map to the manifest.</Text>
+                      </View>
+                      <input type="file" multiple accept="image/*" onChange={loadRunImages} className="text-white text-xs opacity-0 absolute inset-0 cursor-pointer" />
+                      <View style={tw`bg-orange-500/20 px-3 py-1.5 rounded pr-4`}>
+                        <Text style={tw`text-orange-400 font-bold text-xs`}>Browse Images</Text>
+                      </View>
+                    </View>
+                  )}
+
+                  <ScrollView style={tw`max-h-64 border border-white border-opacity-10 rounded-xl bg-black bg-opacity-20`}>
+                    {queue.map((item, idx) => (
+                      <View key={idx} style={tw`flex-row items-center border-b border-white border-opacity-5 p-3 \${idx % 2 === 0 ? 'bg-transparent' : 'bg-white bg-opacity-5'}`}>
+                        <Text style={tw`text-white text-opacity-40 text-[10px] w-6`}>{(idx + 1).toString().padStart(2, '0')}</Text>
+                        <View style={tw`flex-1`}>
+                          <Text style={tw`text-white text-xs font-bold`} numberOfLines={1}>{item.entry.imageFilename}</Text>
+                          <Text style={tw`text-white text-opacity-50 text-[9px] uppercase tracking-widest mt-0.5`}>
+                            {item.entry.stock} • {item.entry.investmentDuration}
+                          </Text>
+                        </View>
+                        <View style={tw`px-3`}>
+                          <Text style={[tw`text-[10px] font-black uppercase tracking-widest`, tw(getStatusColor(item.status))]}>
+                            {item.status}
+                          </Text>
+                          {item.error && <Text style={tw`text-orange-400 text-[8px]`} numberOfLines={1}>{item.error.substring(0, 20)}</Text>}
+                        </View>
+                      </View>
+                    ))}
+                  </ScrollView>
+
+                  <View style={tw`flex-row gap-3 pt-2`}>
+                    {!isQueueRunning ? (
+                      <Pressable 
+                        onPress={runBatch}
+                        disabled={queue.some(q => !q.file && q.status === 'Pending') || manifestErrors.length > 0}
+                        style={({ pressed }) => [
+                           tw`flex-1 bg-[#D9B382] h-12 rounded-xl flex-row items-center justify-center p-3`, 
+                           { opacity: pressed || queue.some(q => !q.file && q.status === 'Pending') || manifestErrors.length > 0 ? 0.5 : 1 }
+                        ]}
+                      >
+                        <Play size={16} color="#1A1308" />
+                        <Text style={tw`text-[#1A1308] font-black text-xs uppercase tracking-widest ml-2`}>Run Batch Test</Text>
+                      </Pressable>
+                    ) : (
+                      <Pressable 
+                        onPress={abortBatch}
+                        style={({ pressed }) => [tw`flex-1 bg-red-500/20 border border-red-500/50 h-12 rounded-xl flex-row items-center justify-center`, { opacity: pressed ? 0.5 : 1 }]}
+                      >
+                        <Activity size={16} color="#EF4444" className="animate-pulse" />
+                        <Text style={tw`text-red-400 font-black text-xs uppercase tracking-widest ml-2`}>Abort Run</Text>
+                      </Pressable>
+                    )}
+                    
+                    {!isQueueRunning && queue.length > 0 && (
+                      <Pressable 
+                        onPress={clearQueue}
+                        style={({ pressed }) => [tw`bg-black bg-opacity-30 border border-white border-opacity-10 px-4 rounded-xl items-center justify-center`, { opacity: pressed ? 0.5 : 1 }]}
+                      >
+                        <Text style={tw`text-white text-opacity-50 font-black text-[10px] uppercase tracking-widest`}>Clear</Text>
+                      </Pressable>
+                    )}
+                  </View>
+
+                  {/* Auto-chained Master Loss Autopsy */}
+                  {(autopsyingBatch || masterSummary) && (
+                     <BatchAutopsyReport 
+                        summary={masterSummary} 
+                        loading={autopsyingBatch} 
+                        onClear={() => setMasterSummary(null)} 
+                     />
+                  )}
+               </View>
+             )}
+          </View>
+        )}
+      </View>
+    </View>
+  );
+}
