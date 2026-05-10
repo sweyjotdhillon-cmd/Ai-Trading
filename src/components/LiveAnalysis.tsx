@@ -140,6 +140,18 @@ export function LiveAnalysis() {
   const [autoGradeReason, setAutoGradeReason] = useState<string>('');
   const [autoGradeConfidence, setAutoGradeConfidence] = useState<number>(0);
   const [autoGradeRawOutcome, setAutoGradeRawOutcome] = useState<string>('');
+  const [statsData, setStatsData] = useState<any[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const existing = sessionStorage.getItem('stats_surface_data');
+        if (existing) return JSON.parse(existing).stats || [];
+      } catch {
+        // ignore
+      }
+    }
+    return [];
+  });
+  const [sessionIndex] = useState<number>(() => Math.floor(Math.random() * 1000));
 
   const fileInputRef = useRef<any>(null);
   const techInputRef = useRef<any>(null);
@@ -534,60 +546,70 @@ export function LiveAnalysis() {
         const optimizedImageForCrop = await downscaleImage(finalImageToAnalyze!);
 
         let finalImageForAnalysis = optimizedImageForCrop;
-        let rightSliceBase64: string | null = null;
         let autoOutcomePromise: Promise<any> | null = null;
 
         if (mode === 'test') setAutoGradeStatus('grading');
         if (mode === 'test' && Platform.OS === 'web' && optimizedImageForCrop) {
-           const parseDuration = parseTimeframeToMinutes(investmentDuration);
-           if (!isNaN(parseDuration)) {
-              const estimatedCandles = await autoDetectCandles(optimizedImageForCrop);
-              console.debug(`[TEST_MODE] rawDuration=${investmentDuration}, parseDuration=${parseDuration}m, detectedCandles=${estimatedCandles}, timeframe=${parseTimeframeToMinutes(graphTimeframe)}m`);
-              
-              try {
-                let ratio = 0.35; // default 35% minimum
-                const gDuration = parseTimeframeToMinutes(graphTimeframe);
-                if (!isNaN(parseDuration) && !isNaN(gDuration) && gDuration > 0) {
-                    ratio = Math.max(0.35, parseDuration / gDuration);
-                }
-                
-                const { leftSliceBase64, rightSliceBase64: rightSlice, cropRatio } = await cropRightByRatio(
-                  optimizedImageForCrop,
-                  ratio
-                );
-                
-                console.debug(`[TEST_MODE] cropRatio=${cropRatio.toFixed(3)}`);
-                finalImageForAnalysis = leftSliceBase64;
-                rightSliceBase64 = rightSlice;
-                setTestModeRightSlice(rightSlice);
-                setTestModeLeftSlice(leftSliceBase64);
-
-                autoOutcomePromise = fetchWithRetry('/api/read-outcome', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ image: rightSliceBase64, encryptedSystemTokens })
-                }).then(r => r.json());
-              } catch (err: any) {
-                console.error("[TEST_MODE] fail during crop:", err);
-                const reason = err?.message || 'Unknown error';
-                setAutoGradeReason(
-                  `CROP FAILED: ${reason}. Analysis was cancelled — retake screenshot and try again.`
-                );
-                // Stop analysis entirely — do not proceed with full uncropped image
-                setTradingPhase('IDLE');
-                setAnalysisStep('CROP FAILED — SEE ERROR BELOW');
-                setAutoGradeStatus('failed');
-                return; // EXIT handleAnalyze early
-              }
-           } else {
-             setAutoGradeReason(
-               `CROP FAILED: Could not parse investment duration "${investmentDuration}". Please enter a valid duration (e.g. "5m", "3m", "1m") and try again.`
-             );
-             setTradingPhase('IDLE');
-             setAnalysisStep('INVALID DURATION — SEE ERROR BELOW');
-             setAutoGradeStatus('failed');
-             return;
-           }
+          const parseDuration = parseTimeframeToMinutes(investmentDuration);
+          const gDuration     = parseTimeframeToMinutes(graphTimeframe);
+          
+          if (isNaN(parseDuration) || isNaN(gDuration) || gDuration <= 0) {
+            setAutoGradeReason(`CROP FAILED: bad duration "${investmentDuration}" / timeframe "${graphTimeframe}".`);
+            setTradingPhase('IDLE');
+            setAnalysisStep('INVALID DURATION');
+            setAutoGradeStatus('failed');
+            return;
+          }
+          
+          // Detect candles in view from the actual screenshot (was being thrown away before)
+          const detectedCandles = await autoDetectCandles(optimizedImageForCrop);
+          
+          // Two ratio strategies — pick whichever is larger, clamped 5%–40%.
+          // Strategy 1: duration-based  -> investmentDuration / graphTimeframe
+          // Strategy 2: candle-based    -> (durationMin / candleMin) / detectedCandles
+          const candleMinutes = gDuration / Math.max(1, detectedCandles);
+          const candlesToCut  = Math.max(1, Math.round(parseDuration / candleMinutes));
+          const ratioByDuration = parseDuration / gDuration;
+          const ratioByCandles  = candlesToCut / Math.max(1, detectedCandles);
+          let ratio = Math.max(ratioByDuration, ratioByCandles);
+          ratio = Math.max(0.05, Math.min(0.40, ratio));   // <-- NO 0.35 floor!
+          
+          console.debug(`[TEST_MODE] detectedCandles=${detectedCandles}, candlesToCut=${candlesToCut}, ` +
+                        `ratioByDuration=${ratioByDuration.toFixed(3)}, ratioByCandles=${ratioByCandles.toFixed(3)}, ` +
+                        `final=${ratio.toFixed(3)}`);
+          
+          let cropResult;
+          try {
+            cropResult = await cropRightByRatio(optimizedImageForCrop, ratio);
+          } catch (err: any) {
+            setAutoGradeReason(`CROP FAILED: ${err?.message || 'unknown'}.`);
+            setTradingPhase('IDLE');
+            setAnalysisStep('CROP FAILED');
+            setAutoGradeStatus('failed');
+            return;
+          }
+          
+          const { leftSliceBase64, rightSliceBase64, entryAnchorBase64 } = cropResult;
+          finalImageForAnalysis = leftSliceBase64;
+          setTestModeRightSlice(rightSliceBase64);
+          setTestModeLeftSlice(leftSliceBase64);
+          
+          // IMPORTANT: send the ANCHOR slice (entry candle + future) to the grader,
+          // not just the right slice. This is what makes WIN/LOSS reliable.
+          autoOutcomePromise = fetchWithRetry('/api/read-outcome', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              image: entryAnchorBase64,
+              rightSliceFallback: rightSliceBase64,   // backend can use as second opinion
+              encryptedSystemTokens
+            })
+          })
+          .then(r => r.json())
+          .catch(e => { 
+            console.error('AutoOutcome error:', e); 
+            return null; 
+          });
         }
 
         const base64Data = finalImageForAnalysis.split(',')[1];
@@ -649,7 +671,7 @@ export function LiveAnalysis() {
       const [response, , autoOutcomeResult] = await Promise.all([
         apiCall, 
         minTimer,
-        autoOutcomePromise ? autoOutcomePromise.catch(e => { console.error('AutoOutcome error:', e); return null; }) : Promise.resolve(null)
+        autoOutcomePromise || Promise.resolve(null)
       ]) as [Response, any, any];
       clearTimeout(timeoutId);
 
@@ -743,29 +765,44 @@ export function LiveAnalysis() {
         }
         
         if (mode === 'test') {
-          const oc = autoOutcomeResult?.outcome;
+          const oc      = autoOutcomeResult?.outcome;
           const confNum = Number(autoOutcomeResult?.confidence) || 0;
           setAutoGradeReason(autoOutcomeResult?.reason || '');
           setAutoGradeConfidence(confNum);
           setAutoGradeRawOutcome(autoOutcomeResult?.rawOutcome || '');
 
-          if (oc === 'UP' || oc === 'DOWN') {
+          let resolvedOutcome: 'UP' | 'DOWN' | null =
+            (oc === 'UP' || oc === 'DOWN') ? oc : null;
+
+          // RESCUE 1: re-call read-outcome on the plain right slice if the anchor
+          // slice was inconclusive
+          if (!resolvedOutcome && testModeRightSlice) {
+            try {
+              const r = await fetch('/api/read-outcome', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ image: testModeRightSlice, encryptedSystemTokens })
+              });
+              const j = await r.json();
+              if (j.outcome === 'UP' || j.outcome === 'DOWN') resolvedOutcome = j.outcome;
+            } catch { /* fall through */ }
+          }
+
+          if (resolvedOutcome) {
             const isWin =
-              (direction === 'UP'   && oc === 'UP') ||
-              (direction === 'DOWN' && oc === 'DOWN');
+              (direction === 'UP'   && resolvedOutcome === 'UP') ||
+              (direction === 'DOWN' && resolvedOutcome === 'DOWN');
             setTimeout(() => {
               saveToStats(data, isWin ? 'WIN' : 'LOSS');
               setAutoGradeStatus('done');
               setAnalysisStep(
-                `AUTO-GRADED: Signal=${direction} | Market=${oc} | ${isWin ? '✅ WIN' : '❌ LOSS'} (${confNum}%)`
+                `AUTO-GRADED: Signal=${direction} | Market=${resolvedOutcome} | ` +
+                `${isWin ? '✅ WIN' : '❌ LOSS'} (${confNum}%)`
               );
             }, 800);
           } else {
-            // INCONCLUSIVE or null -> hand back to user instead of dead-ending
             setAutoGradeStatus('failed');
-            setAnalysisStep(
-              `AUTO-GRADE INCONCLUSIVE — please declare WIN or LOSS manually.`
-            );
+            setAnalysisStep(`AUTO-GRADE INCONCLUSIVE — please declare WIN or LOSS manually.`);
           }
         }
 
@@ -1564,13 +1601,13 @@ export function LiveAnalysis() {
                   </View>
                 )}
 
-                {/* AUTO-GRADE SUCCESS */}
+                {/* OUTCOME SUCCESS (Either Auto or Manual) */}
                 {confirmedOutcome && (
                   <View style={tw`items-center`}>
                     <View style={tw`flex-row items-center mb-2`}>
                       <Zap size={14} color="#D9B382" style={tw`mr-2`} />
                       <Text style={tw`text-[#D9B382] text-[10px] font-black uppercase tracking-widest`}>
-                        AUTO-GRADED ({autoGradeConfidence || '—'}% conf)
+                        {autoGradeStatus === 'done' ? `AUTO-GRADED (${autoGradeConfidence || '—'}% conf)` : 'MANUALLY LOGGED'}
                       </Text>
                     </View>
                     <View style={tw`${confirmedOutcome === 'WIN' ? 'bg-green-600' : 'bg-red-600'} px-6 py-3 rounded-xl mb-3 flex-row items-center border border-white/20 shadow-xl`}>
@@ -1581,7 +1618,7 @@ export function LiveAnalysis() {
                         {confirmedOutcome}
                       </Text>
                     </View>
-                    {autoGradeReason && (
+                    {autoGradeReason && autoGradeStatus === 'done' && (
                       <Text style={tw`text-white/50 text-[11px] italic text-center px-4 mb-3`}>
                         “{autoGradeReason}”
                       </Text>
@@ -1598,15 +1635,17 @@ export function LiveAnalysis() {
                       </Pressable>
                     )}
                     {/* Override option in case user disagrees with the auto-grade */}
-                    <Pressable
-                      onPress={() => {
-                        setConfirmedOutcome(null);
-                        setAutoGradeStatus('failed');
-                      }}
-                      style={tw`mt-1`}
-                    >
-                      <Text style={tw`text-white/40 text-[10px] underline`}>Override this grade</Text>
-                    </Pressable>
+                    {autoGradeStatus === 'done' && (
+                      <Pressable
+                        onPress={() => {
+                          setConfirmedOutcome(null);
+                          setAutoGradeStatus('failed');
+                        }}
+                        style={tw`mt-1`}
+                      >
+                        <Text style={tw`text-white/40 text-[10px] underline`}>Override this grade</Text>
+                      </Pressable>
+                    )}
                   </View>
                 )}
 

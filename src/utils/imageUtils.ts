@@ -147,51 +147,66 @@ export function autoDetectCandles(imageSource: string): Promise<number> {
 }
 
 export function cropRightByRatio(
-  imageSource: string, 
+  imageSource: string,
   cropRatio: number
-): Promise<{ leftSliceBase64: string, rightSliceBase64: string, cropRatio: number }> {
+): Promise<{ leftSliceBase64: string, rightSliceBase64: string, cropRatio: number, entryAnchorBase64: string }> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => {
-      // 2. Make crop logic smarter: increase default right-side crop window if it is too narrow
-      // so we use a minimum of 35% to ensure candles are actually visible alongside the Y-axis padding
-      cropRatio = Math.max(0.35, Math.min(0.5, cropRatio)); 
-      
+      // Real bounds: 5% min (tiny crop for 1m on 30m chart) up to 40% max.
+      // DO NOT floor at 0.35 — that defeats the whole point of duration ratio.
+      cropRatio = Math.max(0.05, Math.min(0.40, cropRatio));
+
       const cutWidth = Math.floor(img.width * cropRatio);
       const leftWidth = img.width - cutWidth;
       const height = img.height;
-      
+
+      // Left slice = the "question" sent to debate API
       const canvasLeft = document.createElement('canvas');
       canvasLeft.width = leftWidth;
       canvasLeft.height = height;
-      const ctxLeft = canvasLeft.getContext('2d');
-      if (ctxLeft) {
-        ctxLeft.drawImage(img, 0, 0, leftWidth, height, 0, 0, leftWidth, height);
-      }
-      
-      // 1. Improve right-slice readability: upscale 2x for clarity
+      canvasLeft.getContext('2d')!
+        .drawImage(img, 0, 0, leftWidth, height, 0, 0, leftWidth, height);
+
+      // Right slice = the "answer key" — upscaled 2x for OCR clarity
       const upscale = 2;
       const canvasRight = document.createElement('canvas');
       canvasRight.width = Math.floor(cutWidth * upscale);
       canvasRight.height = Math.floor(height * upscale);
-      const ctxRight = canvasRight.getContext('2d');
-      if (ctxRight) {
-        ctxRight.imageSmoothingEnabled = true;
-        ctxRight.imageSmoothingQuality = 'high';
-        ctxRight.drawImage(
-          img, 
-          leftWidth, 0, cutWidth, height, 
-          0, 0, canvasRight.width, canvasRight.height
-        );
-      }
-      
-      console.log(`[CropRightByRatio] Original: ${img.width}x${img.height}, Ratio: ${cropRatio.toFixed(3)}, RightSlice: ${canvasRight.width}x${canvasRight.height} (Upscaled x${upscale})`);
+      const ctxRight = canvasRight.getContext('2d')!;
+      ctxRight.imageSmoothingEnabled = true;
+      ctxRight.imageSmoothingQuality = 'high';
+      ctxRight.drawImage(img, leftWidth, 0, cutWidth, height,
+                              0, 0, canvasRight.width, canvasRight.height);
+
+      // NEW: Entry-anchor strip = last 8% of LEFT slice + full RIGHT slice.
+      // This gives the grader the "entry candle" so it compares
+      // (entry close) vs (final close of right slice) — the REAL trade math.
+      const anchorLeftWidth = Math.floor(leftWidth * 0.08);
+      const anchorTotalWidth = anchorLeftWidth + cutWidth;
+      const canvasAnchor = document.createElement('canvas');
+      canvasAnchor.width = Math.floor(anchorTotalWidth * upscale);
+      canvasAnchor.height = Math.floor(height * upscale);
+      const ctxAnchor = canvasAnchor.getContext('2d')!;
+      ctxAnchor.imageSmoothingEnabled = true;
+      ctxAnchor.imageSmoothingQuality = 'high';
+      ctxAnchor.drawImage(
+        img,
+        leftWidth - anchorLeftWidth, 0, anchorTotalWidth, height,
+        0, 0, canvasAnchor.width, canvasAnchor.height
+      );
+
+      console.log(`[CropRightByRatio] ratio=${cropRatio.toFixed(3)} ` +
+                  `left=${canvasLeft.width}x${canvasLeft.height} ` +
+                  `right=${canvasRight.width}x${canvasRight.height} ` +
+                  `anchor=${canvasAnchor.width}x${canvasAnchor.height}`);
 
       resolve({
-        leftSliceBase64: canvasLeft.toDataURL('image/jpeg', 0.95), // slightly better quality
+        leftSliceBase64:  canvasLeft.toDataURL('image/jpeg', 0.95),
         rightSliceBase64: canvasRight.toDataURL('image/jpeg', 0.95),
-        cropRatio
+        entryAnchorBase64: canvasAnchor.toDataURL('image/jpeg', 0.95),
+        cropRatio,
       });
     };
     img.onerror = reject;

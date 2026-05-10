@@ -765,51 +765,67 @@ JUDGE 4 (Boundary Reversal) Bias: ${boundaryResult.label} -> ALREADY CALCULATED 
 
       const optimizedBase64 = image.replace(/^data:image\/\w+;base64,/, "");
 
-      const prompt = `You are a strict financial trading grader reading a cropped chart outcome window.
-This image shows the "future" outcome window AFTER a trade signal. The trend goes from left to right.
+      const prompt = `You are a strict binary-options trade grader.
 
-Compare the FIRST visible candle area (left) versus the LAST visible candle area (right).
-Ignore grid lines, watermarks, text, and UI decorations. Focus ONLY on the net direction of the candle bodies/wicks.
+The image shows two regions stitched together left-to-right:
+  • LEFT region (~15% of width): the ENTRY candle — this is the price the
+    trader entered at.
+  • RIGHT region (~85% of width): the FUTURE candles after entry.
 
-- If the price is clearly HIGHER at the right side than the left side -> "UP"
-- If the price is clearly LOWER at the right side than the left side -> "DOWN"
-- If the price completely flatlines without movement or the image is 100% unreadable -> "FLAT"
+Your ONLY job: decide whether the CLOSING price of the LAST candle on the
+far right is HIGHER or LOWER than the CLOSING price of the entry candle
+on the far left.
 
-Note: "FLAT" should be rare. If there is a slight directional bias, give it UP or DOWN but rate the confidence appropriately. If the image mostly shows a Y-axis with very few candles, try your best to judge the trend of what little is visible.
+Rules:
+- HIGHER right close   -> "UP"
+- LOWER  right close   -> "DOWN"
+- Identical to the pixel (extremely rare) -> "FLAT"
+- Even a 1-pixel difference counts. "FLAT" is forbidden unless the two
+  closes are visually indistinguishable.
+- Ignore wicks. Use candle BODY closes only.
+- Ignore grid lines, watermarks, axis labels, tooltips.
 
-Respond ONLY in strictly valid JSON:
+Return STRICT JSON:
 {
   "outcome": "UP" | "DOWN" | "FLAT",
-  "confidence": number (0-100),
-  "reason": "short explanation citing the visible candle behaviors"
+  "confidence": 0-100,
+  "entryY": approximate y-pixel of entry close,
+  "exitY": approximate y-pixel of last candle close,
+  "reason": "short visual explanation"
 }`;
-      
+
       const response = await callModel({
-          model: "gpt-4o",
-          prompt,
-          image: optimizedBase64,
-          jsonMode: true,
-          tokenManager
+        model: "gpt-4o",
+        prompt,
+        image: optimizedBase64,
+        jsonMode: true,
+        tokenManager
       });
 
       let parsed: any;
       try {
-        const cleanRaw = response.replace(/```json|```/g, '').trim();
-        parsed = JSON.parse(cleanRaw);
+        parsed = JSON.parse(response.replace(/```json|```/g, '').trim());
       } catch {
         parsed = { outcome: 'FLAT', confidence: 0, reason: 'Parser failure' };
       }
 
-      const validOutcomes = ['UP', 'DOWN', 'FLAT'];
-      let outcome = parsed.outcome;
-      if (!validOutcomes.includes(outcome)) outcome = 'FLAT';
-      
-      // If it says FLAT but confidence is extremely low, maybe we still consider it inconclusive
-      // Lower the confidence threshold to 15 so we don't reject decent but slightly ambiguous crops
+      let outcome = ['UP','DOWN','FLAT'].includes(parsed.outcome) ? parsed.outcome : 'FLAT';
       const confidenceNum = Number(parsed.confidence) || 0;
-      const isInconclusive = outcome === 'FLAT' || confidenceNum < 15;
 
-      console.log(`[ReadOutcome] rawOutcome=${outcome}, conf=${confidenceNum}, isInconclusive=${isInconclusive}`);
+      // Pixel-coordinate fallback: if model gave us entryY/exitY we can derive
+      // outcome geometrically even when it said FLAT.
+      if ((outcome === 'FLAT' || confidenceNum < 30) &&
+          typeof parsed.entryY === 'number' && typeof parsed.exitY === 'number' &&
+          Math.abs(parsed.entryY - parsed.exitY) > 4) {
+        // In screen coords, smaller Y = higher price.
+        outcome = parsed.exitY < parsed.entryY ? 'UP' : 'DOWN';
+      }
+
+      // Final inconclusive only if we STILL have nothing
+      const isInconclusive = outcome === 'FLAT' && confidenceNum < 30;
+
+      console.log(`[ReadOutcome] outcome=${outcome} conf=${confidenceNum} ` +
+                  `entryY=${parsed.entryY} exitY=${parsed.exitY} inc=${isInconclusive}`);
 
       return res.json({
         outcome: isInconclusive ? 'INCONCLUSIVE' : outcome,
@@ -1059,7 +1075,7 @@ ${JSON.stringify(debateData, null, 2)}
   });
 
   // Catch-all for unhandled API routes to prevent fallback to HTML index
-  app.all("/api/*all", (req, res) => {
+  app.use("/api", (req, res) => {
     res.status(404).json({ error: `Route ${req.method} ${req.url} not found on this server.` });
   });
 
@@ -1085,12 +1101,25 @@ ${JSON.stringify(debateData, null, 2)}
       appType: "spa",
     });
     app.use(vite.middlewares);
+    app.use(async (req, res, next) => {
+      console.log('Hitting SSR fallback for', req.originalUrl);
+      try {
+        const url = req.originalUrl;
+        let template = fs.readFileSync(path.resolve(process.cwd(), 'index.html'), 'utf-8');
+        template = await vite.transformIndexHtml(url, template);
+        res.status(200).set({ 'Content-Type': 'text/html' }).send(template);
+      } catch (e: any) {
+        console.error('SSR error', e);
+        vite.ssrFixStacktrace(e);
+        next(e);
+      }
+    });
   } else {
     console.log("Starting server in PRODUCTION mode...");
     const distPath = path.join(process.cwd(), 'dist');
     console.log(`Serving static files from: ${distPath}`);
     app.use(express.static(distPath));
-    app.get('*all', (req, res) => {
+    app.use((req, res) => {
       const indexPath = path.join(distPath, 'index.html');
       res.sendFile(indexPath);
     });
