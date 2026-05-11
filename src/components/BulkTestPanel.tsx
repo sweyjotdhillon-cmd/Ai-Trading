@@ -1,6 +1,6 @@
 import { quotaTracker } from '../utils/quotaTracker';
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, Pressable, TextInput, ScrollView } from 'react-native';
+import { View, Text, Pressable, TextInput, ScrollView, Platform } from 'react-native';
 import tw from 'twrnc';
 import { motion } from 'motion/react';
 import { FileJson, UploadCloud, Play, AlertTriangle, Activity,  } from 'lucide-react';
@@ -21,6 +21,12 @@ interface BulkTestPanelProps {
   techniquesList: string[];
   encryptedSystemTokens?: string;
   saveToStats: (analysisData: any, outcome: 'WIN' | 'LOSS') => void;
+  // Global context passes
+  stockName: string;
+  graphTimeframe: string;
+  investmentDuration: string;
+  investmentAmount: string;
+  profitabilityPercent: string;
 }
 
 export type BatchRunStatus = 'Pending' | 'Running' | 'WIN' | 'LOSS' | 'INCONCLUSIVE' | 'Error';
@@ -36,17 +42,17 @@ export interface BatchRun {
 export function BulkTestPanel({
   techniquesList,
   encryptedSystemTokens,
-  saveToStats
+  saveToStats,
+  stockName,
+  graphTimeframe,
+  investmentDuration,
+  investmentAmount,
+  profitabilityPercent
 }: BulkTestPanelProps) {
   const [tab, setTab] = useState<'build' | 'run'>('build');
   
   // Tab 1 state
   const [images, setImages] = useState<File[]>([]);
-  const [defaultStock, setDefaultStock] = useState('Bitcoin');
-  const [defaultTimeframe, setDefaultTimeframe] = useState('5 minutes');
-  const [defaultDuration, setDefaultDuration] = useState('5m');
-  const [defaultInvestment, setDefaultInvestment] = useState('100');
-    const [defaultPayout, setDefaultPayout] = useState('85');
   
   const handleDragOver = (e: React.DragEvent) => e.preventDefault();
   
@@ -68,13 +74,10 @@ export function BulkTestPanel({
   const handleGenerateManifest = () => {
     if (images.length === 0) return;
     
+    // Only image info and backtest expectations are needed in the JSON
+    // The execution info (asset, duration, risk) is piped from the global terminal UI
     const entries: BatchManifestEntry[] = images.map(file => ({
       imageFilename: file.name,
-      stock: defaultStock,
-      graphTimeframe: defaultTimeframe,
-      investmentDuration: defaultDuration,
-      investmentAmount: Number(defaultInvestment),
-      profitabilityPercent: Number(defaultPayout),
       expectedOutcome: 'UNKNOWN'
     }));
 
@@ -226,11 +229,11 @@ export function BulkTestPanel({
 
         const result = await runSingleAnalysis({
           imageDataUrl,
-          stock: item.entry.stock,
-          graphTimeframe: item.entry.graphTimeframe,
-          investmentDuration: item.entry.investmentDuration,
-          investmentAmount: String(item.entry.investmentAmount || 100),
-          profitabilityPercent: String(item.entry.profitabilityPercent || 85),
+          stock: stockName,
+          graphTimeframe,
+          investmentDuration,
+          investmentAmount,
+          profitabilityPercent,
           techniquesList: item.entry.techniqueOverrides || techniquesList,
           encryptedSystemTokens,
           signal: abortControllerRef.current.signal,
@@ -261,7 +264,7 @@ export function BulkTestPanel({
     setQueue(currentQueue => {
        const losses = currentQueue.filter(q => q.status === 'LOSS' && q.result);
        if (losses.length > 0) {
-          runMasterAutopsyChain(losses);
+          setTimeout(() => runMasterAutopsyChain(losses).catch(e => console.error("master autopsy error:", e)), 0);
        }
        return currentQueue;
     });
@@ -343,15 +346,15 @@ export function BulkTestPanel({
       <View style={tw`flex-row border-b border-white border-opacity-10`}>
         <Pressable 
           onPress={() => !isQueueRunning && setTab('build')}
-          style={tw`flex-1 py-4 items-center justify-center border-b-2 \${tab === 'build' ? 'border-[#D9B382]' : 'border-transparent'}`}
+          style={[tw`flex-1 py-4 items-center justify-center border-b-2`, tab === 'build' ? tw`border-[#D9B382] bg-[#D9B382] bg-opacity-10` : tw`border-transparent bg-black bg-opacity-40`]}
         >
-          <Text style={tw`text-xs font-black tracking-widest \${tab === 'build' ? 'text-[#D9B382]' : 'text-white text-opacity-50'}`}>1. BUILD MANIFEST</Text>
+          <Text style={[tw`text-xs font-black tracking-widest`, tab === 'build' ? tw`text-[#D9B382]` : tw`text-white text-opacity-40`]}>1. BUILD MANIFEST</Text>
         </Pressable>
         <Pressable 
           onPress={() => !isQueueRunning && setTab('run')}
-          style={tw`flex-1 py-4 items-center justify-center border-b-2 \${tab === 'run' ? 'border-[#D9B382]' : 'border-transparent'}`}
+          style={[tw`flex-1 py-4 items-center justify-center border-b-2`, tab === 'run' ? tw`border-[#D9B382] bg-[#D9B382] bg-opacity-10` : tw`border-transparent bg-black bg-opacity-40`]}
         >
-          <Text style={tw`text-xs font-black tracking-widest \${tab === 'run' ? 'text-[#D9B382]' : 'text-white text-opacity-50'}`}>2. RUN BATCH</Text>
+          <Text style={[tw`text-xs font-black tracking-widest`, tab === 'run' ? tw`text-[#D9B382]` : tw`text-white text-opacity-40`]}>2. RUN BATCH</Text>
         </Pressable>
       </View>
 
@@ -359,24 +362,36 @@ export function BulkTestPanel({
         {tab === 'build' ? (
           <View style={tw`gap-6`}>
             {/* Same Tab 1 as before */}
-            <div 
+            <Pressable 
+              onPress={() => {
+                if (Platform.OS === 'web') {
+                  document.getElementById('bulk-image-upload')?.click();
+                }
+              }}
+              style={({ pressed }) => [
+                tw`border-2 border-dashed border-white border-opacity-10 rounded-xl p-8 flex-col items-center justify-center bg-black bg-opacity-20 relative`,
+                { opacity: pressed ? 0.7 : 1 }
+              ]}
+              // @ts-ignore
               onDragOver={handleDragOver} 
               onDrop={handleDropImages}
-              onClick={() => document.getElementById('bulk-image-upload')?.click()}
-              className="border-2 border-dashed border-white/10 rounded-xl p-8 flex flex-col items-center justify-center bg-black/20 hover:border-[#D9B382]/30 transition-colors cursor-pointer relative"
             >
-              <input 
-                id="bulk-image-upload" 
-                type="file" 
-                multiple 
-                accept="image/*" 
-                onChange={handleFileSelect} 
-                className="hidden" 
-                style={{ display: 'none' }}
-              />
-              <UploadCloud size={32} color="#D9B382" className="opacity-80 mb-4" />
+              {Platform.OS === 'web' && (
+                <input 
+                  id="bulk-image-upload" 
+                  type="file" 
+                  multiple 
+                  accept="image/*" 
+                  onChange={handleFileSelect} 
+                  style={{ display: 'none' }}
+                />
+              )}
+              <UploadCloud size={32} color="#D9B382" style={{ opacity: 0.8, marginBottom: 16 }} />
               <Text style={tw`text-white font-black text-sm uppercase tracking-widest mb-2`}>
                 Drag & Drop or Click to Upload
+              </Text>
+              <Text style={tw`text-white text-[10px] text-opacity-40 uppercase font-bold tracking-widest mb-3 text-center`}>
+                Max Recommended Batch Size: 25 Image Files (API Rate Limits)
               </Text>
               <Text style={tw`text-white text-opacity-50 text-xs text-center px-4`}>
                 Drop chart screenshots here to generate a matching JSON manifest sequence.
@@ -386,58 +401,14 @@ export function BulkTestPanel({
                   <Text style={tw`text-[#D9B382] font-black text-[10px]`}>{images.length} IMAGES LOADED</Text>
                 </View>
               )}
-            </div>
-
-            <View style={tw`flex-row flex-wrap gap-4`}>
-              <View style={tw`flex-1 min-w-[120px]`}>
-                <Text style={tw`text-[10px] font-black text-white text-opacity-60 mb-1 uppercase tracking-widest`}>Asset</Text>
-                <TextInput
-                  value={defaultStock}
-                  onChangeText={setDefaultStock}
-                  style={tw`bg-black bg-opacity-30 border border-white border-opacity-10 rounded-lg h-10 px-3 text-white text-xs`}
-                  placeholderTextColor="rgba(255,255,255,0.3)"
-                />
-              </View>
-              <View style={tw`flex-1 min-w-[120px]`}>
-                <Text style={tw`text-[10px] font-black text-white text-opacity-60 mb-1 uppercase tracking-widest`}>Timeframe</Text>
-                <TextInput
-                  value={defaultTimeframe}
-                  onChangeText={setDefaultTimeframe}
-                  style={tw`bg-black bg-opacity-30 border border-white border-opacity-10 rounded-lg h-10 px-3 text-white text-xs`}
-                />
-              </View>
-              <View style={tw`flex-1 min-w-[120px]`}>
-                <Text style={tw`text-[10px] font-black text-white text-opacity-60 mb-1 uppercase tracking-widest`}>Duration</Text>
-                <TextInput
-                  value={defaultDuration}
-                  onChangeText={setDefaultDuration}
-                  style={tw`bg-black bg-opacity-30 border border-white border-opacity-10 rounded-lg h-10 px-3 text-white text-xs`}
-                />
-              </View>
-              <View style={tw`flex-1 min-w-[120px]`}>
-                <Text style={tw`text-[10px] font-black text-white text-opacity-60 mb-1 uppercase tracking-widest`}>Investment $</Text>
-                <TextInput
-                  value={defaultInvestment}
-                  onChangeText={setDefaultInvestment}
-                  style={tw`bg-black bg-opacity-30 border border-white border-opacity-10 rounded-lg h-10 px-3 text-white text-xs`}
-                />
-              </View>
-              <View style={tw`flex-1 min-w-[120px]`}>
-                <Text style={tw`text-[10px] font-black text-white text-opacity-60 mb-1 uppercase tracking-widest`}>Payout %</Text>
-                <TextInput
-                  value={defaultPayout}
-                  onChangeText={setDefaultPayout}
-                  style={tw`bg-black bg-opacity-30 border border-white border-opacity-10 rounded-lg h-10 px-3 text-white text-xs`}
-                />
-              </View>
-            </View>
+            </Pressable>
 
             <View style={tw`pt-4 border-t border-white border-opacity-10`}>
               <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
                 <Pressable 
                   onPress={handleGenerateManifest}
                   disabled={images.length === 0}
-                  style={tw`flex-row items-center justify-center bg-[#D9B382] \${images.length === 0 ? 'opacity-50' : 'opacity-100'} h-12 rounded-xl px-6`}
+                  style={tw`flex-row items-center justify-center bg-[#D9B382] ${images.length === 0 ? 'opacity-50' : 'opacity-100'} h-12 rounded-xl px-6`}
                 >
                   <FileJson size={16} color="#1A1308" />
                   <Text style={tw`text-[#1A1308] font-black text-xs uppercase tracking-widest ml-2`}>
@@ -491,9 +462,11 @@ export function BulkTestPanel({
                         <Text style={tw`text-white text-opacity-40 text-[10px] w-6`}>{(idx + 1).toString().padStart(2, '0')}</Text>
                         <View style={tw`flex-1`}>
                           <Text style={tw`text-white text-xs font-bold`} numberOfLines={1}>{item.entry.imageFilename}</Text>
-                          <Text style={tw`text-white text-opacity-50 text-[9px] uppercase tracking-widest mt-0.5`}>
-                            {item.entry.stock} • {item.entry.investmentDuration}
-                          </Text>
+                          {item.entry.expectedOutcome && item.entry.expectedOutcome !== 'UNKNOWN' && (
+                             <Text style={tw`text-white text-opacity-50 text-[9px] uppercase tracking-widest mt-0.5`}>
+                               Expects: {item.entry.expectedOutcome}
+                             </Text>
+                          )}
                         </View>
                         <View style={tw`px-3`}>
                           <Text style={[tw`text-[10px] font-black uppercase tracking-widest`, tw(getStatusColor(item.status))]}>

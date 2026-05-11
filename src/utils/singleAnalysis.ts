@@ -151,7 +151,7 @@ export async function runSingleAnalysis(params: {
         judge4: { text: JUDGE_TASKS.judge4[4], status: 'active' },
         system: { text: "Simultaneously synthesizing neural nodes...", status: 'active' },
       });
-    })();
+    })().catch(console.error);
   }
 
   const minTimer = new Promise(r => setTimeout(r, 7000));

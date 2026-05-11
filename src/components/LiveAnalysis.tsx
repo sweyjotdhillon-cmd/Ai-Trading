@@ -889,7 +889,16 @@ export function LiveAnalysis() {
             )}
 
             {mode === 'bulk' && (
-              <BulkTestPanel techniquesList={techniquesList} encryptedSystemTokens={encryptedSystemTokens} saveToStats={saveToStats} />
+              <BulkTestPanel 
+                 techniquesList={techniquesList} 
+                 encryptedSystemTokens={encryptedSystemTokens} 
+                 saveToStats={saveToStats} 
+                 stockName={stockName}
+                 graphTimeframe={graphTimeframe}
+                 investmentDuration={investmentDuration}
+                 investmentAmount={investmentAmount}
+                 profitabilityPercent={profitabilityPercent}
+              />
             )}
         </View>
 

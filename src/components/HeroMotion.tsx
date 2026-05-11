@@ -1,4 +1,4 @@
-import React, { useState, Suspense, lazy } from 'react';
+import React, { useState } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { motion, useReducedMotion } from 'motion/react';
 import { ChevronDown, ArrowRight } from 'lucide-react';

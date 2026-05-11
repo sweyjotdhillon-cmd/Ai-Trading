@@ -1,13 +1,8 @@
 export interface BatchManifestEntry {
   // REQUIRED
   imageFilename: string;          // matches a file the user uploads, e.g. "btc_001.png"
-  stock: string;                  // e.g. "Bitcoin"
-  graphTimeframe: string;         // e.g. "5 minutes" — must match existing timeframes[]
-  investmentDuration: string;     // e.g. "5m" — must match existing durations[]
 
   // OPTIONAL
-  investmentAmount?: number;      // default 100
-  profitabilityPercent?: number;  // default 85
   expectedOutcome?: 'WIN' | 'LOSS' | 'UNKNOWN';   // for backtest accuracy scoring
   notes?: string;                 // freeform user note
   techniqueOverrides?: string[];  // override the global techniquesList for this entry
@@ -33,17 +28,6 @@ export function validateBatchManifest(json: any): { valid: boolean; errors: stri
   json.entries.forEach((entry: any, i: number) => {
     const loc = `Entry #${i + 1} (${entry.imageFilename || 'unknown file'})`;
     if (!entry.imageFilename) errors.push(`${loc}: missing "imageFilename".`);
-    if (!entry.stock) errors.push(`${loc}: missing "stock".`);
-    if (!entry.graphTimeframe) errors.push(`${loc}: missing "graphTimeframe".`);
-    if (!entry.investmentDuration) errors.push(`${loc}: missing "investmentDuration".`);
-    
-    // Optional types check
-    if (entry.investmentAmount !== undefined && typeof entry.investmentAmount !== 'number') {
-      errors.push(`${loc}: "investmentAmount" must be a number.`);
-    }
-    if (entry.profitabilityPercent !== undefined && typeof entry.profitabilityPercent !== 'number') {
-      errors.push(`${loc}: "profitabilityPercent" must be a number.`);
-    }
   });
 
   return { valid: errors.length === 0, errors };

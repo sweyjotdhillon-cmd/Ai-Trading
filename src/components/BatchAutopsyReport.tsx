@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, Pressable } from 'react-native';
 import tw from 'twrnc';
 import { motion } from 'motion/react';
-import { ShieldAlert, AlertTriangle, Wrench, RefreshCw } from 'lucide-react';
+import { ShieldAlert, AlertTriangle, Wrench, RefreshCw, Download } from 'lucide-react';
 import { MasterAutopsySummary } from './BulkTestPanel';
 
 interface BatchAutopsyReportProps {
@@ -12,6 +12,19 @@ interface BatchAutopsyReportProps {
 }
 
 export function BatchAutopsyReport({ summary, loading, onClear }: BatchAutopsyReportProps) {
+  const handleDownload = () => {
+    if (!summary) return;
+    const blob = new Blob([JSON.stringify(summary, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `loss-autopsy-summary-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   if (loading) {
     return (
       <View style={tw`bg-red-500/10 border border-red-500/20 rounded-2xl p-6 items-center justify-center`}>
@@ -43,9 +56,15 @@ export function BatchAutopsyReport({ summary, loading, onClear }: BatchAutopsyRe
                Master Loss Autopsy
              </Text>
            </View>
-           <Pressable onPress={onClear} style={({pressed}) => [{opacity: pressed ? 0.5 : 1}]}>
-             <Text style={tw`text-red-400/60 font-bold text-[10px] uppercase tracking-widest`}>Dismiss</Text>
-           </Pressable>
+           <View style={tw`flex-row items-center gap-6`}>
+             <Pressable onPress={handleDownload} style={({pressed}) => [{opacity: pressed ? 0.5 : 1}, tw`flex-row items-center gap-1.5`]}>
+               <Download size={12} color="#EF4444" style={tw`opacity-60`} />
+               <Text style={tw`text-red-400/60 font-bold text-[10px] uppercase tracking-widest`}>Download JSON</Text>
+             </Pressable>
+             <Pressable onPress={onClear} style={({pressed}) => [{opacity: pressed ? 0.5 : 1}]}>
+               <Text style={tw`text-red-400/60 font-bold text-[10px] uppercase tracking-widest`}>Dismiss</Text>
+             </Pressable>
+           </View>
         </View>
 
         {/* Content */}
