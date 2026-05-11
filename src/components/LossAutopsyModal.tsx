@@ -153,7 +153,7 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, e
 
   useEffect(() => {
     console.log('LossAutopsyModal isOpen check:', isOpen, 'analysisData?', !!analysisData);
-  }, [isOpen]);
+  }, [isOpen, analysisData]);
 
   if (!isOpen) return null;
 

@@ -43,7 +43,7 @@ export function LiveAnalysis() {
   const [isBusy, setIsBusy] = useState(false);
   const [analysisStep, setAnalysisStep] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<any | null>(null);
-  const [mode, setMode] = useState<'camera' | 'upload' | 'test' | 'bulk'>('camera');
+  const [mode, setMode] = useState<'live' | 'test' | 'bulk'>('live');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
   // Live Trading Loop States
@@ -159,7 +159,7 @@ export function LiveAnalysis() {
     setAutoGradeConfidence(0);
     setAutoGradeRawOutcome('');
     setShowAutopsyModal(false);
-    setMode('camera');
+    setMode('live');
     setStockName('Bitcoin');
     setGraphTimeframe('30 minutes');
     setInvestmentDuration('5m');
@@ -443,7 +443,7 @@ export function LiveAnalysis() {
 
     let finalImageToAnalyze = selectedImage;
 
-    if (mode === 'camera' && isCameraActive && videoRef.current) {
+    if (mode === 'live' && isCameraActive && videoRef.current) {
       if (Platform.OS === 'web') {
         const canvas = document.createElement('canvas');
         canvas.width = videoRef.current.videoWidth || 640;
@@ -527,7 +527,7 @@ export function LiveAnalysis() {
           
           setTradingDirection(result.direction);
           
-          if (mode === 'camera') {
+          if (mode === 'live') {
             setTradingPhase('WAITING_FOR_ENTRY');
             setAnalysisStep(result.direction === 'NO_TRADE' ? (result.analysis.judge.finalConfidence < 70 ? `LOW CONFIDENCE (${result.analysis.judge.finalConfidence}%) - NO TRADE` : 'CONFIRMING NO-TRADE SIGNAL...') : 'HUNTING PERFECT ENTRY POINT...');
             await new Promise(r => setTimeout(r, 4000));
@@ -806,20 +806,20 @@ export function LiveAnalysis() {
              <View style={tw`flex-row flex-wrap justify-between items-center gap-2 mb-3`}>
                 <Text style={tw`text-[8px] font-black text-[#4B5570] uppercase tracking-widest`}>Chart Feed</Text>
                 <View style={tw`flex-row flex-wrap bg-black bg-opacity-20 rounded-lg p-0.5 border border-white border-opacity-10`}>
-                   {(['camera', 'upload', 'test', 'bulk'] as const).map((m) => (
+                   {(['live', 'test', 'bulk'] as const).map((m) => (
                      <Pressable
                        key={m}
                        onPress={() => setMode(m)}
                        style={({ pressed }) => [tw`px-3 py-1 rounded-md flex-row items-center`, mode === m ? tw`bg-[#D9B382]` : tw`bg-transparent`, { opacity: pressed ? 0.7 : 1 }]}
                     >
-                      {m === 'camera' ? <Camera size={12} color={mode === m ? '#1A1308' : '#4B5570'} /> : m === 'upload' ? <Upload size={12} color={mode === m ? '#1A1308' : '#4B5570'} /> : m === 'bulk' ? <Layers size={12} color={mode === m ? '#1A1308' : '#4B5570'} /> : <Activity size={12} color={mode === m ? '#1A1308' : '#4B5570'} />}
+                      {m === 'live' ? <Camera size={12} color={mode === m ? '#1A1308' : '#4B5570'} /> : m === 'bulk' ? <Layers size={12} color={mode === m ? '#1A1308' : '#4B5570'} /> : <Activity size={12} color={mode === m ? '#1A1308' : '#4B5570'} />}
                       <Text style={[tw`ml-1.5 text-[8px] font-black uppercase`, mode === m ? tw`text-[#1A1308]` : tw`text-[#4B5570]`]}>{m}</Text>
                     </Pressable>
                   ))}
                </View>
             </View>
 
-            {mode === 'camera' && (
+            {mode === 'live' && (
                <View style={tw`w-full bg-black bg-opacity-20 rounded-xl overflow-hidden border border-white border-opacity-10 items-center justify-center`}>
                  {Platform.OS === 'web' && (
                    <video 
@@ -868,7 +868,7 @@ export function LiveAnalysis() {
                </View>
             )}
             
-            {(mode === 'upload' || mode === 'test') && (
+            {mode === 'test' && (
               <Pressable
                 onPress={handlePickImage}
                 style={({ pressed }) => [
@@ -988,17 +988,17 @@ export function LiveAnalysis() {
               closePickers();
               handleAnalyze();
             }}
-            disabled={((mode === 'upload' || mode === 'test') && !selectedImage) || (mode === 'camera' && !isCameraActive) || isBusy}
+            disabled={(mode === 'test' && !selectedImage) || (mode === 'live' && !isCameraActive) || isBusy}
             style={({ pressed }) => [
               tw`h-14 rounded-xl items-center justify-center mt-4`,
-              (((mode === 'upload' || mode === 'test') && !selectedImage) || (mode === 'camera' && !isCameraActive) || isBusy) ? tw`bg-[#D9B382]/20` : tw`bg-[#D9B382]`,
+              ((mode === 'test' && !selectedImage) || (mode === 'live' && !isCameraActive) || isBusy) ? tw`bg-[#D9B382]/20` : tw`bg-[#D9B382]`,
               { opacity: (pressed && !isBusy) ? 0.7 : 1 }
             ]}
           >
             <View style={tw`flex-row items-center`}>
               <Sparkles size={18} color="#1A1308" style={tw`mr-2`} />
               <Text style={tw`text-[#1A1308] font-black uppercase tracking-[2px] text-base`}>
-                 {mode === 'camera' ? 'Start Camera Analysis' : 'Initiate Analysis'}
+                 {mode === 'live' ? 'Start Camera Analysis' : 'Initiate Analysis'}
               </Text>
             </View>
           </Pressable>

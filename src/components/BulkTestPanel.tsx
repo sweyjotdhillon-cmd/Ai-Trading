@@ -1,6 +1,6 @@
 import { quotaTracker } from '../utils/quotaTracker';
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, Pressable, TextInput, ScrollView, Platform } from 'react-native';
+import { View, Text, Pressable, ScrollView, Platform } from 'react-native';
 import tw from 'twrnc';
 import { motion } from 'motion/react';
 import { FileJson, UploadCloud, Play, AlertTriangle, Activity,  } from 'lucide-react';
@@ -53,6 +53,7 @@ export function BulkTestPanel({
   
   // Tab 1 state
   const [images, setImages] = useState<File[]>([]);
+  const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
   
   const handleDragOver = (e: React.DragEvent) => e.preventDefault();
   
@@ -71,14 +72,28 @@ export function BulkTestPanel({
     }
   };
 
-  const handleGenerateManifest = () => {
+  const handleGenerateManifest = async () => {
     if (images.length === 0) return;
     
     // Only image info and backtest expectations are needed in the JSON
     // The execution info (asset, duration, risk) is piped from the global terminal UI
-    const entries: BatchManifestEntry[] = images.map(file => ({
-      imageFilename: file.name,
-      expectedOutcome: 'UNKNOWN'
+    const entries: BatchManifestEntry[] = await Promise.all(images.map(async (file) => {
+      const imageData = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      return {
+        imageFilename: file.name,
+        expectedOutcome: 'UNKNOWN',
+        imageData,
+        stock: stockName,
+        graphTimeframe: graphTimeframe,
+        investmentDuration: investmentDuration,
+        investmentAmount: Number(investmentAmount) || 100,
+        profitabilityPercent: Number(profitabilityPercent) || 85
+      };
     }));
 
     const manifest: BatchManifest = {
@@ -117,10 +132,22 @@ export function BulkTestPanel({
 
   useEffect(() => {
     if (queue.length > 0) {
-       sessionStorage.setItem('bulk_queue_state', JSON.stringify(queue.map(q => ({
-          ...q,
-          file: undefined // Cannot persist File objects
-       }))));
+       try {
+         sessionStorage.setItem('bulk_queue_state', JSON.stringify(queue.map(q => {
+            const persistItem = { ...q, file: undefined };
+            if (persistItem.result) {
+              persistItem.result = {
+                ...persistItem.result,
+                finalImageForAnalysis: '',
+                testModeRightSlice: '',
+                entryAnchorBase64: ''
+              };
+            }
+            return persistItem;
+         })));
+       } catch {
+         console.warn("Could not save bulk queue state to session storage (QuotaExceeded).");
+       }
     }
   }, [queue]);
 
@@ -196,7 +223,7 @@ export function BulkTestPanel({
        return;
     }
     
-    const missing = queue.filter(q => !q.file && q.status === 'Pending');
+    const missing = queue.filter(q => !q.file && !q.entry.imageData && q.status === 'Pending');
     if (missing.length > 0) {
       alert(`Missing ${missing.length} files. Please select them first.`);
       return;
@@ -223,17 +250,19 @@ export function BulkTestPanel({
            imageDataUrl = await fileToBase64(item.file);
         } else if (item.result?.imageDataUrl) {
            imageDataUrl = item.result.imageDataUrl; // recover from persistance? unlikely but safe
+        } else if (item.entry.imageData) {
+           imageDataUrl = item.entry.imageData; // use embedded payload
         } else {
            throw new Error("Missing image file for entry");
         }
 
         const result = await runSingleAnalysis({
           imageDataUrl,
-          stock: stockName,
-          graphTimeframe,
-          investmentDuration,
-          investmentAmount,
-          profitabilityPercent,
+          stock: item.entry.stock || stockName,
+          graphTimeframe: item.entry.graphTimeframe || graphTimeframe,
+          investmentDuration: item.entry.investmentDuration || investmentDuration,
+          investmentAmount: item.entry.investmentAmount ? String(item.entry.investmentAmount) : investmentAmount,
+          profitabilityPercent: item.entry.profitabilityPercent ? String(item.entry.profitabilityPercent) : profitabilityPercent,
           techniquesList: item.entry.techniqueOverrides || techniquesList,
           encryptedSystemTokens,
           signal: abortControllerRef.current.signal,
@@ -251,6 +280,8 @@ export function BulkTestPanel({
           break;
         }
         setQueue(q => q.map((r, idx) => idx === i ? { ...r, status: 'Error', error: err.message } : r));
+        alert(`Analysis Error on item ${i + 1}: ${err.message}\nBatch run halted.`);
+        break;
       }
 
       // Small delay between calls to avoid banhammer
@@ -372,7 +403,7 @@ export function BulkTestPanel({
                 tw`border-2 border-dashed border-white border-opacity-10 rounded-xl p-8 flex-col items-center justify-center bg-black bg-opacity-20 relative`,
                 { opacity: pressed ? 0.7 : 1 }
               ]}
-              // @ts-ignore
+              // @ts-expect-error React Native type discrepancy for web events
               onDragOver={handleDragOver} 
               onDrop={handleDropImages}
             >
@@ -442,7 +473,7 @@ export function BulkTestPanel({
                   </View>
 
                   {/* Missing images check */}
-                  {queue.some(q => !q.file) && !isQueueRunning && (
+                  {queue.some(q => !q.file && !q.entry.imageData) && !isQueueRunning && (
                     <View style={tw`bg-orange-500/10 border border-orange-500/30 rounded-xl p-4 flex-row items-center`}>
                       <AlertTriangle size={16} color="#F97316" />
                       <View style={tw`ml-3 flex-1`}>
@@ -458,22 +489,63 @@ export function BulkTestPanel({
 
                   <ScrollView style={tw`max-h-64 border border-white border-opacity-10 rounded-xl bg-black bg-opacity-20`}>
                     {queue.map((item, idx) => (
-                      <View key={idx} style={tw`flex-row items-center border-b border-white border-opacity-5 p-3 \${idx % 2 === 0 ? 'bg-transparent' : 'bg-white bg-opacity-5'}`}>
-                        <Text style={tw`text-white text-opacity-40 text-[10px] w-6`}>{(idx + 1).toString().padStart(2, '0')}</Text>
-                        <View style={tw`flex-1`}>
-                          <Text style={tw`text-white text-xs font-bold`} numberOfLines={1}>{item.entry.imageFilename}</Text>
-                          {item.entry.expectedOutcome && item.entry.expectedOutcome !== 'UNKNOWN' && (
-                             <Text style={tw`text-white text-opacity-50 text-[9px] uppercase tracking-widest mt-0.5`}>
-                               Expects: {item.entry.expectedOutcome}
-                             </Text>
-                          )}
-                        </View>
-                        <View style={tw`px-3`}>
-                          <Text style={[tw`text-[10px] font-black uppercase tracking-widest`, tw(getStatusColor(item.status))]}>
-                            {item.status}
-                          </Text>
-                          {item.error && <Text style={tw`text-orange-400 text-[8px]`} numberOfLines={1}>{item.error.substring(0, 20)}</Text>}
-                        </View>
+                      <View key={idx} style={tw`border-b border-white border-opacity-5 ${idx % 2 === 0 ? 'bg-transparent' : 'bg-white bg-opacity-5'}`}>
+                        <Pressable 
+                          onPress={() => setExpandedIdx(expandedIdx === idx ? null : idx)}
+                          style={tw`flex-row items-center p-3`}
+                        >
+                          <Text style={tw`text-white text-opacity-40 text-[10px] w-6`}>{(idx + 1).toString().padStart(2, '0')}</Text>
+                          <View style={tw`flex-1`}>
+                            <Text style={tw`text-white text-xs font-bold`} numberOfLines={1}>{item.entry.imageFilename}</Text>
+                            {(item.entry.stock || item.entry.investmentDuration) && (
+                              <Text style={tw`text-white text-opacity-50 text-[9px] uppercase tracking-widest mt-0.5`}>
+                                {item.entry.stock || stockName} • {item.entry.investmentDuration || investmentDuration}
+                              </Text>
+                            )}
+                            {item.entry.expectedOutcome && item.entry.expectedOutcome !== 'UNKNOWN' && (
+                               <Text style={tw`text-white text-opacity-50 text-[9px] uppercase tracking-widest mt-0.5`}>
+                                 Expects: {item.entry.expectedOutcome}
+                               </Text>
+                            )}
+                          </View>
+                          <View style={tw`px-3`}>
+                            <Text style={[tw`text-[10px] font-black uppercase tracking-widest text-right`, tw`${getStatusColor(item.status)}`]}>
+                              {item.status}
+                            </Text>
+                            {item.error && <Text style={tw`text-orange-400 text-[8px]`} numberOfLines={1}>{item.error.substring(0, 20)}</Text>}
+                            {!item.error && item.result && (
+                              <Text style={tw`text-white text-opacity-40 text-[8px] text-right uppercase tracking-widest mt-0.5`}>
+                                {item.result.confidence}% conf
+                              </Text>
+                            )}
+                          </View>
+                        </Pressable>
+                        {expandedIdx === idx && item.result && (
+                          <View style={tw`px-4 pb-4 pt-1 gap-3`}>
+                            <View style={tw`flex-row gap-2`}>
+                              {item.result.finalImageForAnalysis && (
+                                <View style={tw`flex-1`}>
+                                  <Text style={tw`text-white text-opacity-50 text-[8px] uppercase tracking-widest mb-1`}>Analyzed Past</Text>
+                                  <img src={item.result.finalImageForAnalysis} style={{ width: '100%', height: 60, objectFit: 'cover', borderRadius: 4, border: '1px solid rgba(255,255,255,0.1)' }} />
+                                </View>
+                              )}
+                              {item.result.testModeRightSlice && (
+                                <View style={tw`flex-1`}>
+                                  <Text style={tw`text-yellow-400 text-opacity-70 text-[8px] uppercase tracking-widest mb-1`}>Outcome Window</Text>
+                                  <img src={item.result.testModeRightSlice} style={{ width: '100%', height: 60, objectFit: 'cover', borderRadius: 4, border: '1px solid rgba(239,68,68,0.3)' }} />
+                                </View>
+                              )}
+                            </View>
+                            <View style={tw`bg-black bg-opacity-30 rounded-lg p-3 border border-white border-opacity-5`}>
+                               <Text style={tw`text-white text-[10px] font-bold mb-1`}>
+                                 Trade Direction: <Text style={tw`${item.result.direction === 'UP' ? 'text-green-400' : 'text-red-400'}`}>{item.result.direction}</Text>
+                               </Text>
+                               <Text style={tw`text-white text-opacity-70 text-[9px]`}>
+                                 {item.result.reason || "Outcome confirmed visually via test bounds."}
+                               </Text>
+                            </View>
+                          </View>
+                        )}
                       </View>
                     ))}
                   </ScrollView>
@@ -482,10 +554,10 @@ export function BulkTestPanel({
                     {!isQueueRunning ? (
                       <Pressable 
                         onPress={runBatch}
-                        disabled={queue.some(q => !q.file && q.status === 'Pending') || manifestErrors.length > 0}
+                        disabled={queue.some(q => !q.file && !q.entry.imageData && q.status === 'Pending') || manifestErrors.length > 0}
                         style={({ pressed }) => [
                            tw`flex-1 bg-[#D9B382] h-12 rounded-xl flex-row items-center justify-center p-3`, 
-                           { opacity: pressed || queue.some(q => !q.file && q.status === 'Pending') || manifestErrors.length > 0 ? 0.5 : 1 }
+                           { opacity: pressed || queue.some(q => !q.file && !q.entry.imageData && q.status === 'Pending') || manifestErrors.length > 0 ? 0.5 : 1 }
                         ]}
                       >
                         <Play size={16} color="#1A1308" />
