@@ -8,7 +8,7 @@ import {
   ScrollView
 } from 'react-native';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, ShieldAlert, CheckCircle, Copy, Share2, Plus, Trash2 } from 'lucide-react';
+import { X, ShieldAlert, CheckCircle, Copy, Share2, Plus, Trash2, Activity } from 'lucide-react';
 import tw from 'twrnc';
 import { doc, getDoc } from 'firebase/firestore';
 import { db, auth } from '../firebase';
@@ -217,7 +217,7 @@ export function SystemSettingsModal({ show, onClose }: Props) {
                               {token}
                             </Text>
                             <Pressable 
-                              onPress={() => removeAdminToken(index)}
+                              onPress={() => removeAdminToken()}
                               style={({ pressed }) => [tw`p-2`, { opacity: pressed ? 0.7 : 1 }]}
                             >
                               <Trash2 size={14} color="#ef4444" />
@@ -265,6 +265,34 @@ export function SystemSettingsModal({ show, onClose }: Props) {
                       {saveStatus === 'saved' ? 'Settings Saved' : 'Save Settings'}
                     </Text>
                   </Pressable>
+                </View>
+
+                {/* Recalibrate Colors */}
+                <View style={tw`bg-gray-800 bg-opacity-50 p-4 rounded-xl border border-white border-opacity-10 mb-6`}>
+                   <View style={tw`flex-row items-center justify-between mb-2`}>
+                     <View style={tw`flex-row items-center flex-1`}>
+                       <Activity size={20} color="#D9B382" />
+                       <Text style={tw`text-white font-bold ml-2 text-base`}>Recalibrate Colors</Text>
+                     </View>
+                   </View>
+                   <Text style={tw`text-gray-400 text-sm mb-4 leading-5`}>
+                     Resample the chart's green and red colors for the deterministic engine to detect candles accurately.
+                   </Text>
+                   <Pressable
+                      onPress={() => {
+                        import('../vision/colorCalibration').then(m => {
+                          m.clearCalibration();
+                          window.dispatchEvent(new Event('determinist:recalibrate'));
+                          onClose();
+                        });
+                      }}
+                      style={({ pressed }) => [
+                        tw`flex-row items-center justify-center bg-[#D9B382] h-12 rounded-lg`,
+                        { opacity: pressed ? 0.7 : 1 }
+                      ]}
+                   >
+                      <Text style={tw`text-[#1A1308] font-bold uppercase tracking-wider`}>Recalibrate</Text>
+                   </Pressable>
                 </View>
 
                 <View style={tw`bg-black bg-opacity-20 p-4 rounded-xl mb-4`}>

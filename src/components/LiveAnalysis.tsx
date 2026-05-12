@@ -32,6 +32,8 @@ import tw from 'twrnc';
 import { db } from '../firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { LossAutopsyModal } from './LossAutopsyModal';
+import { isCalibrated } from '../vision/colorCalibration';
+import { CalibrationOverlay } from './CalibrationOverlay';
 
 
 
@@ -45,6 +47,7 @@ export function LiveAnalysis() {
   const [analysis, setAnalysis] = useState<any | null>(null);
   const [mode, setMode] = useState<'live' | 'test' | 'bulk'>('live');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [calibrationFrame, setCalibrationFrame] = useState<ImageData | null>(null);
 
   // Live Trading Loop States
   const [tradingPhase, setTradingPhase] = useState<'IDLE' | 'ANALYSING_DIRECTION' | 'WAITING_FOR_ENTRY' | 'ENTRY_CONFIRMED'>('IDLE');
@@ -126,6 +129,45 @@ export function LiveAnalysis() {
   const cardHoverProps = prefersReducedMotion ? {} : { y: -2, boxShadow: "0 8px 24px rgba(0,0,0,0.25)" };
   const buttonHoverProps = prefersReducedMotion ? {} : { scale: 1.04 };
   const buttonTapProps = prefersReducedMotion ? {} : { scale: 0.96 };
+
+  useEffect(() => {
+    if (isCameraActive && videoRef.current && !isCalibrated()) {
+      const v = videoRef.current;
+      const captureCalibration = () => {
+        if (v.readyState >= 2) {
+            const canvas = document.createElement('canvas');
+            canvas.width = v.videoWidth;
+            canvas.height = v.videoHeight;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
+              setCalibrationFrame(ctx.getImageData(0, 0, canvas.width, canvas.height));
+            }
+        } else {
+            setTimeout(captureCalibration, 500);
+        }
+      };
+      captureCalibration();
+    }
+  }, [isCameraActive]);
+
+  useEffect(() => {
+    const handleRecalibrate = () => {
+      const v = videoRef.current;
+      if (v && v.readyState >= 2) {
+        const canvas = document.createElement('canvas');
+        canvas.width = v.videoWidth;
+        canvas.height = v.videoHeight;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
+          setCalibrationFrame(ctx.getImageData(0, 0, canvas.width, canvas.height));
+        }
+      }
+    };
+    window.addEventListener('determinist:recalibrate', handleRecalibrate);
+    return () => window.removeEventListener('determinist:recalibrate', handleRecalibrate);
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -584,6 +626,13 @@ export function LiveAnalysis() {
 
   return (
     <View style={tw`flex-1 bg-black relative`}>
+      {calibrationFrame && (
+        <CalibrationOverlay 
+          frame={calibrationFrame} 
+          onComplete={() => setCalibrationFrame(null)} 
+          onCancel={() => setCalibrationFrame(null)} 
+        />
+      )}
       {/* Full Screen High-Intensity Overlays */}
       <LossAutopsyModal
         isOpen={showAutopsyModal}
