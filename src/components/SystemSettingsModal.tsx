@@ -10,7 +10,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { X, ShieldAlert, CheckCircle, Copy, Share2, Plus, Trash2 } from 'lucide-react';
 import tw from 'twrnc';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 
 interface Props {
@@ -33,7 +33,6 @@ export function SystemSettingsModal({ show, onClose }: Props) {
 
   useEffect(() => {
     if (show) {
-      // We get real count directly from Firestore without needing an API key if it's stored there.
       getDoc(doc(db, 'settings', 'system')).then(snap => {
         if (snap.exists()) {
           const data = snap.data();
@@ -41,74 +40,34 @@ export function SystemSettingsModal({ show, onClose }: Props) {
             setSystemTokenCount(data.systemTokenCount);
           }
           if (isAdmin && data.encryptedTokens) {
-            // Get a real Firebase ID token to prove identity to the server
-            auth.currentUser!.getIdToken().then(idToken => {
-              // Decrypt it to show to admin
-              fetch('/api/admin/secrets/decrypt', {
-                method: 'POST',
-                headers: { 
-                   'Content-Type': 'application/json',
-                   'Authorization': `Bearer ${idToken}`
-                },
-                body: JSON.stringify({ encryptedTokens: data.encryptedTokens })
-              }).then(r => r.json()).then(res => {
-                if (res.tokens) setAdminTokens(res.tokens);
-              }).catch(e => console.warn(e));
-            });
+            setAdminTokens(["Tokens are encrypted. Requires backend to view."]);
           }
         }
-      });
+      }).catch(console.error);
     }
   }, [show, isAdmin]);
 
-  const saveAdminSystemTokens = async (tokensToSave: string[]) => {
+  const saveAdminSystemTokens = async () => {
     setAdminTokenStatus('saving');
     try {
-      // 1. Get a real Firebase ID token to authenticate with the server
-      const idToken = await auth.currentUser!.getIdToken();
-      // 2. Encrypt them on backend
-      const res = await fetch('/api/admin/secrets/encrypt', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${idToken}`
-        },
-        body: JSON.stringify({ tokens: tokensToSave })
-      });
-      if (!res.ok) throw new Error('Failed to encrypt');
-      
-      const data = await res.json();
-      if (data && data.encryptedTokens) {
-        // 2. Save encrypted tokens to Firestore
-        await setDoc(doc(db, 'settings', 'system'), {
-           encryptedTokens: data.encryptedTokens,
-           systemTokenCount: tokensToSave.length
-        }, { merge: true });
-        
-        setAdminTokens(tokensToSave);
-        setSystemTokenCount(tokensToSave.length);
-        setAdminTokenStatus('saved');
-        setTimeout(() => setAdminTokenStatus('idle'), 2000);
-      } else {
-        throw new Error('Server did not return encrypted payload');
-      }
+      // Backend is removed so we can no longer encrypt API keys this way.
+      // We will just do a stub or error out.
+      alert("Saving API tokens requires a backend. The API dependencies have been removed. System uses local inference Math Engine now.");
+      setAdminTokenStatus('idle');
     } catch (e: any) {
       console.warn("Could not save admin tokens:", e);
-      alert("Failed to save tokens: " + e.message);
       setAdminTokenStatus('idle');
     }
   };
 
   const addAdminToken = () => {
     if (!newAdminToken.trim()) return;
-    const updated = [...adminTokens, newAdminToken.trim()];
     setNewAdminToken('');
-    saveAdminSystemTokens(updated);
+    saveAdminSystemTokens();
   };
 
-  const removeAdminToken = (index: number) => {
-    const updated = adminTokens.filter((_, i) => i !== index);
-    saveAdminSystemTokens(updated);
+  const removeAdminToken = () => {
+    saveAdminSystemTokens();
   };
 
   const handleSave = () => {

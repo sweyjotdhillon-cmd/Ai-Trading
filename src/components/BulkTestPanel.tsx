@@ -1,4 +1,3 @@
-import { quotaTracker } from '../utils/quotaTracker';
 import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, Pressable, ScrollView, Platform } from 'react-native';
 import tw from 'twrnc';
@@ -217,12 +216,6 @@ export function BulkTestPanel({
   const runBatch = async () => {
     if (queue.length === 0 || manifestErrors.length > 0) return;
     
-    // Quota Check
-    if (!quotaTracker.check('batch_run', queue.length)) {
-       alert('Insufficient quota to run this batch.');
-       return;
-    }
-    
     const missing = queue.filter(q => !q.file && !q.entry.imageData && q.status === 'Pending');
     if (missing.length > 0) {
       alert(`Missing ${missing.length} files. Please select them first.`);
@@ -309,36 +302,15 @@ export function BulkTestPanel({
   const runMasterAutopsyChain = async (losses: BatchRun[]) => {
      setAutopsyingBatch(true);
      try {
-       const individualAutopsies = [];
-       // Chain individual autopsies
-       for (const loss of losses) {
-          const res = await fetch('/api/autopsy', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-               analysisData: loss.result.analysis, 
-               encryptedSystemTokens 
-            })
+       // Simulate stub response
+       await new Promise(r => setTimeout(r, 1000));
+       if (losses.length > 0) {
+          setMasterSummary({
+             title: "Autopsy Unavailable",
+             narrative: "Backend removed for deterministic mode.",
+             coreWeakness: "No LLM capabilities.",
+             recommendedAction: "Use mathematical backtest instead."
           });
-          if (res.ok) {
-             const data = await res.json();
-             individualAutopsies.push(data);
-          }
-       }
-
-       if (individualAutopsies.length > 0) {
-          const sumRes = await fetch('/api/autopsy-summary', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-               allLosses: individualAutopsies,
-               encryptedSystemTokens
-            })
-          });
-          if (sumRes.ok) {
-             const summaryData = await sumRes.json();
-             setMasterSummary(summaryData);
-          }
        }
      } catch (e) {
        console.error("Master autopsy chain failed:", e);

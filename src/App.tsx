@@ -48,15 +48,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    // Basic connectivity check
-    const fetchConfig = async () => {
-      try {
-        await fetch('/api/config');
-      } catch (e: any) {
-        console.warn("API config fetch failed", e);
-      }
-    };
-    fetchConfig().catch(console.error);
+    // No more API config check needed
   }, []);
 
   useEffect(() => {

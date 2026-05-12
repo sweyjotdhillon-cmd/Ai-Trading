@@ -9,7 +9,6 @@ interface Props {
   onClose: () => void;
   analysisData: any; // Original JSON
   tradeSignal: string; // CALL or PUT
-  encryptedSystemTokens?: string; // For backend auth
   prefilledResultImage?: string;
 }
 
@@ -28,7 +27,7 @@ const listItemVariants = {
   show: { opacity: 1, y: 0 }
 };
 
-export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, encryptedSystemTokens, prefilledResultImage }: Props) {
+export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, prefilledResultImage }: Props) {
   const [resultImage, setResultImage] = useState<string | null>(prefilledResultImage || null);
   const [loading, setLoading] = useState(false);
   const [autopsyResult, setAutopsyResult] = useState<any | null>(null);
@@ -71,26 +70,24 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, e
     setAutopsyResult(null);
 
     try {
-      const res = await fetch('/api/autopsy', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          image: resultImage,
-          debateData: analysisData,
-          tradeSignal,
-          encryptedSystemTokens
-        })
-      });
-
-      if (!res.ok) {
-        throw new Error("Failed to run autopsy. Server responded with error.");
-      }
-
-      const data = await res.json();
-      setAutopsyResult(data);
+      setTimeout(() => {
+        setAutopsyResult({
+          tradeSignal: tradeSignal,
+          actualOutcome: 'UNKNOWN',
+          primaryRootCause: ['Engine not implemented'],
+          systemRecommendation: 'Autopsy is disabled in deterministic mode.',
+          autopsyVerdict: 'Backend has been removed.',
+          categories: {},
+          rebutScores: { originalJudge: { total: 0 }, contrarianJudge: { total: 0 } },
+          contrarianSignal: 'NO_TRADE',
+          contrarianRuling: 'Deterministic mode has no contrarian.',
+          contrarianConfidence: 0,
+          judgeFlaws: []
+        });
+        setLoading(false);
+      }, 1000);
     } catch (err: any) {
       setError(err.message || 'Unknown error occurred.');
-    } finally {
       setLoading(false);
     }
   };
@@ -98,38 +95,7 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, e
   const logToSheets = async () => {
     if (!autopsyResult) return;
     try {
-      // Find top severity category
-      let topCategory = 'None';
-      let maxSev = -1;
-      Object.values(autopsyResult.categories).forEach((val: any) => {
-        if (val.severity > maxSev) {
-          maxSev = val.severity;
-          topCategory = val.label;
-        }
-      });
-      
-      const payload = {
-         tradeNum: analysisData?.id || Date.now(),
-         tradeSignal: autopsyResult.tradeSignal,
-         actualOutcome: autopsyResult.actualOutcome,
-         primaryRootCause: (autopsyResult.primaryRootCause || []).join(', '),
-         topSeverityCategory: topCategory,
-         systemRecommendation: autopsyResult.systemRecommendation,
-         autopsyVerdict: autopsyResult.autopsyVerdict,
-         visionSeverity: autopsyResult.categories.visionExtraction?.severity || 0,
-         mathSeverity: autopsyResult.categories.mathOracleMisfire?.severity || 0,
-         j4Severity: autopsyResult.categories.j4BoundaryError?.severity || 0,
-         judgeSeverity: autopsyResult.categories.judgeScoringBias?.severity || 0,
-         agentSeverity: autopsyResult.categories.agentArgumentWeakness?.severity || 0,
-         marketSeverity: autopsyResult.categories.marketConditionMismatch?.severity || 0,
-         latencySeverity: autopsyResult.categories.latencyTimingMismatch?.severity || 0
-      };
-
-      await fetch('/api/log-autopsy', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
+      // Backend removed, just set as logged
       setIsLogged(true);
     } catch (e) {
       console.error("Failed to log to Sheety", e);

@@ -269,30 +269,16 @@ export function LiveAnalysis() {
           
           if (ctx) {
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            const scoutImg = canvas.toDataURL('image/jpeg', 0.6);
             
-            // Build the Anchor Thesis string
-            const anchorThesis = `Direction: ${analysis.judge.tradeDetails?.signal}, Insight: ${analysis.judge.tradeDetails?.bigInsight}, Verdict: ${analysis.judge.ruling}`;
-            
-            const res = await fetch(`/api/scout`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ image: scoutImg, anchorThesis, encryptedSystemTokens })
-            });
-            
-            if (res.ok) {
-              const contentType = res.headers.get("content-type");
-              if (contentType && contentType.includes("application/json")) {
-                const scoutJSON = await res.json();
-                if (isMounted) {
-                  setScoutData(scoutJSON);
-                  if (scoutJSON.action === 'ABORT' || scoutJSON.action === 'EXIT') {
-                    setAnalysisError(`Trade Aborted: ${scoutJSON.reason}`);
-                    setScoutActive(false);
-                    setTradingPhase('IDLE');
-                    setAnalysisStep('TRADE REJECTED - CONDITIONS INVALIDATED');
-                  }
-                }
+            // Stub deterministic engine call for scout
+            const scoutJSON = { action: 'CONTINUE', reason: 'Engine not implemented' };
+            if (isMounted) {
+              setScoutData(scoutJSON);
+              if (scoutJSON.action === 'ABORT' || scoutJSON.action === 'EXIT') {
+                setAnalysisError(`Trade Aborted: ${scoutJSON.reason}`);
+                setScoutActive(false);
+                setTradingPhase('IDLE');
+                setAnalysisStep('TRADE REJECTED - CONDITIONS INVALIDATED');
               }
             }
           }
@@ -571,12 +557,12 @@ export function LiveAnalysis() {
     if (!testModeRightSlice) return;
     setAutoGradeStatus('grading');
     try {
-      const r = await fetch('/api/read-outcome', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image: testModeRightSlice, encryptedSystemTokens })
-      });
-      const j = await r.json();
+      const j = {
+        outcome: 'INCONCLUSIVE',
+        confidence: 0,
+        reason: 'Engine not yet implemented',
+        rawOutcome: 'Engine not yet implemented'
+      };
       setAutoGradeReason(j.reason || '');
       setAutoGradeConfidence(Number(j.confidence) || 0);
       setAutoGradeRawOutcome(j.rawOutcome || '');
@@ -604,7 +590,6 @@ export function LiveAnalysis() {
         onClose={() => setShowAutopsyModal(false)}
         analysisData={analysis}
         tradeSignal={analysis?.judge?.winner === 'BULL' ? 'CALL' : (analysis?.judge?.winner === 'BEAR' ? 'PUT' : 'WAIT')}
-        encryptedSystemTokens={encryptedSystemTokens}
         prefilledResultImage={testModeRightSlice || undefined}
       />
       <Modal
