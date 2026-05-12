@@ -1,7 +1,7 @@
-import React, { useState, useRef, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import tw from 'twrnc';
-import { getBullishHSVBands, getBearishHSVBands, saveCalibration } from '../vision/colorCalibration';
+import { saveCalibration } from '../vision/colorCalibration';
 import { samplePatchHSV, calculateAdaptiveBand, hsvToRgb, HSVBand } from '../vision/colorSpace';
 
 interface Props {

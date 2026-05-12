@@ -1,4 +1,5 @@
 export const compressImage = (base64Str: string, maxWidth: number, maxHeight: number, quality: number): Promise<string> => {
+
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.src = base64Str;
@@ -306,3 +307,21 @@ export const downscaleImage = async (dataUrl: string, maxDim: number = 800): Pro
     img.src = dataUrl;
   });
 };
+
+export function dataUrlToImageData(dataUrl: string): Promise<ImageData> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return reject(new Error("No 2d context"));
+      ctx.drawImage(img, 0, 0);
+      resolve(ctx.getImageData(0, 0, canvas.width, canvas.height));
+    };
+    img.onerror = () => reject(new Error("Failed to load calibration image"));
+    img.src = dataUrl;
+  });
+}
