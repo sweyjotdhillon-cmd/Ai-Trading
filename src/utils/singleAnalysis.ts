@@ -1,5 +1,5 @@
 import { dataUrlToImageData } from './imageUtils';
-import { extractOHLCFromPixels } from '../vision/pixelScanner';
+import { buildPipelineResult } from '../vision/pipeline';
 
 export async function runSingleAnalysis(params: {
   imageDataUrl: string;
@@ -31,34 +31,33 @@ export async function runSingleAnalysis(params: {
     onJudgeLogs({
       judge1: { text: "Initializing Deterministic Pipeline...", status: 'active' },
       judge2: { text: "Awaiting Frame...", status: 'active' },
-      judge3: { text: "Computing...", status: 'active' },
+      judge3: { text: "Reading Y-Axis...", status: 'active' },
       judge4: { text: "Checking Filters...", status: 'active' },
       system: { text: "Starting...", status: 'active' }
     });
   }
 
   let resultInfo = 'OK';
-  let diag: any = {};
   let cCount = 0;
 
   try {
     const imgData = await dataUrlToImageData(imageDataUrl);
-    const res = extractOHLCFromPixels(imgData);
+    const pipeRes = buildPipelineResult(imgData);
     
-    resultInfo = res.diagnostics.reason;
-    diag = res.diagnostics;
-    cCount = res.candles.length;
+    cCount = pipeRes.ohlcSeries.length;
+    const ax = pipeRes.axis;
+    const axString = ax ? `m=${ax.mSlope.toFixed(4)}, b=${ax.bIntercept.toFixed(1)}, anchors=${ax.anchors.length}` : `fallback`;
 
     if (onJudgeLogs) {
-      const totalMs = Math.round(diag.maskBuildMs + diag.componentsMs + diag.filterMs + diag.wickTraceMs);
-      const j3Status = totalMs > 100 ? 'error' : 'success';
-      const fDiagPairs = Object.entries(diag.filterDiag?.reasons || {}).map(([k,v]) => `${k}:${v}`).join(', ') || 'None';
+      const j2Status = pipeRes.meta.latencyMs > 200 ? 'error' : 'success';
+      const axStatus = ax ? 'success' : 'active';
+      const fallbackStr = pipeRes.meta.axisFallback ? ' (No exact OCR)' : '';
 
       onJudgeLogs({
         judge1: { text: `Detected ${cCount} candles.`, status: cCount > 0 ? 'success' : 'active' },
-        judge2: { text: `Components: ${diag.componentCount} \u2192 ${diag.acceptedCount} accepted.`, status: 'success' },
-        judge3: { text: `Perf: Mask[${Math.round(diag.maskBuildMs)}ms] cc[${Math.round(diag.componentsMs)}ms] flt[${Math.round(diag.filterMs)}ms] wick[${Math.round(diag.wickTraceMs)}ms] = ${totalMs}ms`, status: j3Status },
-        judge4: { text: `Rejections: ${fDiagPairs}`, status: 'active' },
+        judge2: { text: `Pipeline: ${Math.round(pipeRes.meta.latencyMs)}ms [ohlc:${Math.round(pipeRes.meta.stages.ohlcExt)}ms]`, status: j2Status },
+        judge3: { text: `Axis: ${axString}${fallbackStr}`, status: axStatus },
+        judge4: { text: `Data Extracted successfully.`, status: 'success' },
         system: { text: `Status: ${resultInfo}`, status: resultInfo === 'OK' ? 'success' : 'error' }
       });
     }
