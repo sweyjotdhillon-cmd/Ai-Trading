@@ -109,7 +109,11 @@ export async function runSingleAnalysis(params: {
   const payloadPromise = new Promise<any>((resolve, reject) => {
     messageResolvers.set(msgId, { resolve, reject });
     try {
-      w.postMessage({ type: 'ANALYZE', imageData: imgData, msgId, timestamp: performance.now() }, [imgData.data.buffer]);
+      if (isTestMode) {
+        w.postMessage({ type: 'ANALYZE', imageData: imgData, msgId, timestamp: performance.now() });
+      } else {
+        w.postMessage({ type: 'ANALYZE', imageData: imgData, msgId, timestamp: performance.now() }, [imgData.data.buffer]);
+      }
     } catch {
       w.postMessage({ type: 'ANALYZE', imageData: imgData, msgId, timestamp: performance.now() });
     }
@@ -159,13 +163,8 @@ export async function runSingleAnalysis(params: {
   let testModeRightSlice: string | null = null;
   let finalImageForAnalysis = imageDataUrl;
   
-  let finalSignal = signal;
-  let finalConfidence = confidence;
-  let J1 = decision.bullScore;
-  let J2 = decision.bearScore;
-  let J3 = decision.skepticPenalty;
-  let J4 = decision.boundaryBias;
-  let FS = decision.finalScore;
+  let finalDecision = decision;
+  let FS = finalDecision.finalScore;
 
   if (isTestMode && meta.candlesLength && meta.candlesLength > 10) {
     const nCut = parseInt(params.investmentDuration) || 5;
@@ -203,22 +202,17 @@ export async function runSingleAnalysis(params: {
         const payload2 = await payloadPromise2;
         
         if (payload2.type !== 'ERROR' && payload2.debugTrace?.decision?.evidence?.lastClose !== undefined) {
-           finalSignal = payload2.signal;
-           finalConfidence = payload2.confidence;
-           J1 = payload2.debugTrace.decision.bullScore;
-           J2 = payload2.debugTrace.decision.bearScore;
-           J3 = payload2.debugTrace.decision.skepticPenalty;
-           J4 = payload2.debugTrace.decision.boundaryBias;
-           FS = payload2.debugTrace.decision.finalScore;
+           finalDecision = payload2.debugTrace.decision;
+           FS = finalDecision.finalScore;
            
            const originalClose = decision.evidence?.lastClose;
-           const newClose = payload2.debugTrace.decision.evidence.lastClose;
+           const newClose = finalDecision.evidence.lastClose;
            
            if (originalClose !== undefined) {
              const actualDir = originalClose > newClose ? 'UP' : (originalClose < newClose ? 'DOWN' : 'NO_TRADE');
-             if (finalSignal === 'CALL') {
+             if (finalDecision.winner === 'BULL') {
                  outcome = actualDir === 'UP' ? 'WIN' : 'LOSS';
-             } else if (finalSignal === 'PUT') {
+             } else if (finalDecision.winner === 'BEAR') {
                  outcome = actualDir === 'DOWN' ? 'WIN' : 'LOSS';
              }
            }
@@ -226,14 +220,20 @@ export async function runSingleAnalysis(params: {
     }
   }
 
-  const mappedDirection = finalSignal === 'CALL' ? 'UP' : (finalSignal === 'PUT' ? 'DOWN' : 'NO_TRADE');
+  const mappedDirection = finalDecision.winner === 'BULL' ? 'UP' : (finalDecision.winner === 'BEAR' ? 'DOWN' : 'NO_TRADE');
+
+  const cases = finalDecision.cases || { bull: { j1: 0, j2: 0, j3: 0, total: 0 }, bear: { j1: 0, j2: 0, j3: 0, total: 0 } };
+  const J1 = cases.bull.j1 + cases.bear.j1;
+  const J2 = cases.bull.j2 + cases.bear.j2;
+  const J3 = cases.bull.j3 + cases.bear.j3;
+  const J4 = finalDecision.skepticMultiplier || 1.0;
 
   if (onJudgeLogs) {
     onJudgeLogs({
-      judge1: { text: `Bull: Score=${J1.toFixed(0)}`, status: 'success' },
-      judge2: { text: `Bear: Score=${J2.toFixed(0)}`, status: 'success' },
-      judge3: { text: `Skeptic: Penalty=${J3.toFixed(0)}`, status: 'success' },
-      judge4: { text: `Boundary: Bias=${J4.toFixed(0)}`, status: 'success' },
+      judge1: { text: `Bull Score: ${cases.bull.total.toFixed(1)}`, status: 'success' },
+      judge2: { text: `Bear Score: ${cases.bear.total.toFixed(1)}`, status: 'success' },
+      judge3: { text: `Margin: ${finalDecision.margin.toFixed(1)}`, status: 'success' },
+      judge4: { text: `Skeptic Veto: ${(J4 * 100).toFixed(0)}%`, status: 'success' },
       system: { text: `Pipeline: ${(meta.latencyMs || 0).toFixed(0)}ms | Stable: ${frameStable ? 'YES' : 'NO'}`, status: 'success' }
     });
   }
@@ -241,33 +241,34 @@ export async function runSingleAnalysis(params: {
   return {
     analysis: {
       judge: {
-        winner: finalSignal === 'CALL' ? 'BULL' : (finalSignal === 'PUT' ? 'BEAR' : 'NONE'),
-        decision: finalSignal === 'NO_TRADE' ? 'WEAK' : 'STRONG SIGNAL',
-        finalConfidence: finalConfidence,
+        cases: cases,
+        winner: finalDecision.winner,
+        decision: finalDecision.winner === 'NO_TRADE' ? 'WEAK' : 'STRONG SIGNAL',
+        finalConfidence: finalDecision.finalConfidence,
         j1Score: J1,
         j2Score: J2,
         j3Score: J3,
-        j4Score: J4,
-        ruling: `Final Score: ${FS}`,
+        j4Score: finalDecision.skepticPenalty,
+        ruling: finalDecision.ruling,
         totalScore: FS,
         tradeDetails: {
-          latencyAdjustedForecast: `Signal: ${finalSignal}`,
-          techniquesUsed: `RSI: ${decision.evidence?.rsi?.toFixed(1) || 0}`
+          latencyAdjustedForecast: `Signal: ${finalDecision.signal}`,
+          techniquesUsed: `RSI: ${finalDecision.evidence?.rsi?.toFixed(1) || 0}`
         }
       },
-      bull: { reasoning: `Score ${J1}` },
-      bear: { reasoning: `Score ${J2}` },
-      skeptic: { riskVerdict: `Penalty ${J3}` },
+      bull: { reasoning: `Score ${cases.bull.total}` },
+      bear: { reasoning: `Score ${cases.bear.total}` },
+      skeptic: { riskVerdict: `Multiplier ${J4}` },
       techUsedCount: 3
     },
     direction: mappedDirection,
     outcome,
-    confidence: finalConfidence,
+    confidence: finalDecision.finalConfidence,
     reason: `Engine completed with finalScore=${FS}`,
     testModeRightSlice,
     finalImageForAnalysis,
     entryAnchorBase64: null,
-    rawOutcome: finalSignal,
+    rawOutcome: finalDecision.signal,
     frameStable
   };
 }

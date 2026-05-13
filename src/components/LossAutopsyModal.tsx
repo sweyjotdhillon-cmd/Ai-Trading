@@ -64,7 +64,12 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, p
   };
 
   const runAutopsy = async () => {
-    if (!resultImage || !analysisData) return;
+    console.log("runAutopsy clicked! resultImage:", !!resultImage, "analysisData:", !!analysisData);
+    if (!resultImage || !analysisData) {
+      if (!analysisData) alert("Missing analysis data for autopsy.");
+      if (!resultImage) alert("Please upload a post-trade chart image.");
+      return;
+    }
     setLoading(true);
     setError(null);
     setAutopsyResult(null);
@@ -179,20 +184,14 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, p
   if (!isOpen) return null;
 
   return (
-    <Modal visible={isOpen} transparent={true} animationType="none">
-      <motion.div 
-        initial={{ opacity: 0 }} 
-        animate={{ opacity: 1 }} 
-        exit={{ opacity: 0 }} 
-        transition={{ duration: prefersReducedMotion ? 0 : 0.25 }}
-        style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100vw', backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'center', alignItems: 'center', padding: '40px 16px' }}
-      >
+    <View style={[tw`absolute top-0 bottom-0 left-0 right-0 z-50`, { elevation: 50, backgroundColor: 'rgba(0,0,0,0.9)', padding: 16, alignItems: 'center', justifyContent: 'center' }]}>
         <motion.div 
           initial={{ opacity: 0, scale: prefersReducedMotion ? 1 : 0.94, y: prefersReducedMotion ? 0 : 16 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: prefersReducedMotion ? 1 : 0.94, y: prefersReducedMotion ? 0 : 16 }}
           transition={prefersReducedMotion ? { duration: 0 } : { type: "spring" as const, stiffness: 320, damping: 26 }}
-          className="bg-[#14161C] w-full max-w-4xl border border-red-500 border-opacity-30 rounded-2xl flex-1 max-h-[90vh] overflow-hidden flex flex-col shadow-2xl relative"
+          className="bg-[#14161C] border border-red-500 border-opacity-30 rounded-2xl overflow-hidden flex flex-col shadow-2xl relative"
+          style={{ width: '100%', maxWidth: 896, maxHeight: '100%', display: 'flex' }}
         >
           {Platform.OS === 'web' && (
             <input type="file" ref={fileInputRef} accept="image/*" onChange={handleFileChange} style={{ display: 'none' }} />
@@ -403,7 +402,6 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, p
 
           </ScrollView>
         </motion.div>
-      </motion.div>
-    </Modal>
+    </View>
   );
 }

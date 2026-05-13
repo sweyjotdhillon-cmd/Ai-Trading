@@ -5,7 +5,57 @@ function pseudoRandom() {
 };
 import { runSingleAnalysis, onStableSignal } from '../utils/singleAnalysis';
 import { BulkTestPanel } from './BulkTestPanel';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
+
+export function useWakeLock() {
+  const wakeLockRef = useRef<any>(null);
+  const isRequestedRef = useRef(false);
+
+  const requestLock = useCallback(async () => {
+    isRequestedRef.current = true;
+    if ('wakeLock' in navigator && document.visibilityState === 'visible') {
+      try {
+        if (wakeLockRef.current) return;
+        const lock = await (navigator as any).wakeLock.request('screen');
+        wakeLockRef.current = lock;
+        console.log('Screen Wake Lock active');
+        
+        lock.addEventListener('release', () => {
+          console.log('Screen Wake Lock was released');
+          wakeLockRef.current = null;
+        });
+      } catch (err: any) {
+        console.log(`Wake Lock request failed: ${err.message}`);
+      }
+    }
+  }, []);
+
+  const releaseLock = useCallback(async () => {
+    isRequestedRef.current = false;
+    if (wakeLockRef.current !== null) {
+      try {
+        await wakeLockRef.current.release();
+        wakeLockRef.current = null;
+        console.log('Screen Wake Lock intentionally released');
+      } catch (err: any) {
+        console.log(`Wake Lock release failed: ${err.message}`);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && isRequestedRef.current) {
+        requestLock();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [requestLock]);
+
+  return { requestLock, releaseLock };
+}
+
 import {   View, 
   Text, 
   Pressable, 
@@ -52,11 +102,25 @@ export function LiveAnalysis() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [calibrationFrame, setCalibrationFrame] = useState<ImageData | null>(null);
   const [isStable, setIsStable] = useState(false);
+  
+  const { requestLock, releaseLock } = useWakeLock();
 
   // Live Trading Loop States
   const [tradingPhase, setTradingPhase] = useState<'IDLE' | 'ANALYSING_DIRECTION' | 'WAITING_FOR_ENTRY' | 'ENTRY_CONFIRMED'>('IDLE');
   const [tradingDirection, setTradingDirection] = useState<'UP' | 'DOWN' | 'NO_TRADE' | null>(null);
   
+  // Real-Time Scout (10s Tick)
+  const [scoutActive, setScoutActive] = useState(false);
+  const [scoutData, setScoutData] = useState<{action: string, reason: string} | null>(null);
+
+  useEffect(() => {
+    if (isBusy || scoutActive) {
+      requestLock();
+    } else {
+      releaseLock();
+    }
+  }, [isBusy, scoutActive, requestLock, releaseLock]);
+
   useEffect(() => {
     return onStableSignal((payload) => {
       if (payload.signal === 'CALL') setTradingDirection('UP');
@@ -77,10 +141,6 @@ export function LiveAnalysis() {
   useEffect(() => {
     // Offline mode, no snapshot needed
   }, []);
-
-  // Real-Time Scout (10s Tick)
-  const [scoutActive, setScoutActive] = useState(false);
-  const [scoutData, setScoutData] = useState<{action: string, reason: string} | null>(null);
 
   // Parallel Judge Logs
   const [judgeLogs, setJudgeLogs] = useState({
@@ -534,7 +594,7 @@ export function LiveAnalysis() {
           setAnalysisStep(`SYNCHRONIZING ${techniquesList.length} TECHNIQUES...`);
 
           controller = new AbortController();
-          timeoutId = setTimeout(() => controller?.abort(), 360000);
+          timeoutId = setTimeout(() => controller?.abort(), 86400000); // 24 hours
 
           if (mode === 'test') setAutoGradeStatus('grading');
 
@@ -675,20 +735,17 @@ export function LiveAnalysis() {
         tradeSignal={analysis?.judge?.winner === 'BULL' ? 'CALL' : (analysis?.judge?.winner === 'BEAR' ? 'PUT' : 'WAIT')}
         prefilledResultImage={testModeRightSlice || undefined}
       />
-      <Modal
-        visible={tradingPhase === 'ENTRY_CONFIRMED' && !!tradingDirection}
-        transparent={true}
-        animationType="none"
-      >
-        <AnimatePresence>
-          {(tradingPhase === 'ENTRY_CONFIRMED' && !!tradingDirection) && (
-            <motion.div
-              initial={{ scale: 1.5, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 2, opacity: 0 }}
-              className={`flex-1 justify-center items-center ${tradingDirection === 'UP' ? 'bg-green-600' : (tradingDirection === 'DOWN' ? 'bg-red-600' : 'bg-yellow-700')}`}
-              style={{ display: 'flex', height: '100vh', width: '100vw' }}
-            >
+      {tradingPhase === 'ENTRY_CONFIRMED' && !!tradingDirection && (
+        <View style={tw`absolute top-0 bottom-0 left-0 right-0 z-50`}>
+          <AnimatePresence>
+            {(tradingPhase === 'ENTRY_CONFIRMED' && !!tradingDirection) && (
+              <motion.div
+                initial={{ scale: 1.5, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 2, opacity: 0 }}
+                className={`flex-1 justify-center items-center absolute inset-0 ${tradingDirection === 'UP' ? 'bg-green-600' : (tradingDirection === 'DOWN' ? 'bg-red-600' : 'bg-yellow-700')}`}
+                style={{ display: 'flex', zIndex: 50, elevation: 50 }}
+              >
                {/* High-speed scanning tech background */}
                <motion.div 
                  animate={{ opacity: [0.1, 0.3, 0.1] }}
@@ -734,7 +791,8 @@ export function LiveAnalysis() {
             </motion.div>
           )}
         </AnimatePresence>
-      </Modal>
+      </View>
+    )}
 
       {tradingPhase === 'WAITING_FOR_ENTRY' && tradingDirection && (
           <AnimatedArrows direction={tradingDirection} />
@@ -961,7 +1019,7 @@ export function LiveAnalysis() {
               </Pressable>
             )}
 
-            {mode === 'bulk' && (
+            <View style={mode === 'bulk' ? tw`flex` : tw`hidden`}>
               <BulkTestPanel 
                  techniquesList={techniquesList} 
                  encryptedSystemTokens={encryptedSystemTokens} 
@@ -972,7 +1030,7 @@ export function LiveAnalysis() {
                  investmentAmount={investmentAmount}
                  profitabilityPercent={profitabilityPercent}
               />
-            )}
+            </View>
         </View>
 
         {/* Action Bar / Live Debate UI Overlay */}
@@ -1007,10 +1065,10 @@ export function LiveAnalysis() {
             <div style={tw`gap-3 relative z-10`}>
               {[
                 { key: 'system', label: 'System Context', color: '#00FFFF', bg: 'rgba(0, 255, 255, 0.05)' },
-                { key: 'judge1', label: 'Judge 1: Bull Consensus', color: '#FF00FF', bg: 'rgba(255, 0, 255, 0.05)' },
-                { key: 'judge2', label: 'Judge 2: Bear Pressure', color: '#FF1493', bg: 'rgba(255, 20, 147, 0.05)' },
-                { key: 'judge3', label: 'Risk Analyst', color: '#39FF14', bg: 'rgba(57, 255, 20, 0.05)' },
-                { key: 'judge4', label: 'Judge 3: Reversal Gate', color: '#EAB308', bg: 'rgba(234, 179, 8, 0.05)' }
+                { key: 'judge1', label: 'Judge 1: Trend & Momentum', color: '#FF00FF', bg: 'rgba(255, 0, 255, 0.05)' },
+                { key: 'judge2', label: 'Judge 2: Oscillator Consensus', color: '#FF1493', bg: 'rgba(255, 20, 147, 0.05)' },
+                { key: 'judge3', label: 'Skeptic: Veto Multiplier', color: '#39FF14', bg: 'rgba(57, 255, 20, 0.05)' },
+                { key: 'judge4', label: 'Judge 3: Boundary/Reversal', color: '#EAB308', bg: 'rgba(234, 179, 8, 0.05)' }
               ].map((item, idx) => (
                 <motion.div
                   key={item.key}
@@ -1125,7 +1183,7 @@ export function LiveAnalysis() {
                 </motion.div>
                 <View>
                    <Text style={tw`text-lg font-bold text-white`}>Final Arbitrator Report</Text>
-                   <Text style={tw`text-[#8B95B0] text-[10px]`}>3-Judge Scoring Framework</Text>
+                   <Text style={tw`text-[#8B95B0] text-[10px]`}>4-Judge Scoring Framework</Text>
                 </View>
               </div>
               <motion.div 
@@ -1182,7 +1240,7 @@ export function LiveAnalysis() {
                       {[
                         { label: 'J1 reasoning', val: data.j1, max: 4 },
                         { label: 'J2 vehicle', val: data.j2, max: 4 },
-                        { label: 'J3 reversal', val: data.j4, max: 3 },
+                        { label: 'J3 reversal', val: data.j3, max: 3 },
                       ].map((j, i) => (
                         <div key={i} className="mb-2">
                           <div className="flex flex-row justify-between items-center mb-1">

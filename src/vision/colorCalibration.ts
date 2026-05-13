@@ -8,8 +8,8 @@ export interface CalibrationPayload {
 
 const STORAGE_KEY = 'determinist.hsv.v1';
 
-const DEFAULT_BULL: HSVBand = { hCenter: 120, hTolerance: 15, sMin: 0.35, vMin: 0.30 };
-const DEFAULT_BEAR: HSVBand = { hCenter: 5,   hTolerance: 15, sMin: 0.35, vMin: 0.30 };
+const DEFAULT_BULL: HSVBand = { hCenter: 135, hTolerance: 45, sMin: 0.35, vMin: 0.30 };
+const DEFAULT_BEAR: HSVBand = { hCenter: 5,   hTolerance: 35, sMin: 0.35, vMin: 0.30 };
 
 let activeCalibration: CalibrationPayload | null = null;
 
@@ -71,7 +71,7 @@ export function clearCalibration() {
 }
 
 export function isCalibrated(): boolean {
-  return loadCalibration() !== null;
+  return true; // Auto-calibrated with default bands
 }
 
 export function getBullishHSVBands(): HSVBand {

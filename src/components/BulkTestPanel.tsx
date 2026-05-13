@@ -6,6 +6,7 @@ import { FileJson, UploadCloud, Play, AlertTriangle, Activity,  } from 'lucide-r
 import { BatchManifest, BatchManifestEntry, validateBatchManifest } from '../types/batchManifest';
 
 import { BatchAutopsyReport } from './BatchAutopsyReport';
+import { useWakeLock } from './LiveAnalysis';
 
 export type MasterAutopsySummary = {
   title: string;
@@ -115,8 +116,17 @@ export function BulkTestPanel({
   const [manifestErrors, setManifestErrors] = useState<string[]>([]);
   const [isQueueRunning, setIsQueueRunning] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
+  const { requestLock, releaseLock } = useWakeLock();
   
-      const abortControllerRef = useRef<AbortController | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    if (isQueueRunning && !isPaused) {
+      requestLock();
+    } else {
+      releaseLock();
+    }
+  }, [isQueueRunning, isPaused, requestLock, releaseLock]);
 
   useEffect(() => {
     // Attempt hydration from sessionStorage
