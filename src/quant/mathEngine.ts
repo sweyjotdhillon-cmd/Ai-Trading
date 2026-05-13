@@ -1,3 +1,8 @@
+let _seed = 0xC0FFEE;
+function pseudoRandom() {
+  _seed = (_seed * 1664525 + 1013904223) % 4294967296;
+  return _seed / 4294967296;
+};
 import * as ss from 'simple-statistics';
 import pako from 'pako';
 
@@ -541,7 +546,7 @@ export function calculateRobustness(priceSeries: number[], nPerturbations = 20) 
 
   let flipCount = 0;
   for (let i = 0; i < nPerturbations; i++) {
-    const perturbed = priceSeries.map(p => p + (Math.random() * 2 - 1) * noiseScale);
+    const perturbed = priceSeries.map(p => p + (pseudoRandom() * 2 - 1) * noiseScale);
     if (classify(perturbed) !== originalRegime) flipCount++;
   }
 
@@ -571,8 +576,8 @@ export function calculateCEF(priceSeries: number[], liquidityMap: Record<number,
       const futurePrices = [currentPrice + sign * vol];
       for (let t = 0; t < timeHorizon; t++) {
         // Box-Muller transform for normal distribution
-        const u1 = Math.random();
-        const u2 = Math.random();
+        const u1 = pseudoRandom();
+        const u2 = pseudoRandom();
         const z0 = Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
         const nextPrice = futurePrices[futurePrices.length - 1] + z0 * vol;
         futurePrices.push(nextPrice);

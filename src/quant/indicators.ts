@@ -1,7 +1,7 @@
 import { EPSILON } from '../vision/colorSpace';
 
 export function sma(values: number[], period: number): number[] {
-  const result = new Float64Array(values.length).fill(NaN);
+  const result = new Float64Array(values.length).fill(0);
   let sum = 0;
   for (let i = 0; i < values.length; i++) {
     sum += values[i];
@@ -12,7 +12,7 @@ export function sma(values: number[], period: number): number[] {
 }
 
 export function ema(values: number[], period: number): number[] {
-  const result = new Float64Array(values.length).fill(NaN);
+  const result = new Float64Array(values.length).fill(0);
   if (values.length < period) return Array.from(result);
   
   const k = 2 / (period + 1);
@@ -29,7 +29,7 @@ export function ema(values: number[], period: number): number[] {
 }
 
 export function rsi(closes: number[], period = 14): number[] {
-  const result = new Float64Array(closes.length).fill(NaN);
+  const result = new Float64Array(closes.length).fill(0);
   if (closes.length <= period) return Array.from(result);
   
   let avgGain = 0;
@@ -60,9 +60,9 @@ export function rsi(closes: number[], period = 14): number[] {
 }
 
 export function macd(closes: number[], fastWindow = 12, slowWindow = 26, signalWindow = 9) {
-  const macdArray = new Float64Array(closes.length).fill(NaN);
-  const signalArray = new Float64Array(closes.length).fill(NaN);
-  const histArray = new Float64Array(closes.length).fill(NaN);
+  const macdArray = new Float64Array(closes.length).fill(0);
+  const signalArray = new Float64Array(closes.length).fill(0);
+  const histArray = new Float64Array(closes.length).fill(0);
   
   const fastEma = ema(closes, fastWindow);
   const slowEma = ema(closes, slowWindow);
@@ -96,10 +96,10 @@ export function macd(closes: number[], fastWindow = 12, slowWindow = 26, signalW
 }
 
 export function bollinger(closes: number[], period = 20, k = 2) {
-  const upper = new Float64Array(closes.length).fill(NaN);
-  const middle = new Float64Array(closes.length).fill(NaN);
-  const lower = new Float64Array(closes.length).fill(NaN);
-  const width = new Float64Array(closes.length).fill(NaN);
+  const upper = new Float64Array(closes.length).fill(0);
+  const middle = new Float64Array(closes.length).fill(0);
+  const lower = new Float64Array(closes.length).fill(0);
+  const width = new Float64Array(closes.length).fill(0);
   
   const smaValues = sma(closes, period);
   
@@ -126,7 +126,7 @@ export function bollinger(closes: number[], period = 20, k = 2) {
 }
 
 export function atr(candles: {high: number, low: number, close: number}[], period = 14) {
-  const result = new Float64Array(candles.length).fill(NaN);
+  const result = new Float64Array(candles.length).fill(0);
   if (candles.length <= period) return Array.from(result);
   
   const tr = new Float64Array(candles.length);
@@ -151,7 +151,7 @@ export function atr(candles: {high: number, low: number, close: number}[], perio
 }
 
 export function stochastic(candles: {high: number, low: number, close: number}[], kPeriod = 14, dPeriod = 3) {
-  const kArray = new Float64Array(candles.length).fill(NaN);
+  const kArray = new Float64Array(candles.length).fill(0);
   
   for (let i = kPeriod - 1; i < candles.length; i++) {
     let highest = -Infinity;
@@ -174,7 +174,7 @@ export function stochastic(candles: {high: number, low: number, close: number}[]
   }
   
   const kSma = sma(kValid, dPeriod);
-  const dArray = new Float64Array(candles.length).fill(NaN);
+  const dArray = new Float64Array(candles.length).fill(0);
   
   for (let i = 0; i < kSma.length; i++) {
     if (!isNaN(kSma[i])) {

@@ -1,3 +1,8 @@
+let _seed = 0xC0FFEE;
+function pseudoRandom() {
+  _seed = (_seed * 1664525 + 1013904223) % 4294967296;
+  return _seed / 4294967296;
+};
 import { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Points, PointMaterial } from '@react-three/drei';
@@ -9,9 +14,9 @@ export function Particles({ count = 1500, reducedMotion }: { count?: number; red
   const positions = useMemo(() => {
     const pos = new Float32Array(count * 3);
     for (let i = 0; i < count; i++) {
-        const r = 12 * Math.cbrt(Math.random());
-        const theta = Math.random() * 2 * Math.PI;
-        const phi = Math.acos(2 * Math.random() - 1);
+        const r = 12 * Math.cbrt(pseudoRandom());
+        const theta = pseudoRandom() * 2 * Math.PI;
+        const phi = Math.acos(2 * pseudoRandom() - 1);
         pos[i * 3] = r * Math.sin(phi) * Math.cos(theta);
         pos[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
         pos[i * 3 + 2] = r * Math.cos(phi);

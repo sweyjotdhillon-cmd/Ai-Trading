@@ -84,3 +84,12 @@ export function getBearishHSVBands(): HSVBand {
   return cal ? cal.bear : DEFAULT_BEAR;
 }
 
+export function getCalibrationBands() {
+  return { bull: getBullishHSVBands(), bear: getBearishHSVBands() };
+}
+
+export function setCalibrationBands(bull: HSVBand, bear: HSVBand) {
+  activeCalibration = { version: "1", bull, bear };
+}
+
+

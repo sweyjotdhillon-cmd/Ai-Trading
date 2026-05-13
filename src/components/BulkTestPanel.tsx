@@ -105,7 +105,7 @@ export function BulkTestPanel({
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `manifest_${Date.now()}.json`;
+    a.download = `manifest_${performance.now()}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };

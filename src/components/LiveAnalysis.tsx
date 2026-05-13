@@ -1,4 +1,9 @@
-import { runSingleAnalysis } from '../utils/singleAnalysis';
+let _seed = 0xC0FFEE;
+function pseudoRandom() {
+  _seed = (_seed * 1664525 + 1013904223) % 4294967296;
+  return _seed / 4294967296;
+};
+import { runSingleAnalysis, onStableSignal } from '../utils/singleAnalysis';
 import { BulkTestPanel } from './BulkTestPanel';
 import { useState, useRef, useEffect } from 'react';
 import {   View, 
@@ -48,10 +53,21 @@ export function LiveAnalysis() {
   const [mode, setMode] = useState<'live' | 'test' | 'bulk'>('live');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [calibrationFrame, setCalibrationFrame] = useState<ImageData | null>(null);
+  const [isStable, setIsStable] = useState(false);
 
   // Live Trading Loop States
   const [tradingPhase, setTradingPhase] = useState<'IDLE' | 'ANALYSING_DIRECTION' | 'WAITING_FOR_ENTRY' | 'ENTRY_CONFIRMED'>('IDLE');
   const [tradingDirection, setTradingDirection] = useState<'UP' | 'DOWN' | 'NO_TRADE' | null>(null);
+  
+  useEffect(() => {
+    return onStableSignal((payload) => {
+      if (payload.signal === 'CALL') setTradingDirection('UP');
+      else if (payload.signal === 'PUT') setTradingDirection('DOWN');
+      else setTradingDirection('NO_TRADE');
+      setTradingPhase('ENTRY_CONFIRMED');
+      setIsStable(true);
+    }) as any;
+  }, []);
   
   // Live Camera States
   const videoRef = useRef<any>(null);
@@ -118,7 +134,7 @@ export function LiveAnalysis() {
     }
     return [];
   });
-  const [sessionIndex] = useState<number>(() => Math.floor(Math.random() * 1000));
+  const [sessionIndex] = useState<number>(() => Math.floor(pseudoRandom() * 1000));
 
   const fileInputRef = useRef<any>(null);
   const techInputRef = useRef<any>(null);
@@ -297,25 +313,50 @@ export function LiveAnalysis() {
       if (!isMounted || !scoutActive || !analysis || !isCameraActive || !videoRef.current) return;
       
       const currentInterval = (tradingPhase === 'WAITING_FOR_ENTRY' || tradingPhase === 'ENTRY_CONFIRMED') ? 2000 : 10000;
-      const startTime = Date.now();
+      const startTime = performance.now();
 
       if (!isFetching) {
         isFetching = true;
         try {
           const video = videoRef.current;
           const canvas = document.createElement('canvas');
-          // Standard downscale for Scout: 500px to be fast
-          canvas.width = 500;
-          canvas.height = (video.videoHeight / video.videoWidth) * 500;
+          // Downscale for scout to run very fast
+          canvas.width = 640;
+          canvas.height = (video.videoHeight / video.videoWidth) * 640;
           const ctx = canvas.getContext('2d');
           
           if (ctx) {
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const scoutImgDataUrl = canvas.toDataURL('image/jpeg', 0.6);
             
-            // Stub deterministic engine call for scout
-            const scoutJSON = { action: 'CONTINUE', reason: 'Engine not implemented' };
+            // Run actual 100% offline deterministic engine live check
+            const scoutController = new AbortController();
+            const result = await runSingleAnalysis({
+              imageDataUrl: scoutImgDataUrl,
+              stock: stockName,
+              graphTimeframe,
+              investmentDuration,
+              investmentAmount: investmentAmount as string,
+              profitabilityPercent: profitabilityPercent as string,
+              techniquesList,
+              encryptedSystemTokens,
+              signal: scoutController.signal,
+              isTestMode: false,
+              onProgress: () => {}, // silent
+              onJudgeLogs: () => {}, // silent
+            });
+            
             if (isMounted) {
+              let scoutJSON = { action: 'CONTINUE', reason: `Live check: ${result.direction} (Conf: ${result.confidence}%)` };
+              
+              if (tradingDirection && result.direction !== 'NO_TRADE' && result.direction !== tradingDirection && result.confidence >= 60) {
+                 scoutJSON = { action: 'ABORT', reason: `Contradicting signal (${result.direction}) detected. Aborting trade.` };
+                 // Save the aborting frame analysis for Loss Autopsy
+                 setAnalysis(result.analysis);
+              }
+              
               setScoutData(scoutJSON);
+              
               if (scoutJSON.action === 'ABORT' || scoutJSON.action === 'EXIT') {
                 setAnalysisError(`Trade Aborted: ${scoutJSON.reason}`);
                 setScoutActive(false);
@@ -333,7 +374,7 @@ export function LiveAnalysis() {
       
       if (isMounted) {
         // High-speed mode: subtract the time spent processing to hit the next window exactly
-        const elapsed = Date.now() - startTime;
+        const elapsed = performance.now() - startTime;
         const nextTick = Math.max(500, currentInterval - elapsed); 
         if (worker) {
            worker.postMessage({ command: 'start', interval: nextTick });
@@ -525,11 +566,11 @@ export function LiveAnalysis() {
           setIsBusy(false);
 
           setJudgeLogs({
-            judge1: { text: `Bull: ${(result.analysis.bull?.reasoning || "Analyzing...").substring(0, 30)}...`, status: 'done' },
-            judge2: { text: `Bear: ${(result.analysis.bear?.reasoning || "Analyzing...").substring(0, 30)}...`, status: 'done' },
-            judge3: { text: `Risk: ${(result.analysis.skeptic?.riskVerdict || result.analysis.skeptic?.skepticVerdict || "Analyzing...").substring(0, 30)}...`, status: 'done' },
-            judge4: { text: `Boundary: ${result.analysis.judge?.ruling?.substring(0, 30) || "Detected"}...`, status: 'done' },
-            system: { text: `${result.analysis.techUsedCount} Patterns Identified ✅`, status: 'done' }
+            judge1: { text: `Bull Score: ${result.analysis.judge.j1Score.toFixed(0)}`, status: 'done' },
+            judge2: { text: `Bear Score: ${result.analysis.judge.j2Score.toFixed(0)}`, status: 'done' },
+            judge3: { text: `Penalty: ${result.analysis.judge.j3Score.toFixed(0)}`, status: 'done' },
+            judge4: { text: `Boundary Bias: ${result.analysis.judge.j4Score.toFixed(0)}`, status: 'done' },
+            system: { text: `Score: ${result.analysis.judge.totalScore.toFixed(0)} | Stable: ${result.frameStable ? 'YES' : 'NO'}`, status: 'done' }
           });
 
           setAnalysisStep(`Analysis Complete: ${result.analysis.techUsedCount}/${techniquesList.length} Techniques Found`);
@@ -683,6 +724,11 @@ export function LiveAnalysis() {
                    <Text style={tw`text-white font-black text-5xl tracking-tighter uppercase text-center`}>
                       {tradingDirection === 'UP' ? 'EXECUTE NOW' : (tradingDirection === 'DOWN' ? 'EXECUTE NOW' : 'SIGNAL ABORTED')}
                    </Text>
+                   {isStable && (
+                     <View style={tw`absolute -top-6 -right-6 bg-[#1A1308] border border-[#D9B382] px-3 py-1 rounded-full`}>
+                       <Text style={tw`text-[#D9B382] text-[10px] font-black tracking-widest`}>STABLE 3/3</Text>
+                     </View>
+                   )}
                  </motion.div>
 
                  <motion.div 
@@ -1042,9 +1088,19 @@ export function LiveAnalysis() {
         {analysisError && (
           <View style={tw`bg-red-500/10 border border-red-500 border-opacity-10 p-4 rounded-xl mt-4 flex-row items-center`}>
             <AlertTriangle size={20} color="#EF4444" style={tw`mr-3`} />
-            <View style={tw`flex-1`}>
-              <Text style={tw`text-red-400 font-bold mb-1`}>Analysis Error</Text>
-              <Text style={tw`text-red-200 text-xs`}>{analysisError}</Text>
+            <View style={tw`flex-1 flex-row justify-between items-center pr-2`}>
+              <View style={tw`flex-1 pr-2`}>
+                <Text style={tw`text-red-400 font-bold mb-1`}>Analysis Notice / Abort</Text>
+                <Text style={tw`text-red-200 text-xs`}>{analysisError}</Text>
+              </View>
+              {analysisError.includes('Trade Aborted') && analysis && (
+                 <Pressable
+                   onPress={() => setShowAutopsyModal(true)}
+                   style={({ pressed }) => [tw`bg-red-600 px-3 py-2 rounded-lg`, { opacity: pressed ? 0.7 : 1 }]}
+                 >
+                   <Text style={tw`text-white font-bold text-[9px] uppercase`}>Run Loss Autopsy</Text>
+                 </Pressable>
+              )}
             </View>
           </View>
         )}
@@ -1499,7 +1555,7 @@ const AnimatedArrows = ({ direction }: { direction: 'UP' | 'DOWN' | 'NO_TRADE' }
               transition={{ 
                 duration: 2, 
                 repeat: Infinity, 
-                delay: Math.random() * 2,
+                delay: pseudoRandom() * 2,
                 ease: "linear"
               }}
               style={{ fontSize: 120 }}

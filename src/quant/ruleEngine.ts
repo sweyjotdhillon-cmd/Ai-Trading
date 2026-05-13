@@ -16,7 +16,7 @@ export interface DecisionResult {
   evidence: any;
 }
 
-export function evaluateSignal(ohlcSeries: NumericOHLC[], priceAxis: PriceAxisTransform | null): DecisionResult {
+export function evaluateSignal(ohlcSeries: NumericOHLC[], _priceAxis: PriceAxisTransform | null): DecisionResult {
   const defaultNoTrade: DecisionResult = {
     signal: 'NO_TRADE', confidence: 0, bullScore: 0, bearScore: 0,
     skepticPenalty: 0, boundaryBias: 0, finalScore: 0, evidence: {}
@@ -80,16 +80,10 @@ export function evaluateSignal(ohlcSeries: NumericOHLC[], priceAxis: PriceAxisTr
 
   // Boundary Bias
   let yPercent = 50;
-  if (priceAxis) {
-    // Determine yPercent from priceAxis mapping if available
-    // yPercent 0 (bottom/lowest price) to 100 (top/highest price)
-    yPercent = priceAxis.percent(closes[last]);
-  } else {
-    const maxH = Math.max(...highs);
-    const minL = Math.min(...lows);
-    if (maxH !== minL) {
-      yPercent = ((closes[last] - minL) / (maxH - minL)) * 100;
-    }
+  const maxH = Math.max(...highs);
+  const minL = Math.min(...lows);
+  if (maxH !== minL) {
+    yPercent = ((closes[last] - minL) / (maxH - minL)) * 100;
   }
   const boundary = calculateBoundaryReversal(yPercent, candlesForMathEngine);
   const bias = boundary.bullPoints - boundary.bearPoints;

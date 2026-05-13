@@ -15,7 +15,7 @@ import { motion, AnimatePresence, LayoutGroup, useReducedMotion } from 'motion/r
 
 import { LiveAnalysis } from './components/LiveAnalysis';
 import { SystemSettingsModal } from './components/SystemSettingsModal';
-import { HeroMotion } from './components/HeroMotion';
+import { HeroIntro } from './components/HeroIntro';
 import { auth, signIn, logOut as firebaseLogOut } from './firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
 
@@ -229,9 +229,7 @@ function App() {
                 transition={transitionProps}
                 style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, flexGrow: 1 }}
               >
-                <HeroMotion 
-                  onStart={() => { setHeroDismissed(true); }}
-                />
+                <HeroIntro onLaunch={() => setHeroDismissed(true)} />
               </motion.div>
             ) : (
               <motion.div

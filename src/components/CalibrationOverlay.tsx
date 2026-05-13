@@ -3,6 +3,7 @@ import { View, Text, Pressable } from 'react-native';
 import tw from 'twrnc';
 import { saveCalibration } from '../vision/colorCalibration';
 import { samplePatchHSV, calculateAdaptiveBand, hsvToRgb, HSVBand } from '../vision/colorSpace';
+import { calibrateWorker } from '../utils/singleAnalysis';
 
 interface Props {
   frame: ImageData;
@@ -68,9 +69,11 @@ export function CalibrationOverlay({ frame, onComplete, onCancel }: Props) {
   const handleConfirm = () => {
     if (bullBand && bearBand) {
       saveCalibration(bullBand, bearBand);
+      calibrateWorker(bullBand, bearBand);
       onComplete();
     }
   };
+
 
   const handleRetake = () => {
     setStep('TAP_BULL');

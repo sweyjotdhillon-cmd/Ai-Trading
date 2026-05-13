@@ -18,16 +18,41 @@ export interface PipelineResult {
   ohlcSeries: NumericOHLC[];
   meta: {
     latencyMs: number;
+    budgetExceeded?: boolean;
     axisFallback: boolean;
     mode: string;
     stages: Record<string, number>;
   };
 }
 
+let sessionBudgetExceeded = false;
+
 export function buildPipelineResult(imageData: ImageData): PipelineResult {
   const t0 = performance.now();
-  
-  const rectifyRes = rectifyOrCenterCrop(imageData);
+  let workingData = imageData;
+
+  if (sessionBudgetExceeded && imageData.width >= 1280 && imageData.height >= 720) {
+    const dstW = 960;
+    const dstH = 540;
+    const dstData = new Uint8ClampedArray(dstW * dstH * 4);
+    const sx = imageData.width / dstW;
+    const sy = imageData.height / dstH;
+    for (let y = 0; y < dstH; y++) {
+      for (let x = 0; x < dstW; x++) {
+        const srcX = Math.min(Math.floor(x * sx), imageData.width - 1);
+        const srcY = Math.min(Math.floor(y * sy), imageData.height - 1);
+        const si = (srcY * imageData.width + srcX) * 4;
+        const di = (y * dstW + x) * 4;
+        dstData[di] = imageData.data[si];
+        dstData[di+1] = imageData.data[si+1];
+        dstData[di+2] = imageData.data[si+2];
+        dstData[di+3] = imageData.data[si+3];
+      }
+    }
+    workingData = new ImageData(dstData, dstW, dstH);
+  }
+
+  const rectifyRes = rectifyOrCenterCrop(workingData);
   const rectifiedFrame = rectifyRes.rect;
   const t1 = performance.now();
   
@@ -67,13 +92,19 @@ export function buildPipelineResult(imageData: ImageData): PipelineResult {
   }
   
   const t4 = performance.now();
+  const totalLatencyMs = t4 - t0;
+  
+  if (!sessionBudgetExceeded && workingData.width >= 1280 && workingData.height >= 720 && totalLatencyMs > 250) {
+    sessionBudgetExceeded = true;
+  }
   
   return {
     rawCandles,
     axis,
     ohlcSeries,
     meta: {
-      latencyMs: t4 - t0,
+      latencyMs: totalLatencyMs,
+      budgetExceeded: sessionBudgetExceeded,
       axisFallback,
       mode: rectifyRes.mode,
       stages: {

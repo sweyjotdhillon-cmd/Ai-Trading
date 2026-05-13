@@ -1,3 +1,8 @@
+let _seed = 0xC0FFEE;
+function pseudoRandom() {
+  _seed = (_seed * 1664525 + 1013904223) % 4294967296;
+  return _seed / 4294967296;
+};
 import { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
@@ -41,8 +46,8 @@ function SignalDots({ radius, color, speed, reducedMotion }: { radius: number; c
   const count = 8;
   const meshRef = useRef<InstancedMesh>(null);
   const dummy = useMemo(() => new Object3D(), []);
-  const phases = useMemo(() => Array.from({ length: count }, () => Math.random() * Math.PI * 2), []);
-  const isRed = useMemo(() => Array.from({ length: count }, () => Math.random() > 0.8), []);
+  const phases = useMemo(() => Array.from({ length: count }, () => pseudoRandom() * Math.PI * 2), []);
+  const isRed = useMemo(() => Array.from({ length: count }, () => pseudoRandom() > 0.8), []);
   const targetColor = useMemo(() => new THREE.Color(), []);
 
   useFrame(({ clock }) => {

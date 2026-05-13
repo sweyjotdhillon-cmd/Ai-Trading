@@ -26,7 +26,7 @@ export const decompressText = (text: string): string => {
  */
 export const getExpirationTimestamp = (): number => {
   const hours = 48;
-  return Date.now() + hours * 60 * 60 * 1000;
+  return performance.now() + hours * 60 * 60 * 1000;
 };
 
 /**
@@ -34,5 +34,5 @@ export const getExpirationTimestamp = (): number => {
  */
 export const isExpired = (expiresAt?: number): boolean => {
   if (!expiresAt) return false;
-  return Date.now() > expiresAt;
+  return performance.now() > expiresAt;
 };

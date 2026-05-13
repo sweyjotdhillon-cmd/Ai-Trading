@@ -3,7 +3,7 @@ import { EPSILON } from '../vision/colorSpace';
 
 export function firstDerivative(series: number[], h = 1): number[] {
   const n = series.length;
-  const dev = new Float64Array(n).fill(NaN);
+  const dev = new Float64Array(n).fill(0);
   if (n < 2) return Array.from(dev);
   
   // Forward for first element
@@ -22,7 +22,7 @@ export function firstDerivative(series: number[], h = 1): number[] {
 
 export function secondDerivative(series: number[], h = 1): number[] {
   const n = series.length;
-  const dev2 = new Float64Array(n).fill(NaN);
+  const dev2 = new Float64Array(n).fill(0);
   if (n < 3) return Array.from(dev2);
   
   for (let i = 1; i < n - 1; i++) {

@@ -1,3 +1,8 @@
+let _seed = 0xC0FFEE;
+function pseudoRandom() {
+  _seed = (_seed * 1664525 + 1013904223) % 4294967296;
+  return _seed / 4294967296;
+};
 import { useRef, useMemo, useEffect, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
@@ -36,9 +41,9 @@ export function Candle({ isHovered, warpPhase, reducedMotion }: { isHovered: boo
           const pz = (z - segmentsZ / 2 + 0.5) * d;
           orig.push(new THREE.Vector3(px, py, pz));
           expl.push(new THREE.Vector3(
-            px + (Math.random() - 0.5) * 8,
-            py + (Math.random() - 0.5) * 8,
-            pz + (Math.random() - 0.5) * 8
+            px + (pseudoRandom() - 0.5) * 8,
+            py + (pseudoRandom() - 0.5) * 8,
+            pz + (pseudoRandom() - 0.5) * 8
           ));
         }
       }

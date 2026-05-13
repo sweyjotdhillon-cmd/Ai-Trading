@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@400;500;600;700&display=swap');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -20,7 +20,31 @@
   
   --gold-gradient: linear-gradient(90deg, #A67C52 0%, #D9B382 50%, #A67C52 100%);
   --gold-text: linear-gradient(180deg, #E8D5B5 0%, #A67C52 100%);
+
+  /* Cinematic Landing Tokens */
+  --gold: oklch(0.78 0.11 75);
+  --gold-bright: oklch(0.86 0.13 80);
+  --gold-deep: oklch(0.55 0.10 55);
+  --emerald: oklch(0.72 0.16 155);
+  --crimson: oklch(0.66 0.21 25);
+  --gradient-gold: linear-gradient(135deg, oklch(0.86 0.13 80), oklch(0.55 0.10 55));
+  --gradient-bg: radial-gradient(ellipse at top, oklch(0.20 0.02 60) 0%, oklch(0.10 0.012 60) 60%);
+  --shadow-gold: 0 20px 60px -20px oklch(0.78 0.11 75 / 0.45);
 }
+
+.font-display { font-family: 'Space Grotesk', 'Inter', sans-serif; letter-spacing: -0.03em; }
+.font-mono    { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+.text-gold    { color: var(--gold); }
+.text-emerald { color: var(--emerald); }
+.text-crimson { color: var(--crimson); }
+.bg-gold      { background-color: var(--gold); }
+.text-gradient-gold {
+  background: var(--gradient-gold);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+
+@keyframes ticker-scroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+.animate-ticker { animation: ticker-scroll 40s linear infinite; }
 
 html, body, #root {
   height: 100dvh !important;
