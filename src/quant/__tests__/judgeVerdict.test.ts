@@ -118,4 +118,15 @@ describe('Judge Verdict', () => {
       expect(Number.isInteger(result.finalConfidence)).toBe(true);
     }
   });
+
+  it('7. Insufficient data (less than 30 candles) returns NO_TRADE', () => {
+    const series = generateSeries('uptrend', 29); // 29 candles
+    const result = evaluateSignal(series, null, 'REAL_PRICE');
+
+    expect(result.winner).toBe('NO_TRADE');
+    expect(result.ruling).toBe('Insufficient data');
+    expect(result.signal).toBe('NO_TRADE');
+    expect(result.confidence).toBe(0);
+    expect(result.finalConfidence).toBe(0);
+  });
 });
