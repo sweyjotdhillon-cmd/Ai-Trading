@@ -20,24 +20,10 @@ import { HeroIntro } from './components/HeroIntro';
 function App() {
   console.log("[App] Mounting...");
   const [showSystemSettings, setShowSystemSettings] = useState(false);
-  const [heroDismissed, setHeroDismissed] = useState(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        return localStorage.getItem('heroDismissed') === 'true';
-      } catch(e) {
-        return false;
-      }
-    }
-    return false;
-  });
+  const [heroDismissed, setHeroDismissed] = useState(false);
   
   const handleLaunch = () => {
     setHeroDismissed(true);
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.setItem('heroDismissed', 'true');
-      } catch(e) {}
-    }
   };
 
   const prefersReducedMotion = useReducedMotion();
