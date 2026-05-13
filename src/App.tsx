@@ -63,7 +63,7 @@ function App() {
               <Activity color="#1A1308" size={18} />
             </View>
             <View>
-              <Text style={styles.headerTitle}>AI TRADING</Text>
+              <Text style={styles.headerTitle}>CHARTLENS</Text>
               <Text style={styles.headerSubtitle}>PRO TERMINAL</Text>
             </View>
           </View>

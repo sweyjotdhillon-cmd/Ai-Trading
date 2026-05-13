@@ -1,5 +1,5 @@
 {
-  "name": "AI Trading Assistant",
-  "description": "An AI-powered binary options trading assistant",
+  "name": "ChartLens",
+  "description": "ChartLens - AI-powered binary options trading assistant and technical market optics.",
   "requestFramePermissions": ["camera"]
 }

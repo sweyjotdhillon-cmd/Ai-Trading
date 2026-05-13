@@ -30,7 +30,7 @@ export function HeroIntro({ onLaunch }: { onLaunch?: () => void }) {
         >
           <div className="w-2 h-2 rounded-full bg-gold animate-pulse" />
           <span className="font-mono text-xs md:text-sm tracking-[0.2em] uppercase text-gray-300">
-            AI Trading <span className="opacity-40 px-2">·</span> Pro Terminal
+            ChartLens <span className="opacity-40 px-2">·</span> Pro Terminal
           </span>
         </motion.div>
       </header>

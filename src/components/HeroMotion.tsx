@@ -29,7 +29,7 @@ export function HeroMotion({ onStart }: HeroMotionProps) {
     }, 400);
   };
 
-  const textLines = ["TRADE", "WITH", "PRECISION."];
+  const textLines = ["MASTER", "THE", "MARKET."];
 
   return (
     <div className="relative w-full h-[100vh] min-h-[600px] bg-[#05070A] overflow-hidden flex flex-col items-center justify-center font-sans tracking-tight">
@@ -56,7 +56,7 @@ export function HeroMotion({ onStart }: HeroMotionProps) {
           className="mb-4"
         >
           <span className="text-[#D9B382] font-mono text-xs sm:text-sm tracking-[0.2em] uppercase font-bold">
-            // LIVE_MARKET_INTELLIGENCE
+            // CHARTLENS_INTELLIGENCE
           </span>
         </motion.div>
 
@@ -89,7 +89,7 @@ export function HeroMotion({ onStart }: HeroMotionProps) {
            transition={{ delay: 1.8, duration: 1 }}
         >
           <p className="text-[#8E9299] max-w-md text-sm sm:text-base mb-10 px-4 font-inter leading-relaxed">
-            AI-debated signals. Statistical edge. Loss autopsy on every trade.
+            Market optics & precision scoring. Statistical edge. Forensic loss autopsy on every trade.
           </p>
         </motion.div>
 
