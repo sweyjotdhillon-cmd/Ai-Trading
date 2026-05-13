@@ -200,8 +200,13 @@ export function BulkTestPanel({
       let hasError = false;
       const missingFiles: string[] = [];
 
+      const fileMap = new Map<string, File>();
+      for (const f of fileArray) {
+        fileMap.set(f.name, f);
+      }
+
       for (let i = 0; i < updated.length; i++) {
-        const match = fileArray.find(f => f.name === updated[i].entry.imageFilename);
+        const match = fileMap.get(updated[i].entry.imageFilename);
         if (match) {
           updated[i].file = match;
         } else {
