@@ -217,7 +217,7 @@ export async function runSingleAnalysis(params: {
            const newClose = finalDecision.evidence.lastClose;
            
            if (originalClose !== undefined) {
-             const actualDir = originalClose > newClose ? 'UP' : (originalClose < newClose ? 'DOWN' : 'NO_TRADE');
+             const actualDir = newClose > originalClose ? 'UP' : (newClose < originalClose ? 'DOWN' : 'NO_TRADE');
              if (actualDir === 'NO_TRADE' || finalDecision.winner === 'NO_TRADE') {
                  outcome = 'NEUTRAL';
              } else if (finalDecision.winner === 'BULL') {
@@ -282,4 +282,3 @@ export async function runSingleAnalysis(params: {
     frameStable
   };
 }
-
