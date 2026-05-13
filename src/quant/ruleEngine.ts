@@ -182,7 +182,7 @@ export function evaluateSignal(ohlcSeries: NumericOHLC[], priceAxis: PriceAxisTr
   
   const finalConfidence = Math.round((rawWinningTotal * skepticMultiplier / 11) * 100);
 
-  let ruling = winner === 'NO_TRADE' ? 'Points are tied.' : `Clear ${winner} edge.`;
+  const ruling = winner === 'NO_TRADE' ? 'Points are tied.' : `Clear ${winner} edge.`;
 
   return {
     cases,

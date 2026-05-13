@@ -9,7 +9,7 @@ function generateSeries(type: 'uptrend' | 'downtrend' | 'sideways' | 'explosive'
   if (type === 'downtrend') price = 5000;
 
   for (let i = 0; i < length; i++) {
-    let open = price;
+    const open = price;
     let close = price;
     let high = price;
     let low = price;

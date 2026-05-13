@@ -1,6 +1,6 @@
 import { EPSILON } from '../vision/colorSpace';
 
-export function sma(values: number[], period: number): number[] {
+export function sma(values: number[] | Float64Array, period: number): Float64Array {
   const result = new Float64Array(values.length).fill(0);
   let sum = 0;
   for (let i = 0; i < values.length; i++) {
@@ -8,12 +8,12 @@ export function sma(values: number[], period: number): number[] {
     if (i >= period) sum -= values[i - period];
     if (i >= period - 1) result[i] = sum / period;
   }
-  return Array.from(result);
+  return result;
 }
 
-export function ema(values: number[], period: number): number[] {
+export function ema(values: number[] | Float64Array, period: number): Float64Array {
   const result = new Float64Array(values.length).fill(0);
-  if (values.length < period) return Array.from(result);
+  if (values.length < period) return result;
   
   const k = 2 / (period + 1);
   let sum = 0;
@@ -25,12 +25,12 @@ export function ema(values: number[], period: number): number[] {
     prevEma = (values[i] - prevEma) * k + prevEma;
     result[i] = prevEma;
   }
-  return Array.from(result);
+  return result;
 }
 
-export function rsi(closes: number[], period = 14): number[] {
+export function rsi(closes: number[] | Float64Array, period = 14): Float64Array {
   const result = new Float64Array(closes.length).fill(0);
-  if (closes.length <= period) return Array.from(result);
+  if (closes.length <= period) return result;
   
   let avgGain = 0;
   let avgLoss = 0;
@@ -56,10 +56,10 @@ export function rsi(closes: number[], period = 14): number[] {
     const currRs = avgGain === 0 && avgLoss === 0 ? 1 : avgGain / Math.max(avgLoss, EPSILON);
     result[i] = 100 - (100 / (1 + currRs));
   }
-  return Array.from(result);
+  return result;
 }
 
-export function macd(closes: number[], fastWindow = 12, slowWindow = 26, signalWindow = 9) {
+export function macd(closes: number[] | Float64Array, fastWindow = 12, slowWindow = 26, signalWindow = 9) {
   const macdArray = new Float64Array(closes.length).fill(0);
   const signalArray = new Float64Array(closes.length).fill(0);
   const histArray = new Float64Array(closes.length).fill(0);
@@ -89,13 +89,13 @@ export function macd(closes: number[], fastWindow = 12, slowWindow = 26, signalW
   }
   
   return {
-    macd: Array.from(macdArray),
-    signal: Array.from(signalArray),
-    hist: Array.from(histArray)
+    macd: macdArray,
+    signal: signalArray,
+    hist: histArray
   };
 }
 
-export function bollinger(closes: number[], period = 20, k = 2) {
+export function bollinger(closes: number[] | Float64Array, period = 20, k = 2) {
   const upper = new Float64Array(closes.length).fill(0);
   const middle = new Float64Array(closes.length).fill(0);
   const lower = new Float64Array(closes.length).fill(0);
@@ -118,16 +118,16 @@ export function bollinger(closes: number[], period = 20, k = 2) {
   }
   
   return {
-    upper: Array.from(upper),
-    middle: Array.from(middle),
-    lower: Array.from(lower),
-    width: Array.from(width)
+    upper: upper,
+    middle: middle,
+    lower: lower,
+    width: width
   };
 }
 
-export function atr(candles: {high: number, low: number, close: number}[], period = 14) {
+export function atr(candles: {high: number, low: number, close: number}[], period = 14): Float64Array {
   const result = new Float64Array(candles.length).fill(0);
-  if (candles.length <= period) return Array.from(result);
+  if (candles.length <= period) return result;
   
   const tr = new Float64Array(candles.length);
   tr[0] = Math.max(candles[0].high - candles[0].low, EPSILON);
@@ -147,7 +147,7 @@ export function atr(candles: {high: number, low: number, close: number}[], perio
     result[i] = (result[i-1] * (period - 1) + tr[i]) / period;
   }
   
-  return Array.from(result);
+  return result;
 }
 
 export function stochastic(candles: {high: number, low: number, close: number}[], kPeriod = 14, dPeriod = 3) {
@@ -183,7 +183,7 @@ export function stochastic(candles: {high: number, low: number, close: number}[]
   }
   
   return {
-    k: Array.from(kArray),
-    d: Array.from(dArray)
+    k: kArray,
+    d: dArray
   };
 }

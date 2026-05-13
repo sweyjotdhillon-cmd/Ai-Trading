@@ -10,7 +10,7 @@ function cleanInput(arr: number[]): number[] {
   });
 }
 
-function checkFiniteNaN(arr: number[]) {
+function checkFiniteNaN(arr: number[] | Float64Array) {
   for (let i = 0; i < arr.length; i++) {
     if (Number.isNaN(arr[i])) {
       throw new Error('NaN encountered in array output at index ' + i);
@@ -26,15 +26,15 @@ export function runEpsilonGuard(): boolean {
   const floatInputs = inputs.map(cleanInput);
 
   const numFns = [
-    (arr: number[]) => sma(arr, 2),
-    (arr: number[]) => ema(arr, 2),
-    (arr: number[]) => rsi(arr, 2),
-    (arr: number[]) => macd(arr, 2, 3, 2).macd,
-    (arr: number[]) => macd(arr, 2, 3, 2).signal,
-    (arr: number[]) => macd(arr, 2, 3, 2).hist,
-    (arr: number[]) => bollinger(arr, 2, 2).upper,
-    (arr: number[]) => firstDerivative(arr, 1),
-    (arr: number[]) => secondDerivative(arr, 1),
+    (arr: number[] | Float64Array) => sma(arr, 2),
+    (arr: number[] | Float64Array) => ema(arr, 2),
+    (arr: number[] | Float64Array) => rsi(arr, 2),
+    (arr: number[] | Float64Array) => macd(arr, 2, 3, 2).macd,
+    (arr: number[] | Float64Array) => macd(arr, 2, 3, 2).signal,
+    (arr: number[] | Float64Array) => macd(arr, 2, 3, 2).hist,
+    (arr: number[] | Float64Array) => bollinger(arr, 2, 2).upper,
+    (arr: number[] | Float64Array) => firstDerivative(arr, 1),
+    (arr: number[] | Float64Array) => secondDerivative(arr, 1),
   ];
 
   for (const arr of floatInputs) {
