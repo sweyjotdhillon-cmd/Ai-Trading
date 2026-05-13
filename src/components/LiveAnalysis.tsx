@@ -34,8 +34,6 @@ import {
   Zap
 } from 'lucide-react';
 import tw from 'twrnc';
-import { db } from '../firebase';
-import { doc, onSnapshot } from 'firebase/firestore';
 import { LossAutopsyModal } from './LossAutopsyModal';
 import { isCalibrated } from '../vision/colorCalibration';
 import { CalibrationOverlay } from './CalibrationOverlay';
@@ -73,17 +71,11 @@ export function LiveAnalysis() {
   const videoRef = useRef<any>(null);
   const [isCameraActive, setIsCameraActive] = useState(false);
   
-  // Encrypted token state for backend
-  const [encryptedSystemTokens, setEncryptedSystemTokens] = useState<string | undefined>();
+  // Offline deterministic mode -> tokens are always healthy (no tokens needed)
+  const [encryptedSystemTokens, setEncryptedSystemTokens] = useState<string | undefined>('offline-mode-active');
   
   useEffect(() => {
-    const unsub = onSnapshot(doc(db, 'settings', 'system'), (snap) => {
-      if (snap.exists()) {
-        const data = snap.data();
-        setEncryptedSystemTokens(data.encryptedTokens);
-      }
-    });
-    return () => unsub();
+    // Offline mode, no snapshot needed
   }, []);
 
   // Real-Time Scout (10s Tick)

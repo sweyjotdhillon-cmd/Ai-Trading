@@ -394,7 +394,7 @@ export function BulkTestPanel({
                 Drag & Drop or Click to Upload
               </Text>
               <Text style={tw`text-white text-[10px] text-opacity-40 uppercase font-bold tracking-widest mb-3 text-center`}>
-                Max Recommended Batch Size: 25 Image Files (API Rate Limits)
+                Max Recommended Batch Size: Unlimited (Offline Engine)
               </Text>
               <Text style={tw`text-white text-opacity-50 text-xs text-center px-4`}>
                 Drop chart screenshots here to generate a matching JSON manifest sequence.

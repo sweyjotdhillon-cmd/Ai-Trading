@@ -16,14 +16,9 @@ import { motion, AnimatePresence, LayoutGroup, useReducedMotion } from 'motion/r
 import { LiveAnalysis } from './components/LiveAnalysis';
 import { SystemSettingsModal } from './components/SystemSettingsModal';
 import { HeroIntro } from './components/HeroIntro';
-import { auth, signIn, logOut as firebaseLogOut } from './firebase';
-import { onAuthStateChanged, User } from 'firebase/auth';
 
 function App() {
   console.log("[App] Mounting...");
-  const [user, setUser] = useState<User | null>(null);
-  const [isAuthReady, setIsAuthReady] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [showSystemSettings, setShowSystemSettings] = useState(false);
   const [heroDismissed, setHeroDismissed] = useState(false);
   
@@ -46,118 +41,6 @@ function App() {
       window.removeEventListener('unhandledrejection', handleRejection);
     };
   }, []);
-
-  useEffect(() => {
-    // No more API config check needed
-  }, []);
-
-  useEffect(() => {
-    try {
-      const unsubscribe = onAuthStateChanged(auth, (currentUser: User | null) => {
-        setUser(currentUser);
-        setIsAuthReady(true);
-      }, (err) => {
-        console.error("Auth change error:", err);
-        setError("Auth initialization failed: " + err.message);
-        setIsAuthReady(true); // Don't hang forever
-      });
-      return unsubscribe;
-    } catch (e: any) {
-      console.error("Auth subscription failed", e);
-      setError("Auth system failed: " + e.message);
-      setIsAuthReady(true);
-    }
-  }, []);
-
-  const handleSignIn = async () => {
-    try {
-      await signIn();
-    } catch (err: any) {
-      console.error('Sign-in error:', err);
-      setError("Sign-in failed: " + err.message);
-    }
-  };
-
-  const handleLogOut = async () => {
-    try {
-      await firebaseLogOut();
-    } catch (err: any) {
-      console.error("Logout failed:", err);
-      setError("Logout failed: " + err.message);
-    }
-  };
-
-  if (error) {
-    return (
-      <View style={[styles.loadingContainer, { padding: 40 }]}>
-        <ActivityIndicator size="large" color="#EF4444" style={{ marginBottom: 20 }} />
-        <Text style={[styles.loadingText, { color: '#EF4444', textAlign: 'center' }]}>CRITICAL ERROR</Text>
-        <Text style={{ color: '#8E9299', textAlign: 'center', marginTop: 10 }}>{error}</Text>
-        <Pressable 
-          style={({ pressed }) => [styles.signInButton, { marginTop: 30, backgroundColor: '#14161C', borderColor: '#4B5570', borderWidth: 1, opacity: pressed ? 0.7 : 1 }]}
-          onPress={() => window.location.reload()}
-        >
-          <motion.div whileHover={prefersReducedMotion ? {} : { scale: 1.04 }} whileTap={prefersReducedMotion ? {} : { scale: 0.96 }} transition={springProps} style={{ display: 'contents' }}>
-            <Text style={{ color: 'white', fontWeight: 'bold' }}>Reload Application</Text>
-          </motion.div>
-        </Pressable>
-      </View>
-    );
-  }
-
-  if (!isAuthReady) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#D9B382" />
-        <Text style={styles.loadingText}>Initializing Trading Engine...</Text>
-      </View>
-    );
-  }
-
-  if (!user) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.authWrapper}>
-          <motion.div
-            initial={{ opacity: 0, y: prefersReducedMotion ? 0 : 40, scale: prefersReducedMotion ? 1 : 0.96 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{ duration: prefersReducedMotion ? 0 : 0.5, ease: "easeOut" }}
-            style={{ display: 'contents' }}
-          >
-            <View style={styles.authCard}>
-              <View style={styles.logoContainer}>
-                <motion.div
-                  animate={{ rotate: prefersReducedMotion ? 0 : [0, 10, -10, 0] }}
-                  transition={{ duration: prefersReducedMotion ? 0 : 3, repeat: Infinity, ease: "easeInOut" }}
-                  style={{ display: 'contents' }}
-                >
-                  <Activity color="#D9B382" size={48} />
-                </motion.div>
-              </View>
-              <Text style={styles.authTitle}>AI Trading Assistant</Text>
-              <Text style={styles.authSubtitle}>
-                Professional-grade market analysis on the go.
-              </Text>
-              <Pressable 
-                style={({ pressed }) => [styles.signInButton, { opacity: pressed ? 0.7 : 1 }]} 
-                onPress={handleSignIn}
-              >
-                <motion.div
-                  whileHover={prefersReducedMotion ? {} : { scale: 1.04 }}
-                  whileTap={prefersReducedMotion ? {} : { scale: 0.96 }}
-                  transition={springProps}
-                  style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', width: '100%' }}
-                >
-                  <LogIn color="white" size={20} style={{marginRight: 10}} />
-                  <Text style={styles.signInButtonText}>Sign in with Google</Text>
-                </motion.div>
-              </Pressable>
-            </View>
-          </motion.div>
-        </View>
-      </SafeAreaView>
-    );
-  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -195,22 +78,11 @@ function App() {
               </motion.div>
             </Pressable>
             
-            <Pressable style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1, marginLeft: 10 })} onPress={handleLogOut}>
-              <motion.div
-                whileHover={prefersReducedMotion ? {} : { scale: 1.04 }}
-                whileTap={prefersReducedMotion ? {} : { scale: 0.96 }}
-                transition={springProps}
-                style={{ display: 'contents' }}
-              >
-                {user.photoURL ? (
-                  <Image source={{ uri: user.photoURL }} style={[styles.profileImage, { marginLeft: 0 }]} />
-                ) : (
-                  <View style={[styles.profilePlaceholder, { marginLeft: 0 }]}>
-                    <LogIn color="#1A1308" size={16} />
-                  </View>
-                )}
-              </motion.div>
-            </Pressable>
+            <View style={{ marginLeft: 10 }}>
+              <View style={[styles.profilePlaceholder, { marginLeft: 0 }]}>
+                <LogIn color="#1A1308" size={16} />
+              </View>
+            </View>
           </View>
         </View>
       </motion.div>
