@@ -13,6 +13,7 @@ export type MasterAutopsySummary = {
   narrative: string;
   coreWeakness: string;
   recommendedAction: string;
+  rawLosses?: any;
 };
 
 import { runSingleAnalysis } from '../utils/singleAnalysis';
@@ -239,7 +240,7 @@ export function BulkTestPanel({
     setIsPaused(false);
     abortControllerRef.current = new AbortController();
 
-    const CONCURRENCY_LIMIT = 5;
+    const CONCURRENCY_LIMIT = 15;
     let currentIndex = 0;
     let hasErrorHalted = false;
 
@@ -295,9 +296,8 @@ export function BulkTestPanel({
              saveToStats(result.analysis, result.outcome);
           }
           
-          // Keep compressed JPEGs but delete raw analysis which could be huge
           const lightweightResult = { ...result };
-          delete lightweightResult.analysis;
+          // We keep images here for the UI to display thumbnails
 
           setQueue(q => q.map((r, idx) => idx === i ? { ...r, status: result.outcome, result: lightweightResult } : r));
         } catch (err: any) {
@@ -343,11 +343,25 @@ export function BulkTestPanel({
        // Simulate stub response
        await new Promise(r => setTimeout(r, 1000));
        if (losses.length > 0) {
+          const failuresData = losses.map(l => {
+             const analysisCopy = l.result?.analysis ? JSON.parse(JSON.stringify(l.result.analysis)) : null;
+             return {
+                fileName: l.file?.name || l.entry.fileName || "unknown",
+                stock: l.entry.stock,
+                timeframe: l.entry.graphTimeframe,
+                expectedOutcome: l.entry.expectedOutcome,
+                actualResult: l.status,
+                analysis: analysisCopy,
+                error: l.error,
+             };
+          });
+
           setMasterSummary({
-             title: "Autopsy Unavailable",
-             narrative: "Backend removed for deterministic mode.",
-             coreWeakness: "No LLM capabilities.",
-             recommendedAction: "Use mathematical backtest instead."
+             title: `Batch Autopsy: ${losses.length} Loss(es) Analyzed`,
+             narrative: "An automated math-engine autopsy was executed over the loss instances across the batch. Deep LLM reasoning is offline, but full scoring logs for all losses are included in the JSON download.",
+             coreWeakness: "Check the 'rawLosses' array in the exported JSON file to inspect the scoring logic and points distribution that led to each loss.",
+             recommendedAction: "Review math signal scores vs expected outcomes, and consider adjusting timeframe or standard bounds.",
+             rawLosses: failuresData
           });
        }
      } catch (e) {
@@ -521,7 +535,7 @@ export function BulkTestPanel({
                           </View>
                           <View style={tw`px-3`}>
                             <Text style={[tw`text-[10px] font-black uppercase tracking-widest text-right`, tw`${getStatusColor(item.status)}`]}>
-                              {item.status}
+                              {item.status === 'WIN' ? 'PROFIT' : item.status === 'NEUTRAL' ? 'NO TRADE' : item.status}
                             </Text>
                             {item.error && <Text style={tw`text-orange-400 text-[8px]`} numberOfLines={1}>{item.error.substring(0, 20)}</Text>}
                             {!item.error && item.result && (

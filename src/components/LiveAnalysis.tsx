@@ -639,11 +639,11 @@ export function LiveAnalysis() {
               setTimeout(() => {
                 saveToStats(result.analysis, exactOutcome);
                 setAutoGradeStatus('done');
-                setAnalysisStep(`AUTO-GRADED: Signal=${result.direction} | ${exactOutcome === 'WIN' ? '✅ WIN' : '❌ LOSS'} (${result.confidence}%)`);
+                setAnalysisStep(`AUTO-GRADED: Signal=${result.direction} | ${exactOutcome === 'WIN' ? '✅ PROFIT' : '❌ LOSS'} (${result.confidence}%)`);
               }, 800);
             } else {
               setAutoGradeStatus('failed');
-              setAnalysisStep(`AUTO-GRADE NEUTRAL — please declare WIN or LOSS manually.`);
+              setAnalysisStep(`AUTO-GRADE NO TRADE — please declare PROFIT or LOSS manually.`);
             }
           }
           
@@ -1382,7 +1382,7 @@ export function LiveAnalysis() {
                       >
                         <motion.div whileHover={buttonHoverProps} whileTap={buttonTapProps} transition={springProps} style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
                           <CheckCircle size={18} color="white" style={tw`mr-2`} />
-                          <Text style={tw`text-white font-black uppercase text-sm`}>WIN (PROFIT)</Text>
+                          <Text style={tw`text-white font-black uppercase text-sm`}>PROFIT</Text>
                         </motion.div>
                       </Pressable>
                       
@@ -1400,7 +1400,7 @@ export function LiveAnalysis() {
                     <View style={tw`items-center`}>
                       <View style={tw`${confirmedOutcome === 'WIN' ? 'bg-green-600' : 'bg-red-600'} px-6 py-3 rounded-xl mb-4 flex-row items-center border border-white border-opacity-10 shadow-xl`}>
                         {confirmedOutcome === 'WIN' ? <CheckCircle size={24} color="white" style={tw`mr-3`} /> : <XCircle size={24} color="white" style={tw`mr-3`} />}
-                        <Text style={tw`text-white text-xl font-black uppercase tracking-[3px]`}>{confirmedOutcome}</Text>
+                        <Text style={tw`text-white text-xl font-black uppercase tracking-[3px]`}>{confirmedOutcome === 'WIN' ? 'PROFIT' : confirmedOutcome}</Text>
                       </View>
                       
                       {confirmedOutcome === 'LOSS' && (
@@ -1459,7 +1459,7 @@ export function LiveAnalysis() {
                   <View style={tw`items-center py-2`}>
                     <AlertTriangle size={28} color="#f59e0b" style={tw`mb-2`} />
                     <Text style={tw`text-yellow-400 font-black uppercase text-xs tracking-widest text-center mb-1`}>
-                      AUTO-GRADE NEUTRAL
+                      AUTO-GRADE NO TRADE
                     </Text>
                     <Text style={tw`text-white text-opacity-60 text-xs text-center mb-4 px-4`}>
                       {autoGradeReason || 'Right slice was unreadable or price was flat. Declare manually below.'}
@@ -1473,7 +1473,7 @@ export function LiveAnalysis() {
                         style={({ pressed }) => [tw`flex-1 min-w-[120px] bg-green-600 h-12 rounded-xl items-center justify-center flex-row shadow-xl`, { opacity: pressed ? 0.7 : 1 }]}
                       >
                         <CheckCircle size={18} color="white" style={tw`mr-2`} />
-                        <Text style={tw`text-white font-black uppercase text-sm`}>WIN</Text>
+                        <Text style={tw`text-white font-black uppercase text-sm`}>PROFIT</Text>
                       </Pressable>
                       <Pressable
                         onPress={() => saveToStats(analysis, 'LOSS')}
@@ -1509,7 +1509,7 @@ export function LiveAnalysis() {
                         ? <CheckCircle size={24} color="white" style={tw`mr-3`} />
                         : <XCircle size={24} color="white" style={tw`mr-3`} />}
                       <Text style={tw`text-white text-xl font-black uppercase tracking-[3px]`}>
-                        {confirmedOutcome}
+                        {confirmedOutcome === 'WIN' ? 'PROFIT' : confirmedOutcome}
                       </Text>
                     </View>
                     {autoGradeReason && autoGradeStatus === 'done' && (
@@ -1554,7 +1554,7 @@ export function LiveAnalysis() {
                       style={({ pressed }) => [tw`flex-1 min-w-[120px] bg-green-600 h-12 rounded-xl items-center justify-center flex-row`, { opacity: pressed ? 0.7 : 1 }]}
                     >
                       <CheckCircle size={18} color="white" style={tw`mr-2`} />
-                      <Text style={tw`text-white font-black uppercase text-sm`}>WIN</Text>
+                      <Text style={tw`text-white font-black uppercase text-sm`}>PROFIT</Text>
                     </Pressable>
                     <Pressable
                       onPress={() => saveToStats(analysis, 'LOSS')}
