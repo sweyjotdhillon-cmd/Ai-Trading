@@ -33,7 +33,7 @@
     "react-native-web": "^0.19.12",
     "recharts": "^3.8.0",
     "simple-statistics": "^7.8.9",
-    "three": "^0.169.0",
+    "three": "0.167.1",
     "tsx": "^4.21.0",
     "twrnc": "^2.1.0"
   },
