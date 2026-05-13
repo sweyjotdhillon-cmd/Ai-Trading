@@ -78,24 +78,34 @@ export function BulkTestPanel({
     
     // Only image info and backtest expectations are needed in the JSON
     // The execution info (asset, duration, risk) is piped from the global terminal UI
-    const entries: BatchManifestEntry[] = await Promise.all(images.map(async (file) => {
-      const imageData = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
-      return {
-        imageFilename: file.name,
-        expectedOutcome: 'UNKNOWN',
-        imageData,
-        stock: stockName,
-        graphTimeframe: graphTimeframe,
-        investmentDuration: investmentDuration,
-        investmentAmount: Number(investmentAmount) || 100,
-        profitabilityPercent: Number(profitabilityPercent) || 85
-      };
-    }));
+    const entries: BatchManifestEntry[] = [];
+    const CHUNK_SIZE = 5;
+
+    for (let i = 0; i < images.length; i += CHUNK_SIZE) {
+      const chunk = images.slice(i, i + CHUNK_SIZE);
+      const chunkEntries = await Promise.all(chunk.map(async (file) => {
+        const imageData = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+        return {
+          imageFilename: file.name,
+          expectedOutcome: 'UNKNOWN' as const,
+          imageData,
+          stock: stockName,
+          graphTimeframe: graphTimeframe,
+          investmentDuration: investmentDuration,
+          investmentAmount: Number(investmentAmount) || 100,
+          profitabilityPercent: Number(profitabilityPercent) || 85
+        };
+      }));
+      entries.push(...chunkEntries);
+
+      // Yield to the event loop to prevent UI blocking
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
 
     const manifest: BatchManifest = {
       version: '1.0',
