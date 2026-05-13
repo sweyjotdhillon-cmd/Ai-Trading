@@ -56,7 +56,6 @@ describe('Judge Verdict', () => {
   it('1. Strong uptrend synthetic series', () => {
     const series = generateSeries('uptrend', 150);
     const result = evaluateSignal(series, null, 'REAL_PRICE');
-    console.log("UPTREND RESULT:", JSON.stringify(result, null, 2));
     expect(result.winner).toBe('BULL');
     expect(result.margin).toBeGreaterThanOrEqual(2);
     expect(result.finalConfidence).toBeGreaterThanOrEqual(50);
@@ -65,7 +64,6 @@ describe('Judge Verdict', () => {
   it('2. Strong downtrend synthetic series', () => {
     const series = generateSeries('downtrend', 150);
     const result = evaluateSignal(series, null, 'REAL_PRICE');
-    console.log("DOWNTREND RESULT:", JSON.stringify(result, null, 2));
     expect(result.winner).toBe('BEAR');
     expect(result.margin).toBeGreaterThanOrEqual(2);
     expect(result.finalConfidence).toBeGreaterThanOrEqual(50);
