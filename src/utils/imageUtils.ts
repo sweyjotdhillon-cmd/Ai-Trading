@@ -313,13 +313,27 @@ export function dataUrlToImageData(dataUrl: string): Promise<ImageData> {
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => {
+      let width = img.width;
+      let height = img.height;
+      const MAX_DIMENSION = 1600;
+      
+      if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
+        if (width > height) {
+          height = Math.round((height * MAX_DIMENSION) / width);
+          width = Math.round(MAX_DIMENSION);
+        } else {
+          width = Math.round((width * MAX_DIMENSION) / height);
+          height = Math.round(MAX_DIMENSION);
+        }
+      }
+
       const canvas = document.createElement('canvas');
-      canvas.width = img.width;
-      canvas.height = img.height;
+      canvas.width = width;
+      canvas.height = height;
       const ctx = canvas.getContext('2d');
       if (!ctx) return reject(new Error("No 2d context"));
-      ctx.drawImage(img, 0, 0);
-      resolve(ctx.getImageData(0, 0, canvas.width, canvas.height));
+      ctx.drawImage(img, 0, 0, width, height);
+      resolve(ctx.getImageData(0, 0, width, height));
     };
     img.onerror = () => reject(new Error("Failed to load calibration image"));
     img.src = dataUrl;

@@ -22,7 +22,11 @@ function App() {
   const [showSystemSettings, setShowSystemSettings] = useState(false);
   const [heroDismissed, setHeroDismissed] = useState(() => {
     if (typeof window !== 'undefined') {
-      return localStorage.getItem('heroDismissed') === 'true';
+      try {
+        return localStorage.getItem('heroDismissed') === 'true';
+      } catch(e) {
+        return false;
+      }
     }
     return false;
   });
@@ -30,7 +34,9 @@ function App() {
   const handleLaunch = () => {
     setHeroDismissed(true);
     if (typeof window !== 'undefined') {
-      localStorage.setItem('heroDismissed', 'true');
+      try {
+        localStorage.setItem('heroDismissed', 'true');
+      } catch(e) {}
     }
   };
 

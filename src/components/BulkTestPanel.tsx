@@ -105,9 +105,12 @@ export function BulkTestPanel({
     const blob = new Blob([JSON.stringify(manifest, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
+    a.target = '_blank';
     a.href = url;
     a.download = `manifest_${performance.now()}.json`;
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
 
@@ -236,73 +239,98 @@ export function BulkTestPanel({
     setIsPaused(false);
     abortControllerRef.current = new AbortController();
 
-    for (let i = 0; i < queue.length; i++) {
-      if (abortControllerRef.current?.signal.aborted || isPaused) break;
-      
-      const item = queue[i];
-      if (item.status === 'WIN' || item.status === 'LOSS' || item.status === 'NEUTRAL') {
-        continue; // skip completed
-      }
+    const CONCURRENCY_LIMIT = 5;
+    let currentIndex = 0;
+    let hasErrorHalted = false;
 
-      setQueue(q => q.map((r, idx) => idx === i ? { ...r, status: 'Running' } : r));
-
-      try {
-        let imageDataUrl = "";
+    const workerLoop = async () => {
+      while (currentIndex < queue.length) {
+        if (abortControllerRef.current?.signal.aborted || isPaused || hasErrorHalted) break;
         
-        if (item.file) {
-           imageDataUrl = await fileToBase64(item.file);
-        } else if (item.result?.imageDataUrl) {
-           imageDataUrl = item.result.imageDataUrl; // recover from persistance? unlikely but safe
-        } else if (item.entry.imageData) {
-           imageDataUrl = item.entry.imageData; // use embedded payload
-        } else {
-           throw new Error("Missing image file for entry");
+        const i = currentIndex++;
+        const item = queue[i];
+        
+        if (item.status === 'WIN' || item.status === 'LOSS' || item.status === 'NEUTRAL') {
+          continue; // skip completed
         }
 
-        const result = await runSingleAnalysis({
-          imageDataUrl,
-          stock: item.entry.stock || stockName,
-          graphTimeframe: item.entry.graphTimeframe || graphTimeframe,
-          investmentDuration: item.entry.investmentDuration || investmentDuration,
-          investmentAmount: item.entry.investmentAmount ? String(item.entry.investmentAmount) : investmentAmount,
-          profitabilityPercent: item.entry.profitabilityPercent ? String(item.entry.profitabilityPercent) : profitabilityPercent,
-          techniquesList: item.entry.techniqueOverrides || techniquesList,
-          encryptedSystemTokens,
-          signal: abortControllerRef.current.signal,
-          isTestMode: true
-        });
+        setQueue(q => q.map((r, idx) => idx === i ? { ...r, status: 'Running' } : r));
 
-        if (result.outcome === 'WIN' || result.outcome === 'LOSS') {
-           saveToStats(result.analysis, result.outcome);
-        }
-        
-        setQueue(q => q.map((r, idx) => idx === i ? { ...r, status: result.outcome, result } : r));
-      } catch (err: any) {
-        if (abortControllerRef.current?.signal.aborted) {
-          setQueue(q => q.map((r, idx) => idx === i ? { ...r, status: 'Pending' } : r));
+        // Let UI update
+        await new Promise(resolve => setTimeout(resolve, 10));
+
+        try {
+          let imageDataUrl = "";
+          let isObjectUrl = false;
+          
+          if (item.file) {
+             imageDataUrl = URL.createObjectURL(item.file);
+             isObjectUrl = true;
+          } else if (item.result?.imageDataUrl) {
+             imageDataUrl = item.result.imageDataUrl; // recover from persistance? unlikely but safe
+          } else if (item.entry.imageData) {
+             imageDataUrl = item.entry.imageData; // use embedded payload
+          } else {
+             throw new Error("Missing image file for entry");
+          }
+
+          const result = await runSingleAnalysis({
+            imageDataUrl,
+            stock: item.entry.stock || stockName,
+            graphTimeframe: item.entry.graphTimeframe || graphTimeframe,
+            investmentDuration: item.entry.investmentDuration || investmentDuration,
+            investmentAmount: item.entry.investmentAmount ? String(item.entry.investmentAmount) : investmentAmount,
+            profitabilityPercent: item.entry.profitabilityPercent ? String(item.entry.profitabilityPercent) : profitabilityPercent,
+            techniquesList: item.entry.techniqueOverrides || techniquesList,
+            encryptedSystemTokens,
+            signal: abortControllerRef.current.signal,
+            isTestMode: true
+          });
+          
+          if (isObjectUrl) {
+             URL.revokeObjectURL(imageDataUrl);
+          }
+
+          if (result.outcome === 'WIN' || result.outcome === 'LOSS') {
+             saveToStats(result.analysis, result.outcome);
+          }
+          
+          // Keep compressed JPEGs but delete raw analysis which could be huge
+          const lightweightResult = { ...result };
+          delete lightweightResult.analysis;
+
+          setQueue(q => q.map((r, idx) => idx === i ? { ...r, status: result.outcome, result: lightweightResult } : r));
+        } catch (err: any) {
+          if (abortControllerRef.current?.signal.aborted || isPaused) {
+            setQueue(q => q.map((r, idx) => idx === i ? { ...r, status: 'Pending' } : r));
+            break;
+          }
+          setQueue(q => q.map((r, idx) => idx === i ? { ...r, status: 'Error', error: err.message } : r));
+          
+          if (!hasErrorHalted) {
+            alert(`Analysis Error on item ${i + 1}: ${err.message}\nBatch run halted.`);
+            hasErrorHalted = true;
+          }
           break;
         }
-        setQueue(q => q.map((r, idx) => idx === i ? { ...r, status: 'Error', error: err.message } : r));
-        alert(`Analysis Error on item ${i + 1}: ${err.message}\nBatch run halted.`);
-        break;
+
+        // No massive delay, just briefly yield to event loop
+        await new Promise(r => setTimeout(r, 5));
       }
+    };
 
-      // Small delay between calls to avoid banhammer
-      await new Promise(r => setTimeout(r, 1000));
-    }
-
+    await Promise.all(Array.from({ length: CONCURRENCY_LIMIT }, () => workerLoop()));
 
     setIsQueueRunning(false);
 
     // After running, fetch the latest queue state logically
     setQueue(currentQueue => {
        const losses = currentQueue.filter(q => q.status === 'LOSS' && q.result);
-       if (losses.length > 0) {
+       if (losses.length > 0 && !hasErrorHalted && !abortControllerRef.current?.signal.aborted && !isPaused) {
           setTimeout(() => runMasterAutopsyChain(losses).catch(e => console.error("master autopsy error:", e)), 0);
        }
        return currentQueue;
     });
-
   };
 
 

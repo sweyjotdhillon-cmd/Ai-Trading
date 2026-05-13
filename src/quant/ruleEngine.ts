@@ -175,11 +175,11 @@ export function evaluateSignal(ohlcSeries: NumericOHLC[], priceAxis: PriceAxisTr
   let winner: 'BULL' | 'BEAR' | 'NO_TRADE' = cases.bull.total > cases.bear.total ? 'BULL' : (cases.bear.total > cases.bull.total ? 'BEAR' : 'NO_TRADE');
   const margin = Math.abs(cases.bull.total - cases.bear.total);
 
-  if (margin < 3.0) winner = 'NO_TRADE';
+  if (margin < 4.0) winner = 'NO_TRADE';
   const winningTotal = winner === 'BULL' ? cases.bull.total : (winner === 'BEAR' ? cases.bear.total : 0);
   
-  if (winningTotal < 7.0) winner = 'NO_TRADE';
-  if (skepticMultiplier < 0.4) winner = 'NO_TRADE';
+  if (winningTotal < 8.0) winner = 'NO_TRADE';
+  if (skepticMultiplier < 0.5) winner = 'NO_TRADE';
   const finalConfidence = Math.round((winningTotal * skepticMultiplier / 11) * 100);
 
   let ruling = winner === 'NO_TRADE' ? 'Margin too close or high skeptic veto.' : `Clear ${winner} edge.`;

@@ -169,6 +169,7 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, p
     const blob = new Blob([jsonString], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
+    a.target = '_blank';
     a.href = url;
     a.download = `loss_autopsy_summary_${new Date().getTime()}.json`;
     document.body.appendChild(a);

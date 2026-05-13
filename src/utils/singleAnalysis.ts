@@ -189,15 +189,23 @@ export async function runSingleAnalysis(params: {
         rightCanvas.height = imgData.height;
         rightCanvas.getContext('2d')!.drawImage(canvas, leftWidth, 0, rightWidth, imgData.height, 0, 0, rightWidth, imgData.height);
         
-        testModeRightSlice = rightCanvas.toDataURL();
-        finalImageForAnalysis = leftCanvas.toDataURL();
+        testModeRightSlice = rightCanvas.toDataURL('image/jpeg', 0.5);
+        finalImageForAnalysis = leftCanvas.toDataURL('image/jpeg', 0.5);
+
+        // Memory cleanup
+        canvas.width = 0;
+        canvas.height = 0;
+        leftCanvas.width = 0;
+        leftCanvas.height = 0;
+        rightCanvas.width = 0;
+        rightCanvas.height = 0;
 
         const leftImgData = await dataUrlToImageData(finalImageForAnalysis);
         
         const msgId2 = generateId();
         const payloadPromise2 = new Promise<any>((resolve, reject) => {
           messageResolvers.set(msgId2, { resolve, reject });
-          w.postMessage({ type: 'ANALYZE', imageData: leftImgData, msgId: msgId2, timestamp: performance.now() });
+          w.postMessage({ type: 'ANALYZE', imageData: leftImgData, msgId: msgId2, timestamp: performance.now() }, [leftImgData.data.buffer]);
         });
         const payload2 = await payloadPromise2;
         
