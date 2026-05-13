@@ -9,7 +9,7 @@ export function TerminalPreview() {
       <motion.div
         initial={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, y: 20 }}
         whileInView={prefersReducedMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
-        viewport={{ once: true, margin: "-50px" }}
+        viewport={{ once: true, margin: "0px" }}
         transition={{ duration: 0.5, delay: 0.2, ease: "easeOut" }}
         className="rounded-2xl border border-white/10 bg-black/50 backdrop-blur-xl overflow-hidden glass-card shadow-elevated w-full"
       >
@@ -28,7 +28,7 @@ export function TerminalPreview() {
         <div className="p-4 md:p-6 flex flex-col md:flex-row gap-6">
           
           {/* Mock Chart Area */}
-          <div className="flex-1 relative aspect-video md:aspect-auto border border-white/5 rounded-lg bg-black/40 overflow-hidden flex items-end px-3 pb-3 min-h-[250px]">
+          <div className="flex-1 relative h-48 sm:h-64 md:h-auto border border-white/5 rounded-lg bg-black/40 overflow-hidden flex items-end px-3 pb-3">
             {/* Grid Lines */}
             <div className="absolute inset-0 opacity-20" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)', backgroundSize: '20px 20px' }} />
             
@@ -37,8 +37,7 @@ export function TerminalPreview() {
                 <motion.div 
                   key={i}
                   initial={prefersReducedMotion ? { height: `${h}%` } : { height: 0 }}
-                  whileInView={{ height: `${h}%` }}
-                  viewport={{ once: true }}
+                  animate={{ height: `${h}%` }}
                   transition={{ duration: 0.6, delay: i * 0.04, type: "spring" }}
                   className={`w-full rounded-t-sm ${i > 0 && h > [40, 60, 45, 80, 55, 75, 90, 65, 85, 100][i-1] ? 'bg-emerald/80' : 'bg-crimson/80'}`}
                 />

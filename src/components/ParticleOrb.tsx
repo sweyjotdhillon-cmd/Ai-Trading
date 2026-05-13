@@ -95,8 +95,7 @@ export function ParticleOrb({ className = "" }: { className?: string }) {
         ctx.beginPath();
         ctx.arc(cx + x2 * R * s, cy + y2 * R * s, o.size * s, 0, Math.PI * 2);
         ctx.fillStyle = `rgba(255,220,170,${0.3 + ((z2 + 1.5) / 3) * 0.7})`;
-        ctx.shadowColor = "rgba(217,179,130,0.8)"; ctx.shadowBlur = 8;
-        ctx.fill(); ctx.shadowBlur = 0;
+        ctx.fill();
       }
 
       const core = ctx.createRadialGradient(cx, cy, 0, cx, cy, R * 0.55);

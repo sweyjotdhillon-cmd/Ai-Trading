@@ -16,7 +16,7 @@ export function HeroIntro({ onLaunch }: { onLaunch?: () => void }) {
   return (
     <div className="relative w-full h-full min-h-[100dvh] flex flex-col overflow-x-hidden overflow-y-auto bg-black text-white font-sans selection:bg-gold/30">
       {/* Background Orbital */}
-      <div className="absolute top-0 left-0 w-full h-[100dvh] z-0 opacity-80 mix-blend-screen pointer-events-none">
+      <div className="absolute top-0 left-0 w-full h-[100dvh] z-0 opacity-80 pointer-events-none">
         <ParticleOrb />
       </div>
       
@@ -36,7 +36,7 @@ export function HeroIntro({ onLaunch }: { onLaunch?: () => void }) {
       </header>
 
       {/* Main Hero Content */}
-      <main className="relative z-10 flex flex-col items-center justify-center px-4 sm:px-6 w-full text-center pt-24 pb-12 md:pt-32 md:pb-16 flex-grow">
+      <main className="relative z-10 flex flex-col items-center justify-center px-4 sm:px-6 w-full text-center pt-16 pb-8 md:pt-24 md:pb-12 flex-grow">
         <div className="w-full max-w-4xl mx-auto flex flex-col items-center">
           
           <h1 className="font-display text-5xl md:text-7xl lg:text-[90px] font-bold leading-[1.05] tracking-tight mb-6">
