@@ -1,6 +1,6 @@
-# OcularAlpha: Live Chart Analyzer
+# ChartLens: Live Chart Analyzer
 
-**OcularAlpha** is a completely offline, real-time visual trading assistant built for professional day traders. By simply pointing your device's camera at any trading monitor or chart, OcularAlpha instantly converts live candlestick feeds into actionable trading signals using advanced, on-device machine vision and AI algorithms.
+**ChartLens** is a completely offline, real-time visual trading assistant built for professional day traders. By simply pointing your device's camera at any trading monitor or chart, ChartLens instantly converts live candlestick feeds into actionable trading signals using advanced, on-device machine vision and AI algorithms.
 
 ## Key Features
 
@@ -11,7 +11,7 @@
 
 ## How It Works
 
-At its core, OcularAlpha acts as an automated chart analyzer that bridges the physical and digital trading worlds. The architecture is split into several offline stages:
+At its core, ChartLens acts as an automated chart analyzer that bridges the physical and digital trading worlds. The architecture is split into several offline stages:
 
 1. **Vision Pipeline (The "Eyes")**:
    - The app captures the live camera feed and extracts image data.
@@ -24,7 +24,7 @@ At its core, OcularAlpha acts as an automated chart analyzer that bridges the ph
 
 ## Setup & Calibration
 
-Because monitor screens, lighting, and chart colors vary across setups, OcularAlpha features a quick calibration step:
+Because monitor screens, lighting, and chart colors vary across setups, ChartLens features a quick calibration step:
 
 1. Point your camera at your active trading terminal or chart.
 2. Tap **"Calibrate Colors"**.
