@@ -1063,26 +1063,35 @@ export function LiveAnalysis() {
             </div>
           </motion.div>
         ) : (
-          <Pressable
-            onPress={() => {
-              if (isBusy) return;
-              closePickers();
-              handleAnalyze();
-            }}
-            disabled={(mode === 'test' && !selectedImage) || (mode === 'live' && !isCameraActive) || isBusy}
-            style={({ pressed }) => [
-              tw`h-14 rounded-xl items-center justify-center mt-4`,
-              ((mode === 'test' && !selectedImage) || (mode === 'live' && !isCameraActive) || isBusy) ? tw`bg-[#D9B382]/20` : tw`bg-[#D9B382]`,
-              { opacity: (pressed && !isBusy) ? 0.7 : 1 }
-            ]}
-          >
-            <View style={tw`flex-row items-center`}>
-              <Sparkles size={18} color="#1A1308" style={tw`mr-2`} />
-              <Text style={tw`text-[#1A1308] font-black uppercase tracking-[2px] text-base`}>
-                 {mode === 'live' ? 'Start Camera Analysis' : 'Initiate Analysis'}
-              </Text>
-            </View>
-          </Pressable>
+          <div className="flex flex-col mt-4">
+            {!isCalibrated() && (
+              <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-2 mb-3 flex items-center justify-center">
+                <Text style={tw`text-red-400 font-bold text-xs uppercase tracking-widest`}>
+                  ⚠ NOT CALIBRATED — Results will be unreliable
+                </Text>
+              </div>
+            )}
+            <Pressable
+              onPress={() => {
+                if (isBusy) return;
+                closePickers();
+                handleAnalyze();
+              }}
+              disabled={(mode === 'test' && !selectedImage) || (mode === 'live' && !isCameraActive) || isBusy}
+              style={({ pressed }) => [
+                tw`h-14 rounded-xl items-center justify-center`,
+                ((mode === 'test' && !selectedImage) || (mode === 'live' && !isCameraActive) || isBusy) ? tw`bg-[#D9B382]/20` : tw`bg-[#D9B382]`,
+                { opacity: (pressed && !isBusy) ? 0.7 : 1 }
+              ]}
+            >
+              <View style={tw`flex-row items-center`}>
+                <Sparkles size={18} color="#1A1308" style={tw`mr-2`} />
+                <Text style={tw`text-[#1A1308] font-black uppercase tracking-[2px] text-base`}>
+                   {mode === 'live' ? 'Start Camera Analysis' : 'Initiate Analysis'}
+                </Text>
+              </View>
+            </Pressable>
+          </div>
         )}
 
         {analysisError && (

@@ -69,27 +69,82 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, p
     setError(null);
     setAutopsyResult(null);
 
-    try {
-      setTimeout(() => {
-        setAutopsyResult({
-          tradeSignal: tradeSignal,
-          actualOutcome: 'UNKNOWN',
-          primaryRootCause: ['Engine not implemented'],
-          systemRecommendation: 'Autopsy is disabled in deterministic mode.',
-          autopsyVerdict: 'Backend has been removed.',
-          categories: {},
-          rebutScores: { originalJudge: { total: 0 }, contrarianJudge: { total: 0 } },
-          contrarianSignal: 'NO_TRADE',
-          contrarianRuling: 'Deterministic mode has no contrarian.',
-          contrarianConfidence: 0,
-          judgeFlaws: []
-        });
-        setLoading(false);
-      }, 1000);
-    } catch (err: any) {
-      setError(err.message || 'Unknown error occurred.');
+    setTimeout(() => {
+      // Reconstruct what went wrong from judge scores
+      const categories: Record<string, any> = {};
+      
+      const judge = analysisData.judge || {};
+      const j1 = judge.j1Score || 0;
+      const j2 = judge.j2Score || 0;
+      const j3 = judge.j3Score || 0;
+      const j4 = judge.j4Score || 0;
+      const totalScore = judge.totalScore || 0;
+      const finalConfidence = judge.finalConfidence || 0;
+      
+      const bullWon = judge.winner === 'BULL';
+      const signalScore = bullWon ? j1 : j2;
+      const counterScore = bullWon ? j2 : j1;
+      
+      if (counterScore > signalScore * 0.7) {
+        categories['WEAK_CONVICTION'] = {
+          severity: 2,
+          label: 'Weak Directional Conviction',
+          explanation: `Signal side scored ${signalScore.toFixed(0)} but counter-side scored ${counterScore.toFixed(0)}. Insufficient dominance.`
+        };
+      }
+      
+      if (j3 > 20) {
+        categories['HIGH_SKEPTIC_PENALTY'] = {
+          severity: 2,
+          label: 'High Risk Penalty',
+          explanation: `Skeptic penalty was ${j3.toFixed(0)} — market was either highly volatile or showed explosive candle behavior at trade time.`
+        };
+      }
+      
+      if (Math.abs(j4) < 5) {
+        categories['NO_BOUNDARY_EDGE'] = {
+          severity: 1,
+          label: 'No Boundary Edge',
+          explanation: 'Price was in the middle of the chart range. Boundary reversal gave no directional advantage.'
+        };
+      }
+      
+      if (totalScore < 60 && totalScore > -60) {
+        categories['BORDERLINE_SIGNAL'] = {
+          severity: 3,
+          label: 'Borderline Signal Strength',
+          explanation: `Final score was only ${totalScore.toFixed(0)}. Signals below 60 have higher loss probability. Should have waited for stronger confluence.`
+        };
+      }
+      
+      const primaryRootCause = Object.keys(categories).filter(k => categories[k].severity >= 2);
+      
+      let systemRecommendation = 'Follow stronger signals and avoid trading in choppy markets.';
+      if (primaryRootCause.length > 0) {
+         if (categories['BORDERLINE_SIGNAL']) systemRecommendation = 'Increase your minimum acceptable confidence score before entering trades.';
+         else if (categories['HIGH_SKEPTIC_PENALTY']) systemRecommendation = 'Avoid trading when the risk/volatility penalty is high.';
+         else if (categories['WEAK_CONVICTION']) systemRecommendation = 'Trade only when one direction has total dominance over the other.';
+      }
+
+      setAutopsyResult({
+        tradeSignal,
+        actualOutcome: 'LOSS',
+        categories,
+        primaryRootCause: primaryRootCause.length ? primaryRootCause : ['UNKNOWN_MARKET_CONDITIONS'],
+        systemRecommendation,
+        autopsyVerdict: `${Object.keys(categories).length} root cause(s) identified from judge scoring data.`,
+        judgeFlaws: [],
+        rebutScores: { 
+          originalJudge: { total: totalScore },
+          contrarianJudge: { total: -totalScore }
+        },
+        contrarianSignal: tradeSignal === 'CALL' ? 'PUT' : 'CALL',
+        contrarianConfidence: 100 - finalConfidence,
+        contrarianRuling: 'Deterministic contrarian from local scoring inversion.'
+      });
+      
       setLoading(false);
-    }
+    }, 800);
   };
 
   const logToSheets = async () => {

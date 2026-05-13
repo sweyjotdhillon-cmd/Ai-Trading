@@ -20,6 +20,9 @@ export interface PipelineResult {
     latencyMs: number;
     budgetExceeded?: boolean;
     axisFallback: boolean;
+    ohlcQuality: 'REAL_PRICE' | 'NORMALIZED_FALLBACK';
+    reason?: string;
+    candlesLength?: number;
     mode: string;
     stages: Record<string, number>;
   };
@@ -106,6 +109,9 @@ export function buildPipelineResult(imageData: ImageData): PipelineResult {
       latencyMs: totalLatencyMs,
       budgetExceeded: sessionBudgetExceeded,
       axisFallback,
+      ohlcQuality: axisFallback ? 'NORMALIZED_FALLBACK' : 'REAL_PRICE',
+      reason: ohlcRes.diagnostics?.reason,
+      candlesLength: rawCandles.length,
       mode: rectifyRes.mode,
       stages: {
         preprocess: rectifyRes.timings.preprocess || 0,

@@ -1,7 +1,7 @@
 import { DecisionResult } from './ruleEngine';
 
 const FRAME_BUFFER_SIZE = 5;
-let signals: ('CALL' | 'PUT' | 'NO_TRADE')[] = [];
+let signals: { signal: 'CALL' | 'PUT' | 'NO_TRADE'; finalScore: number; confidence: number }[] = [];
 
 export interface StabilityResult {
   stable: boolean;
@@ -10,7 +10,7 @@ export interface StabilityResult {
 }
 
 export function emitStability(decision: DecisionResult): StabilityResult {
-  signals.push(decision.signal);
+  signals.push({ signal: decision.signal, finalScore: decision.finalScore, confidence: decision.confidence });
   if (signals.length > FRAME_BUFFER_SIZE) {
     signals.shift();
   }
@@ -18,7 +18,14 @@ export function emitStability(decision: DecisionResult): StabilityResult {
   let stable = false;
   if (signals.length >= 3) {
     const last3 = signals.slice(-3);
-    if (last3[0] === last3[1] && last3[1] === last3[2] && last3[0] !== 'NO_TRADE') {
+    const sameSignal = last3[0].signal === last3[1].signal && last3[1].signal === last3[2].signal;
+    const allStrong = last3.every(s => Math.abs(s.finalScore) >= 50);
+    const notNoTrade = last3[0].signal !== 'NO_TRADE';
+    
+    // Also require minimum confidence of 55
+    const latestConfidence = last3[2].confidence;
+    
+    if (sameSignal && allStrong && notNoTrade && latestConfidence >= 55) {
       stable = true;
     }
   }
