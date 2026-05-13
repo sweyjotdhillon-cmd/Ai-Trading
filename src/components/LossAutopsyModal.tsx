@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { View, Text, Pressable, ScrollView, Modal, ActivityIndicator, Platform } from 'react-native';
-import { X, Upload, Activity, AlertTriangle, CheckCircle, Search } from 'lucide-react';
+import { X, Upload, Activity, AlertTriangle, CheckCircle, Search, Download } from 'lucide-react';
 import tw from 'twrnc';
 import { motion, useReducedMotion } from 'motion/react';
 
@@ -163,6 +163,20 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, p
     }
   };
 
+  const downloadSummaryJson = () => {
+    if (!autopsyResult) return;
+    const jsonString = JSON.stringify(autopsyResult, null, 2);
+    const blob = new Blob([jsonString], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `loss_autopsy_summary_${new Date().getTime()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   const getSeverityColor = (severity: number) => {
     if (severity === 0) return 'text-gray-400 border-gray-400 bg-gray-500/10';
     if (severity === 1) return 'text-yellow-400 border-yellow-400 bg-yellow-500/10';
@@ -221,7 +235,7 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, p
                 
                 {resultImage ? (
                   <View style={tw`items-center`}>
-                    <img src={resultImage} style={{ width: 300, height: 'auto', borderRadius: 12, marginBottom: 20, border: '1px solid rgba(255,255,255,0.1)' }} />
+                    <img src={resultImage} style={{ width: '100%', maxWidth: 300, maxHeight: 180, objectFit: 'contain', borderRadius: 12, marginBottom: 20, border: '1px solid rgba(255,255,255,0.1)' }} />
                     <Pressable 
                       onPress={runAutopsy}
                       style={({pressed}) => [tw`bg-red-600 px-8 py-4 rounded-xl flex-row items-center`, { opacity: pressed ? 0.7:1}]}
@@ -364,6 +378,16 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, p
 
                 {/* Footer buttons */}
                 <View style={tw`flex-row flex-wrap gap-4 border-t border-white border-opacity-10 pt-6`}>
+                  <Pressable 
+                    onPress={downloadSummaryJson}
+                    style={({pressed}) => [tw`flex-1 py-4 justify-center items-center rounded-xl flex-row transition-all bg-blue-600 bg-opacity-80 hover:bg-blue-600`, { opacity: pressed ? 0.7 : 1}]}
+                  >
+                    <motion.div whileHover={buttonHoverProps} whileTap={buttonTapProps} transition={springProps} style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+                      <Download size={18} color="white" style={tw`mr-2`} />
+                      <Text style={tw`text-white font-bold uppercase`}>Download JSON</Text>
+                    </motion.div>
+                  </Pressable>
+
                   <Pressable 
                     onPress={logToSheets}
                     disabled={isLogged}

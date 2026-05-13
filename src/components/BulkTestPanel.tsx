@@ -29,7 +29,7 @@ interface BulkTestPanelProps {
   profitabilityPercent: string;
 }
 
-export type BatchRunStatus = 'Pending' | 'Running' | 'WIN' | 'LOSS' | 'INCONCLUSIVE' | 'Error';
+export type BatchRunStatus = 'Pending' | 'Running' | 'WIN' | 'LOSS' | 'NEUTRAL' | 'Error';
 
 export interface BatchRun {
   entry: BatchManifestEntry;
@@ -240,7 +240,7 @@ export function BulkTestPanel({
       if (abortControllerRef.current?.signal.aborted || isPaused) break;
       
       const item = queue[i];
-      if (item.status === 'WIN' || item.status === 'LOSS' || item.status === 'INCONCLUSIVE') {
+      if (item.status === 'WIN' || item.status === 'LOSS' || item.status === 'NEUTRAL') {
         continue; // skip completed
       }
 
@@ -341,6 +341,7 @@ export function BulkTestPanel({
       case 'Running': return 'text-yellow-400';
       case 'WIN': return 'text-green-500';
       case 'LOSS': return 'text-red-500';
+      case 'NEUTRAL': return 'text-gray-400';
       case 'Error': return 'text-orange-500';
       default: return 'text-white text-opacity-50';
     }

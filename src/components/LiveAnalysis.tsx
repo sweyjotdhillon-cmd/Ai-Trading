@@ -643,7 +643,7 @@ export function LiveAnalysis() {
               }, 800);
             } else {
               setAutoGradeStatus('failed');
-              setAnalysisStep(`AUTO-GRADE INCONCLUSIVE — please declare WIN or LOSS manually.`);
+              setAnalysisStep(`AUTO-GRADE NEUTRAL — please declare WIN or LOSS manually.`);
             }
           }
           
@@ -694,7 +694,7 @@ export function LiveAnalysis() {
     setAutoGradeStatus('grading');
     try {
       const j = {
-        outcome: 'INCONCLUSIVE',
+        outcome: 'NEUTRAL',
         confidence: 0,
         reason: 'Engine not yet implemented',
         rawOutcome: 'Engine not yet implemented'
@@ -1454,12 +1454,12 @@ export function LiveAnalysis() {
                   </View>
                 )}
 
-                {/* AUTO-GRADE FAILED / INCONCLUSIVE — show MANUAL fallback buttons */}
+                {/* AUTO-GRADE FAILED / NEUTRAL — show MANUAL fallback buttons */}
                 {autoGradeStatus === 'failed' && !confirmedOutcome && (
                   <View style={tw`items-center py-2`}>
                     <AlertTriangle size={28} color="#f59e0b" style={tw`mb-2`} />
                     <Text style={tw`text-yellow-400 font-black uppercase text-xs tracking-widest text-center mb-1`}>
-                      AUTO-GRADE INCONCLUSIVE
+                      AUTO-GRADE NEUTRAL
                     </Text>
                     <Text style={tw`text-white text-opacity-60 text-xs text-center mb-4 px-4`}>
                       {autoGradeReason || 'Right slice was unreadable or price was flat. Declare manually below.'}

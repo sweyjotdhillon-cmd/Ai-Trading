@@ -72,7 +72,7 @@ export async function runSingleAnalysis(params: {
 }): Promise<{
   analysis: any;
   direction: 'UP' | 'DOWN' | 'NO_TRADE';
-  outcome: 'WIN' | 'LOSS' | 'INCONCLUSIVE';
+  outcome: 'WIN' | 'LOSS' | 'NEUTRAL';
   confidence: number;
   reason: string;
   testModeRightSlice: string | null;
@@ -142,7 +142,7 @@ export async function runSingleAnalysis(params: {
         judge: { winner: 'NONE', decision: 'FAULT', finalConfidence: 0, j1Score: 0, j2Score: 0, j3Score: 0, j4Score: 0, ruling: payload.message, totalScore: 0, tradeDetails: { latencyAdjustedForecast: '', techniquesUsed: '' } },
         bull: { reasoning: 'FAULT' }, bear: { reasoning: 'FAULT' }, skeptic: { riskVerdict: 'FAULT' }, techUsedCount: 0
       },
-      direction: 'NO_TRADE', outcome: 'INCONCLUSIVE', confidence: 0, reason: payload.message,
+      direction: 'NO_TRADE', outcome: 'NEUTRAL', confidence: 0, reason: payload.message,
       testModeRightSlice: null, finalImageForAnalysis: imageDataUrl, entryAnchorBase64: null, rawOutcome: 'ERROR', frameStable: false
     };
   }
@@ -159,7 +159,7 @@ export async function runSingleAnalysis(params: {
   }
   
   // Predict outcome if testMode
-  let outcome: 'WIN' | 'LOSS' | 'INCONCLUSIVE' = 'INCONCLUSIVE';
+  let outcome: 'WIN' | 'LOSS' | 'NEUTRAL' = 'NEUTRAL';
   let testModeRightSlice: string | null = null;
   let finalImageForAnalysis = imageDataUrl;
   
@@ -210,7 +210,9 @@ export async function runSingleAnalysis(params: {
            
            if (originalClose !== undefined) {
              const actualDir = originalClose > newClose ? 'UP' : (originalClose < newClose ? 'DOWN' : 'NO_TRADE');
-             if (finalDecision.winner === 'BULL') {
+             if (actualDir === 'NO_TRADE' || finalDecision.winner === 'NO_TRADE') {
+                 outcome = 'NEUTRAL';
+             } else if (finalDecision.winner === 'BULL') {
                  outcome = actualDir === 'UP' ? 'WIN' : 'LOSS';
              } else if (finalDecision.winner === 'BEAR') {
                  outcome = actualDir === 'DOWN' ? 'WIN' : 'LOSS';

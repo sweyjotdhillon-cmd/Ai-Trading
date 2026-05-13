@@ -20,8 +20,20 @@ import { HeroIntro } from './components/HeroIntro';
 function App() {
   console.log("[App] Mounting...");
   const [showSystemSettings, setShowSystemSettings] = useState(false);
-  const [heroDismissed, setHeroDismissed] = useState(false);
+  const [heroDismissed, setHeroDismissed] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('heroDismissed') === 'true';
+    }
+    return false;
+  });
   
+  const handleLaunch = () => {
+    setHeroDismissed(true);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('heroDismissed', 'true');
+    }
+  };
+
   const prefersReducedMotion = useReducedMotion();
   const transitionDuration = prefersReducedMotion ? 0 : 0.35;
   const transitionProps = { duration: transitionDuration, ease: "easeOut" as const };
@@ -101,7 +113,7 @@ function App() {
                 transition={transitionProps}
                 style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, flexGrow: 1 }}
               >
-                <HeroIntro onLaunch={() => setHeroDismissed(true)} />
+                <HeroIntro onLaunch={handleLaunch} />
               </motion.div>
             ) : (
               <motion.div
