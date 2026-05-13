@@ -15,7 +15,7 @@ export function getTemplates(): DigitTemplate[] {
   return buildTemplates();
 }
 
-export function generateAt(scale: number): DigitTemplate[] {
+export function generateAt(): DigitTemplate[] {
   // Returns cache for scale agnostic pipeline where bilinear resize is used
   return getTemplates();
 }
@@ -29,7 +29,7 @@ function buildTemplates(): DigitTemplate[] {
   let canvas: HTMLCanvasElement | OffscreenCanvas;
   try {
     canvas = new OffscreenCanvas(64, 64);
-  } catch (e) {
+  } catch {
     canvas = document.createElement('canvas');
     canvas.width = 64;
     canvas.height = 64;

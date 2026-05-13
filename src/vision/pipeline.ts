@@ -1,5 +1,6 @@
-import { extractOHLCFromPixels, RawCandle, OHLCExtractionResult } from './pixelScanner';
+import { extractOHLCFromPixels, RawCandle } from './pixelScanner';
 import { readYAxis, PriceAxisTransform } from './axisReader';
+import { rectifyOrCenterCrop } from './homography';
 import { EPSILON } from './colorSpace';
 
 export interface NumericOHLC {
@@ -18,6 +19,7 @@ export interface PipelineResult {
   meta: {
     latencyMs: number;
     axisFallback: boolean;
+    mode: string;
     stages: Record<string, number>;
   };
 }
@@ -25,12 +27,16 @@ export interface PipelineResult {
 export function buildPipelineResult(imageData: ImageData): PipelineResult {
   const t0 = performance.now();
   
-  const ohlcRes = extractOHLCFromPixels(imageData);
-  const rawCandles = ohlcRes.candles;
+  const rectifyRes = rectifyOrCenterCrop(imageData);
+  const rectifiedFrame = rectifyRes.rect;
   const t1 = performance.now();
   
-  const axis = readYAxis(imageData);
+  const ohlcRes = extractOHLCFromPixels(rectifiedFrame);
+  const rawCandles = ohlcRes.candles;
   const t2 = performance.now();
+  
+  const axis = readYAxis(rectifiedFrame);
+  const t3 = performance.now();
   
   const ohlcSeries: NumericOHLC[] = [];
   const axisFallback = axis === null;
@@ -38,10 +44,10 @@ export function buildPipelineResult(imageData: ImageData): PipelineResult {
   for (const rc of rawCandles) {
     let o, h, l, c;
     if (axisFallback) {
-      o = -rc.openY / Math.max(imageData.height, EPSILON);
-      h = -rc.highY / Math.max(imageData.height, EPSILON);
-      l = -rc.lowY / Math.max(imageData.height, EPSILON);
-      c = -rc.closeY / Math.max(imageData.height, EPSILON);
+      o = -rc.openY / Math.max(rectifiedFrame.height, EPSILON);
+      h = -rc.highY / Math.max(rectifiedFrame.height, EPSILON);
+      l = -rc.lowY / Math.max(rectifiedFrame.height, EPSILON);
+      c = -rc.closeY / Math.max(rectifiedFrame.height, EPSILON);
     } else {
       const transform = axis as PriceAxisTransform;
       o = transform.mSlope * rc.openY + transform.bIntercept;
@@ -60,19 +66,25 @@ export function buildPipelineResult(imageData: ImageData): PipelineResult {
     });
   }
   
-  const t3 = performance.now();
+  const t4 = performance.now();
   
   return {
     rawCandles,
     axis,
     ohlcSeries,
     meta: {
-      latencyMs: t3 - t0,
+      latencyMs: t4 - t0,
       axisFallback,
+      mode: rectifyRes.mode,
       stages: {
-        ohlcExt: t1 - t0,
-        axisRead: t2 - t1,
-        transform: t3 - t2
+        preprocess: rectifyRes.timings.preprocess || 0,
+        sobel: rectifyRes.timings.sobel || 0,
+        canny: rectifyRes.timings.canny || 0,
+        hough: rectifyRes.timings.hough || 0,
+        homography: rectifyRes.timings.homography || 0,
+        ohlcExt: t2 - t1,
+        axisRead: t3 - t2,
+        transform: t4 - t3
       }
     }
   };

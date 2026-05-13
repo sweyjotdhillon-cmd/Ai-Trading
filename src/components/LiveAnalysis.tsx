@@ -125,7 +125,7 @@ export function LiveAnalysis() {
   const streamRef = useRef<MediaStream | null>(null);
 
   const prefersReducedMotion = useReducedMotion();
-  const springProps = { type: "spring", stiffness: 400, damping: 22 };
+  const springProps = { type: "spring" as const, stiffness: 400, damping: 22 };
   const cardHoverProps = prefersReducedMotion ? {} : { y: -2, boxShadow: "0 8px 24px rgba(0,0,0,0.25)" };
   const buttonHoverProps = prefersReducedMotion ? {} : { scale: 1.04 };
   const buttonTapProps = prefersReducedMotion ? {} : { scale: 0.96 };
@@ -541,11 +541,12 @@ export function LiveAnalysis() {
             setAutoGradeConfidence(result.confidence);
             setAutoGradeRawOutcome(result.rawOutcome || '');
 
-            if (result.outcome === 'WIN' || result.outcome === 'LOSS') {
+            const exactOutcome = result.outcome;
+            if (exactOutcome === 'WIN' || exactOutcome === 'LOSS') {
               setTimeout(() => {
-                saveToStats(result.analysis, result.outcome);
+                saveToStats(result.analysis, exactOutcome);
                 setAutoGradeStatus('done');
-                setAnalysisStep(`AUTO-GRADED: Signal=${result.direction} | ${result.outcome === 'WIN' ? '✅ WIN' : '❌ LOSS'} (${result.confidence}%)`);
+                setAnalysisStep(`AUTO-GRADED: Signal=${result.direction} | ${exactOutcome === 'WIN' ? '✅ WIN' : '❌ LOSS'} (${result.confidence}%)`);
               }, 800);
             } else {
               setAutoGradeStatus('failed');

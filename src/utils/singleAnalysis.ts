@@ -49,13 +49,14 @@ export async function runSingleAnalysis(params: {
     const axString = ax ? `m=${ax.mSlope.toFixed(4)}, b=${ax.bIntercept.toFixed(1)}, anchors=${ax.anchors.length}` : `fallback`;
 
     if (onJudgeLogs) {
-      const j2Status = pipeRes.meta.latencyMs > 200 ? 'error' : 'success';
+      const j2Status = pipeRes.meta.latencyMs > 500 ? 'error' : 'success';
       const axStatus = ax ? 'success' : 'active';
       const fallbackStr = pipeRes.meta.axisFallback ? ' (No exact OCR)' : '';
+      const geomTimings = `[Geom: pre=${Math.round(pipeRes.meta.stages.preprocess)}ms cny=${Math.round(pipeRes.meta.stages.canny)}ms hgh=${Math.round(pipeRes.meta.stages.hough)}ms H=${Math.round(pipeRes.meta.stages.homography)}ms]`;
 
       onJudgeLogs({
-        judge1: { text: `Detected ${cCount} candles.`, status: cCount > 0 ? 'success' : 'active' },
-        judge2: { text: `Pipeline: ${Math.round(pipeRes.meta.latencyMs)}ms [ohlc:${Math.round(pipeRes.meta.stages.ohlcExt)}ms]`, status: j2Status },
+        judge1: { text: `Mode: ${pipeRes.meta.mode} | Candles: ${cCount}`, status: cCount > 0 ? 'success' : 'active' },
+        judge2: { text: `Pipeline: ${Math.round(pipeRes.meta.latencyMs)}ms ${geomTimings} [ohlc:${Math.round(pipeRes.meta.stages.ohlcExt)}ms]`, status: j2Status },
         judge3: { text: `Axis: ${axString}${fallbackStr}`, status: axStatus },
         judge4: { text: `Data Extracted successfully.`, status: 'success' },
         system: { text: `Status: ${resultInfo}`, status: resultInfo === 'OK' ? 'success' : 'error' }

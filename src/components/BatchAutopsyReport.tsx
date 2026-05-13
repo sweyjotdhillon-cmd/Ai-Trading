@@ -1,4 +1,4 @@
-import React from 'react';
+// unused React import removed
 import { View, Text, Pressable } from 'react-native';
 import tw from 'twrnc';
 import { motion } from 'motion/react';

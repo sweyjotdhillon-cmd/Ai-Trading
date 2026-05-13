@@ -29,8 +29,8 @@ function App() {
   
   const prefersReducedMotion = useReducedMotion();
   const transitionDuration = prefersReducedMotion ? 0 : 0.35;
-  const transitionProps = { duration: transitionDuration, ease: "easeOut" };
-  const springProps = { type: "spring", stiffness: 400, damping: 22 };
+  const transitionProps = { duration: transitionDuration, ease: "easeOut" as const };
+  const springProps = { type: "spring" as const, stiffness: 400, damping: 22 };
 
   useEffect(() => {
     const handleError = (e: any) => {

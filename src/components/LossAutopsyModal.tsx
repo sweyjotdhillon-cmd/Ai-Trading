@@ -42,7 +42,7 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, p
 
   const fileInputRef = useRef<any>(null);
   const prefersReducedMotion = useReducedMotion();
-  const springProps = { type: "spring", stiffness: 400, damping: 22 };
+  const springProps = { type: "spring" as const, stiffness: 400, damping: 22 };
   const buttonHoverProps = prefersReducedMotion ? {} : { scale: 1.04 };
   const buttonTapProps = prefersReducedMotion ? {} : { scale: 0.96 };
 
@@ -136,7 +136,7 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, p
           initial={{ opacity: 0, scale: prefersReducedMotion ? 1 : 0.94, y: prefersReducedMotion ? 0 : 16 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: prefersReducedMotion ? 1 : 0.94, y: prefersReducedMotion ? 0 : 16 }}
-          transition={prefersReducedMotion ? { duration: 0 } : { type: "spring", stiffness: 320, damping: 26 }}
+          transition={prefersReducedMotion ? { duration: 0 } : { type: "spring" as const, stiffness: 320, damping: 26 }}
           className="bg-[#14161C] w-full max-w-4xl border border-red-500 border-opacity-30 rounded-2xl flex-1 max-h-[90vh] overflow-hidden flex flex-col shadow-2xl relative"
         >
           {Platform.OS === 'web' && (

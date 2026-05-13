@@ -88,7 +88,7 @@ export default function HeroScene({ isHovered, warpPhase, reducedMotion }: { isH
           luminanceThreshold={0.35} 
           mipmapBlur 
         />
-        {!isMobile && <ChromaticAberration offset={[0.0008, 0.0008] as any} radialModulation={false} modulationOffset={0} />}
+        {isMobile ? <></> : <ChromaticAberration offset={[0.0008, 0.0008] as any} radialModulation={false} modulationOffset={0} />}
         <Vignette eskil={false} offset={0.3} darkness={0.85} />
       </EffectComposer>
     </>

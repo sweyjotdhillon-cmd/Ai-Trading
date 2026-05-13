@@ -19,7 +19,7 @@ function detectPrivateModeFallback(): boolean {
     localStorage.setItem(testKey, '1');
     localStorage.removeItem(testKey);
     return false;
-  } catch (e) {
+  } catch {
     return true; // Likely Safari private mode / no storage
   }
 }
