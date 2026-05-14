@@ -83,7 +83,7 @@ export function HeroIntro({ onLaunch }: { onLaunch?: () => void }) {
       </main>
 
       {/* Embedded Terminal Preview */}
-      <div className="w-full relative z-10 px-4 sm:px-6 pb-12 overflow-hidden flex flex-col items-center">
+      <div className="w-full relative z-10 px-4 sm:px-6 pb-2 md:pb-4 overflow-hidden flex flex-col items-center">
         <TerminalPreview />
       </div>
 
