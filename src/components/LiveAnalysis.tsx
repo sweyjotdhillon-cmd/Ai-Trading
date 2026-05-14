@@ -81,7 +81,9 @@ import {
   XCircle,
   ChevronDown,
   Check,
-  Zap
+  Zap,
+  Monitor,
+  Tv2
 } from 'lucide-react';
 import tw from 'twrnc';
 import { LossAutopsyModal } from './LossAutopsyModal';
@@ -98,7 +100,7 @@ export function LiveAnalysis() {
   const [isBusy, setIsBusy] = useState(false);
   const [analysisStep, setAnalysisStep] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<any | null>(null);
-  const [mode, setMode] = useState<'live' | 'test' | 'bulk'>('live');
+  const [mode, setMode] = useState<'live' | 'test' | 'bulk' | 'screen'>('live');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [calibrationFrame, setCalibrationFrame] = useState<ImageData | null>(null);
   const [isStable, setIsStable] = useState(false);
@@ -112,6 +114,25 @@ export function LiveAnalysis() {
   // Real-Time Scout (10s Tick)
   const [scoutActive, setScoutActive] = useState(false);
   const [scoutData, setScoutData] = useState<{action: string, reason: string} | null>(null);
+  // ── Screen Share state ───────────────────────────────────────────────────────
+  const [isScreenActive, setIsScreenActive]     = useState(false);
+  const [screenError, setScreenError]           = useState<string | null>(null);
+
+  // ── PiP Widget state ─────────────────────────────────────────────────────────
+  const [pipActive, setPipActive]               = useState(false);
+  const [pipSignal, setPipSignal]               = useState<'ANALYZING' | 'CALL' | 'PUT' | 'NO_TRADE' | 'IDLE'>('IDLE');
+  const [pipConfidence, setPipConfidence]       = useState(0);
+  const [pipSupported, setPipSupported]         = useState(false);
+
+  // ── iOS/platform detection ───────────────────────────────────────────────────
+  const isIOS = typeof navigator !== 'undefined' &&
+    /iPad|iPhone|iPod/.test(navigator.userAgent) &&
+    !(window as any).MSStream;
+
+  const isScreenShareSupported = !isIOS &&
+    typeof navigator !== 'undefined' &&
+    !!navigator.mediaDevices &&
+    typeof (navigator.mediaDevices as any).getDisplayMedia === 'function';
 
   useEffect(() => {
     if (isBusy || scoutActive) {
@@ -140,6 +161,15 @@ export function LiveAnalysis() {
   
   useEffect(() => {
     // Offline mode, no snapshot needed
+  }, []);
+
+  useEffect(() => {
+    // Check browser support for Picture-in-Picture API
+    setPipSupported(
+      typeof document !== 'undefined' &&
+      'pictureInPictureEnabled' in document &&
+      (document as any).pictureInPictureEnabled === true
+    );
   }, []);
 
   // Parallel Judge Logs
@@ -192,6 +222,14 @@ export function LiveAnalysis() {
   const techInputRef = useRef<any>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
+  // ── Screen Share + PiP refs ──────────────────────────────────────────────────
+  const screenVideoRef   = useRef<HTMLVideoElement | null>(null);
+  const screenStreamRef  = useRef<MediaStream | null>(null);
+  const pipCanvasRef     = useRef<HTMLCanvasElement | null>(null);
+  const pipVideoRef      = useRef<HTMLVideoElement | null>(null);
+  const pipStreamRef     = useRef<MediaStream | null>(null);
+  const pipRafRef        = useRef<number | null>(null);
+
   const prefersReducedMotion = useReducedMotion();
   const springProps = { type: "spring" as const, stiffness: 400, damping: 22 };
   const cardHoverProps = prefersReducedMotion ? {} : { y: -2, boxShadow: "0 8px 24px rgba(0,0,0,0.25)" };
@@ -243,6 +281,10 @@ export function LiveAnalysis() {
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop());
       }
+      if (screenStreamRef.current) {
+        screenStreamRef.current.getTracks().forEach(t => t.stop());
+      }
+      closePip(true);
     };
   }, []);
 
@@ -254,6 +296,100 @@ export function LiveAnalysis() {
 
   const timeframes = ['30 minutes', '15 minutes', '5 minutes', '3 minutes'];
   const durations = ['3m', '5m'];
+
+  const startScreenShare = async () => {
+    if (!isScreenShareSupported) {
+      setScreenError(
+        isIOS
+          ? 'Screen sharing is not supported on iOS. Please use Chrome or Edge on desktop.'
+          : 'Your browser does not support screen sharing. Please use Chrome or Edge.'
+      );
+      return;
+    }
+
+    try {
+      setScreenError(null);
+      const stream = await (navigator.mediaDevices as any).getDisplayMedia({
+        video: { displaySurface: 'browser', width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 5 } },
+        audio: false
+      });
+      screenStreamRef.current = stream;
+      if (screenVideoRef.current) screenVideoRef.current.srcObject = stream;
+      stream.getVideoTracks()[0].addEventListener('ended', () => { stopScreenShare(); });
+      setIsScreenActive(true);
+    } catch (err: any) {
+      if (err.name === 'NotAllowedError') return;
+      console.error('[ScreenShare] Error:', err);
+      setScreenError(`Screen share failed: ${err.message}`);
+    }
+  };
+
+  const closePip = (exitPip = true) => {
+    if (pipRafRef.current) { cancelAnimationFrame(pipRafRef.current); pipRafRef.current = null; }
+    if (exitPip && document.pictureInPictureElement) document.exitPictureInPicture().catch(() => {});
+    pipStreamRef.current?.getTracks().forEach(t => t.stop());
+    pipStreamRef.current = null;
+    if (pipVideoRef.current) {
+      pipVideoRef.current.pause();
+      if (document.body.contains(pipVideoRef.current)) document.body.removeChild(pipVideoRef.current);
+      pipVideoRef.current = null;
+    }
+    pipCanvasRef.current = null;
+    setPipActive(false); setPipSignal('IDLE'); setPipConfidence(0);
+  };
+
+  const stopScreenShare = () => {
+    if (screenStreamRef.current) { screenStreamRef.current.getTracks().forEach(t => t.stop()); screenStreamRef.current = null; }
+    if (screenVideoRef.current) screenVideoRef.current.srcObject = null;
+    setIsScreenActive(false);
+    closePip(true);
+  };
+
+  const drawPipFrame = (signal: 'ANALYZING' | 'CALL' | 'PUT' | 'NO_TRADE' | 'IDLE', confidence: number = 0, subText: string = '') => {
+    const canvas = pipCanvasRef.current; if (!canvas) return; const ctx = canvas.getContext('2d'); if (!ctx) return;
+    const W = 480, H = 270; ctx.clearRect(0, 0, W, H);
+    const bgMap: Record<string, string> = { ANALYZING: '#0d0d14', CALL: '#021a0b', PUT: '#1a0202', NO_TRADE: '#141008', IDLE: '#0d0d14' };
+    ctx.fillStyle = bgMap[signal] ?? '#0d0d14'; ctx.fillRect(0, 0, W, H);
+    const accentMap: Record<string, string> = { ANALYZING: '#D9B382', CALL: '#22C55E', PUT: '#EF4444', NO_TRADE: '#F59E0B', IDLE: '#4B5570' };
+    const accent = accentMap[signal] ?? '#4B5570'; ctx.fillStyle = accent; ctx.fillRect(0, 0, W, 4);
+    ctx.strokeStyle = 'rgba(255,255,255,0.03)'; ctx.lineWidth = 1;
+    for (let x = 0; x < W; x += 30) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+    for (let y = 0; y < H; y += 30) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+    ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'left'; ctx.fillText('AI TRADING · PRO TERMINAL', 16, 26);
+    if (signal === 'ANALYZING') { ctx.fillStyle = '#D9B382'; ctx.beginPath(); ctx.arc(W - 20, 20, 5, 0, Math.PI * 2); ctx.fill(); }
+    const labelMap: Record<string, string> = { ANALYZING: 'ANALYZING...', CALL: 'CALL  ▲', PUT: 'PUT   ▼', NO_TRADE: 'NO TRADE', IDLE: 'STANDBY' };
+    ctx.font = 'bold 64px Arial'; ctx.textAlign = 'center'; ctx.fillStyle = accent; ctx.shadowColor = accent; ctx.shadowBlur = signal === 'ANALYZING' ? 0 : 24; ctx.fillText(labelMap[signal] ?? signal, W / 2, 165); ctx.shadowBlur = 0;
+    if ((signal === 'CALL' || signal === 'PUT') && confidence > 0) { const barW = 280, barH = 6; const barX = (W - barW) / 2, barY = 190; ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.beginPath(); (ctx as any).roundRect(barX, barY, barW, barH, 3); ctx.fill(); ctx.fillStyle = accent; ctx.beginPath(); (ctx as any).roundRect(barX, barY, barW * (confidence / 100), barH, 3); ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = 'bold 13px monospace'; ctx.fillText(`${confidence}% CONFIDENCE`, W / 2, 218); }
+    if (subText) { ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.font = '12px monospace'; ctx.fillText(subText, W / 2, 245); }
+    ctx.fillStyle = 'rgba(255,255,255,0.15)'; ctx.font = '10px monospace'; ctx.fillText('Switch back to broker when ready', W / 2, H - 10);
+  };
+
+  const startPip = async (): Promise<boolean> => {
+    if (!pipSupported) { console.warn('[PiP] Not supported in this browser'); return false; }
+    try {
+      const canvas = document.createElement('canvas'); canvas.width = 480; canvas.height = 270; pipCanvasRef.current = canvas;
+      drawPipFrame('ANALYZING', 0, 'Switch to your broker now...');
+      const stream = canvas.captureStream(2); pipStreamRef.current = stream;
+      const video = document.createElement('video'); video.srcObject = stream; video.muted = true; pipVideoRef.current = video; document.body.appendChild(video);
+      await video.play(); await (video as any).requestPictureInPicture();
+      video.addEventListener('leavepictureinpicture', () => closePip(false));
+      setPipActive(true); setPipSignal('ANALYZING');
+      const tick = () => { drawPipFrame(pipSignal !== 'IDLE' ? pipSignal : 'ANALYZING', pipConfidence); pipRafRef.current = requestAnimationFrame(tick); };
+      pipRafRef.current = requestAnimationFrame(tick);
+      return true;
+    } catch (err: any) {
+      if (err.name !== 'NotAllowedError') console.error('[PiP] Failed:', err);
+      return false;
+    }
+  };
+
+  const updatePip = (signal: 'CALL' | 'PUT' | 'NO_TRADE', confidence: number) => {
+    if (!pipCanvasRef.current) return;
+    setPipSignal(signal); setPipConfidence(confidence);
+    const subText = signal === 'NO_TRADE' ? 'Conditions unclear — skip this trade' : `Execute ${signal} now`;
+    drawPipFrame(signal, confidence, subText);
+    if ('vibrate' in navigator) navigator.vibrate(signal === 'NO_TRADE' ? [200] : [150, 80, 150]);
+  };
 
   const handleReset = () => {
     setAnalysis(null);
@@ -294,6 +430,8 @@ export function LiveAnalysis() {
         videoRef.current.srcObject = null;
     }
     setIsCameraActive(false);
+    stopScreenShare();
+    closePip(true);
 
     setTimeout(() => {
       alert("Analysis reset. Controls restored to defaults.");
@@ -565,6 +703,7 @@ export function LiveAnalysis() {
     let finalImageToAnalyze = selectedImage;
 
     if (mode === 'live' && isCameraActive && videoRef.current) {
+      // ── Existing camera capture (DO NOT CHANGE) ───────────────────────────────
       if (Platform.OS === 'web') {
         const canvas = document.createElement('canvas');
         canvas.width = videoRef.current.videoWidth || 640;
@@ -575,8 +714,24 @@ export function LiveAnalysis() {
       }
     }
 
+    if (mode === 'screen' && isScreenActive && screenVideoRef.current) {
+      // ── NEW: Screen capture — grab one frame from the shared screen feed ──────
+      if (Platform.OS === 'web') {
+        const sv = screenVideoRef.current;
+        const canvas = document.createElement('canvas');
+        canvas.width = sv.videoWidth || 1280;
+        canvas.height = sv.videoHeight || 720;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(sv, 0, 0, canvas.width, canvas.height);
+        finalImageToAnalyze = canvas.toDataURL('image/jpeg');
+      }
+    }
+
     if (!finalImageToAnalyze) {
-      setTimeout(() => alert("Please start the camera or upload a chart image first."), 300);
+      const msg = mode === 'screen'
+        ? 'Please start screen sharing first, then tap Analyze.'
+        : 'Please start the camera or upload a chart image first.';
+      setTimeout(() => alert(msg), 300);
       setIsBusy(false);
       return;
     }
@@ -587,6 +742,9 @@ export function LiveAnalysis() {
         let timeoutId: any;
         try {
           setLoading(true);
+          if (mode === 'screen' && pipSupported) {
+            startPip().catch(console.error);
+          }
           setAnalysisError(null);
           setAutoGradeStatus('idle');
           setAnalysis(null);
@@ -662,6 +820,11 @@ export function LiveAnalysis() {
           }
 
           setAnalysis(result.analysis);
+
+          if (pipActive && mode === 'screen') {
+            const pipDir: 'CALL' | 'PUT' | 'NO_TRADE' = result.direction === 'UP' ? 'CALL' : result.direction === 'DOWN' ? 'PUT' : 'NO_TRADE';
+            updatePip(pipDir, result.analysis.judge?.finalConfidence ?? 0);
+          }
 
           setTimeout(() => {
             setTradingPhase('IDLE');
@@ -980,6 +1143,12 @@ export function LiveAnalysis() {
                      <Text style={tw`text-white font-bold text-[8px]`}>STOP</Text>
                    </Pressable>
                  )}
+                 {pipActive && (
+                   <View style={tw`absolute top-2 left-2 bg-[#22C55E]/20 border border-[#22C55E]/40 px-2 py-1 rounded-md flex-row items-center`}>
+                     <View style={tw`w-1.5 h-1.5 rounded-full bg-[#22C55E] mr-1.5`} />
+                     <Text style={tw`text-[#22C55E] font-black text-[8px] uppercase tracking-widest`}>PiP LIVE</Text>
+                   </View>
+                 )}
                  {scoutActive && (
                    <View style={tw`absolute bottom-2 left-2 right-2 bg-black bg-opacity-20 p-2 rounded-lg border ${scoutData?.action === 'ABORT' ? 'border-red-500' : scoutData?.action === 'WAIT' ? 'border-orange-500' : 'border-[#00FFFF]/30'}`}>
                       <View style={tw`flex-row justify-between items-center mb-1`}>
@@ -1031,6 +1200,64 @@ export function LiveAnalysis() {
                  profitabilityPercent={profitabilityPercent}
               />
             </View>
+        </View>
+
+        <View style={tw`bg-[#121419] rounded-2xl border border-white border-opacity-10 p-4 mb-4`}>
+          <View style={tw`flex-row justify-between items-center mb-3`}>
+            <View style={tw`flex-row items-center`}>
+              <View style={tw`w-2 h-2 rounded-full mr-2 ${mode === 'screen' ? 'bg-[#D9B382]' : 'bg-[#4B5570]'}`} />
+              <Text style={tw`text-[8px] font-black text-[#4B5570] uppercase tracking-widest`}>Screen Share Mode</Text>
+            </View>
+            <Pressable
+              onPress={() => {
+                if (mode === 'screen') {
+                  stopScreenShare();
+                  setMode('live');
+                } else {
+                  setMode('screen');
+                  setScreenError(null);
+                }
+              }}
+              style={({ pressed }) => [
+                tw`px-4 py-1.5 rounded-full border`,
+                mode === 'screen' ? tw`bg-[#D9B382]/20 border-[#D9B382]/50` : tw`bg-transparent border-white/10`,
+                { opacity: pressed ? 0.7 : 1 }
+              ]}
+            >
+              <Text style={[tw`text-[9px] font-black uppercase tracking-widest`, mode === 'screen' ? tw`text-[#D9B382]` : tw`text-[#4B5570]`]}>
+                {mode === 'screen' ? 'Active ✓' : 'Enable'}
+              </Text>
+            </Pressable>
+          </View>
+          {isIOS && (
+            <View style={tw`bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-3 items-center`}>
+              <Text style={tw`text-yellow-400 font-black text-[10px] uppercase tracking-wider text-center`}>Screen sharing is not supported on iOS</Text>
+              <Text style={tw`text-yellow-400/60 text-[9px] text-center mt-1`}>Use Chrome or Edge on desktop for this feature</Text>
+            </View>
+          )}
+          {!isIOS && mode === 'screen' && (
+            <View>
+              <View style={[tw`w-full bg-black rounded-xl overflow-hidden border border-white/10 items-center justify-center mb-3`, { minHeight: 160 }]}>
+                {Platform.OS === 'web' && (
+                  <video ref={screenVideoRef} autoPlay playsInline muted style={{ width: '100%', height: 160, objectFit: 'contain', background: '#000' }} />
+                )}
+                {!isScreenActive && (
+                  <View style={tw`absolute inset-0 bg-black/80 items-center justify-center`}>
+                    <Pressable onPress={startScreenShare} style={({ pressed }) => [tw`bg-[#D9B382] px-6 py-3 rounded-xl flex-row items-center`, { opacity: pressed ? 0.7 : 1 }]}>
+                      <Monitor size={16} color="#1A1308" />
+                      <Text style={tw`text-[#1A1308] font-black text-sm uppercase tracking-wider ml-2`}>Share Your Broker Screen</Text>
+                    </Pressable>
+                  </View>
+                )}
+                {isScreenActive && (
+                  <Pressable onPress={stopScreenShare} style={({ pressed }) => [tw`absolute top-2 right-2 bg-red-500/80 p-1.5 rounded-md`, { opacity: pressed ? 0.7 : 1 }]}>
+                    <Text style={tw`text-white font-bold text-[8px]`}>STOP</Text>
+                  </Pressable>
+                )}
+              </View>
+              {screenError && <Text style={tw`text-red-400 text-[10px] font-bold text-center`}>{screenError}</Text>}
+            </View>
+          )}
         </View>
 
         {/* Action Bar / Live Debate UI Overlay */}
@@ -1127,7 +1354,7 @@ export function LiveAnalysis() {
                 closePickers();
                 handleAnalyze();
               }}
-              disabled={(mode === 'test' && !selectedImage) || (mode === 'live' && !isCameraActive) || isBusy}
+              disabled={(mode === 'test' && !selectedImage) || (mode === 'live' && !isCameraActive) || (mode === 'screen' && !isScreenActive) || isBusy}
               style={({ pressed }) => [
                 tw`h-14 rounded-xl items-center justify-center`,
                 ((mode === 'test' && !selectedImage) || (mode === 'live' && !isCameraActive) || isBusy) ? tw`bg-[#D9B382]/20` : tw`bg-[#D9B382]`,
@@ -1137,7 +1364,7 @@ export function LiveAnalysis() {
               <View style={tw`flex-row items-center`}>
                 <Sparkles size={18} color="#1A1308" style={tw`mr-2`} />
                 <Text style={tw`text-[#1A1308] font-black uppercase tracking-[2px] text-base`}>
-                   {mode === 'live' ? 'Start Camera Analysis' : 'Initiate Analysis'}
+                   {mode === 'live' ? 'Start Camera Analysis' : mode === 'screen' ? 'Analyze Shared Screen' : 'Initiate Analysis'}
                 </Text>
               </View>
             </Pressable>
