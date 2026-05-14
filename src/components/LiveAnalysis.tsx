@@ -100,7 +100,7 @@ export function LiveAnalysis() {
   const [isBusy, setIsBusy] = useState(false);
   const [analysisStep, setAnalysisStep] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<any | null>(null);
-  const [mode, setMode] = useState<'live' | 'test' | 'bulk'>('live');
+  const [mode, setMode] = useState<'live' | 'test' | 'bulk' | 'screen'>('live');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [calibrationFrame, setCalibrationFrame] = useState<ImageData | null>(null);
   const [isStable, setIsStable] = useState(false);
@@ -120,6 +120,20 @@ export function LiveAnalysis() {
   const [pipSignal, setPipSignal]         = useState<'ANALYZING' | 'CALL' | 'PUT' | 'NO_TRADE' | 'IDLE'>('IDLE');
   const [pipConfidence, setPipConfidence] = useState<number>(0);
   const [pipSupported, setPipSupported]   = useState(false);
+
+  // ── Screen Share state ───────────────────────────────────────────────────────
+  const [isScreenActive, setIsScreenActive]     = useState(false);
+  const [screenError, setScreenError]           = useState<string | null>(null);
+
+  // ── iOS/platform detection ───────────────────────────────────────────────────
+  const isIOS = typeof navigator !== "undefined" &&
+    /iPad|iPhone|iPod/.test(navigator.userAgent) &&
+    !(window as any).MSStream;
+
+  const isScreenShareSupported = !isIOS &&
+    typeof navigator !== "undefined" &&
+    !!navigator.mediaDevices &&
+    typeof (navigator.mediaDevices as any).getDisplayMedia === "function";
 
   useEffect(() => {
     if (isBusy || scoutActive) {
@@ -213,7 +227,10 @@ export function LiveAnalysis() {
   const pipCanvasRef    = useRef<HTMLCanvasElement | null>(null);
   const pipVideoRef     = useRef<HTMLVideoElement | null>(null);
   const pipStreamRef    = useRef<MediaStream | null>(null);
-  const pipAnimFrameRef = useRef<number | null>(null);
+  // ── Screen Share + PiP refs ──────────────────────────────────────────────────
+  const screenVideoRef   = useRef<HTMLVideoElement | null>(null);
+  const screenStreamRef  = useRef<MediaStream | null>(null);
+  const pipRafRef        = useRef<number | null>(null);
 
   const prefersReducedMotion = useReducedMotion();
   const springProps = { type: "spring" as const, stiffness: 400, damping: 22 };
@@ -283,9 +300,9 @@ export function LiveAnalysis() {
 
   const drawPipFrame = (signal: 'ANALYZING' | 'CALL' | 'PUT' | 'NO_TRADE' | 'IDLE', confidence: number = 0, subText: string = '') => { const canvas = pipCanvasRef.current; if (!canvas) return; const ctx = canvas.getContext('2d'); if (!ctx) return; const W = 480, H = 270; ctx.clearRect(0, 0, W, H); const bgColors: Record<string, string> = { ANALYZING: '#0d0d14', CALL: '#021a0b', PUT: '#1a0202', NO_TRADE: '#141008', IDLE: '#0d0d14' }; ctx.fillStyle = bgColors[signal] ?? '#0d0d14'; ctx.fillRect(0, 0, W, H); const accentColors: Record<string, string> = { ANALYZING: '#D9B382', CALL: '#22C55E', PUT: '#EF4444', NO_TRADE: '#F59E0B', IDLE: '#4B5570' }; const accent = accentColors[signal] ?? '#4B5570'; ctx.fillStyle = accent; ctx.fillRect(0, 0, W, 4); ctx.strokeStyle = 'rgba(255,255,255,0.03)'; ctx.lineWidth = 1; for (let x = 0; x < W; x += 30) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); } for (let y = 0; y < H; y += 30) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); } ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'left'; ctx.fillText('AI TRADING · PRO TERMINAL', 16, 26); if (signal === 'ANALYZING') { ctx.fillStyle = '#D9B382'; ctx.beginPath(); ctx.arc(W - 20, 20, 5, 0, Math.PI * 2); ctx.fill(); } const signalLabels: Record<string, string> = { ANALYZING: 'ANALYZING...', CALL: 'CALL  ▲', PUT: 'PUT   ▼', NO_TRADE: 'NO TRADE', IDLE: 'STANDBY' }; const label = signalLabels[signal] ?? signal; ctx.font = 'bold 64px Arial'; ctx.textAlign = 'center'; ctx.fillStyle = accent; ctx.shadowColor = accent; ctx.shadowBlur = signal === 'ANALYZING' ? 0 : 20; ctx.fillText(label, W / 2, 165); ctx.shadowBlur = 0; if ((signal === 'CALL' || signal === 'PUT') && confidence > 0) { const barW = 280, barH = 6; const barX = (W - barW) / 2, barY = 190; ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.beginPath(); (ctx as any).roundRect(barX, barY, barW, barH, 3); ctx.fill(); ctx.fillStyle = accent; ctx.beginPath(); (ctx as any).roundRect(barX, barY, barW * (confidence / 100), barH, 3); ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = 'bold 13px monospace'; ctx.fillText(`${confidence}% CONFIDENCE`, W / 2, 218); } if (subText) { ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.font = '12px monospace'; ctx.fillText(subText, W / 2, 245); } ctx.fillStyle = 'rgba(255,255,255,0.15)'; ctx.font = '10px monospace'; ctx.fillText('Switch back to broker when ready', W / 2, H - 10); };
 
-  const closePip = (exitPip = true) => { if (pipAnimFrameRef.current) { cancelAnimationFrame(pipAnimFrameRef.current); pipAnimFrameRef.current = null; } if (exitPip && document.pictureInPictureElement) { document.exitPictureInPicture().catch(() => {}); } pipStreamRef.current?.getTracks().forEach(t => t.stop()); pipStreamRef.current = null; if (pipVideoRef.current) { pipVideoRef.current.pause(); if (document.body.contains(pipVideoRef.current)) { document.body.removeChild(pipVideoRef.current); } pipVideoRef.current = null; } pipCanvasRef.current = null; setPipActive(false); setPipSignal('IDLE'); setPipConfidence(0); };
+  const closePip = (exitPip = true) => { if (pipRafRef.current) { cancelAnimationFrame(pipRafRef.current); pipRafRef.current = null; } if (exitPip && document.pictureInPictureElement) { document.exitPictureInPicture().catch(() => {}); } pipStreamRef.current?.getTracks().forEach(t => t.stop()); pipStreamRef.current = null; if (pipVideoRef.current) { pipVideoRef.current.pause(); if (document.body.contains(pipVideoRef.current)) { document.body.removeChild(pipVideoRef.current); } pipVideoRef.current = null; } pipCanvasRef.current = null; setPipActive(false); setPipSignal('IDLE'); setPipConfidence(0); };
 
-  const startPip = async (): Promise<boolean> => { if (!pipSupported) { alert('Picture-in-Picture is not supported in this browser. Use Chrome or Edge.'); return false; } try { const canvas = document.createElement('canvas'); canvas.width = 480; canvas.height = 270; pipCanvasRef.current = canvas; drawPipFrame('ANALYZING', 0, 'Switching to your broker now...'); const stream = canvas.captureStream(2); pipStreamRef.current = stream; const video = document.createElement('video'); video.srcObject = stream; video.muted = true; pipVideoRef.current = video; document.body.appendChild(video); await video.play(); await (video as any).requestPictureInPicture(); video.addEventListener('leavepictureinpicture', () => { setPipActive(false); setPipSignal('IDLE'); closePip(false); }); setPipActive(true); setPipSignal('ANALYZING'); const redraw = () => { drawPipFrame(pipSignal === 'IDLE' ? 'ANALYZING' : pipSignal, pipConfidence); pipAnimFrameRef.current = requestAnimationFrame(redraw); }; pipAnimFrameRef.current = requestAnimationFrame(redraw); return true; } catch (err: any) { console.error('[PiP] Failed to start:', err); if (err.name !== 'NotAllowedError') { alert(`PiP failed: ${err.message}`); } return false; } };
+  const startPip = async (): Promise<boolean> => { if (!pipSupported) { alert('Picture-in-Picture is not supported in this browser. Use Chrome or Edge.'); return false; } try { const canvas = document.createElement('canvas'); canvas.width = 480; canvas.height = 270; pipCanvasRef.current = canvas; drawPipFrame('ANALYZING', 0, 'Switching to your broker now...'); const stream = canvas.captureStream(2); pipStreamRef.current = stream; const video = document.createElement('video'); video.srcObject = stream; video.muted = true; pipVideoRef.current = video; document.body.appendChild(video); await video.play(); await (video as any).requestPictureInPicture(); video.addEventListener('leavepictureinpicture', () => { setPipActive(false); setPipSignal('IDLE'); closePip(false); }); setPipActive(true); setPipSignal('ANALYZING'); const redraw = () => { drawPipFrame(pipSignal === 'IDLE' ? 'ANALYZING' : pipSignal, pipConfidence); pipRafRef.current = requestAnimationFrame(redraw); }; pipRafRef.current = requestAnimationFrame(redraw); return true; } catch (err: any) { console.error('[PiP] Failed to start:', err); if (err.name !== 'NotAllowedError') { alert(`PiP failed: ${err.message}`); } return false; } };
 
   const updatePip = (signal: 'CALL' | 'PUT' | 'NO_TRADE', confidence: number) => { if (!pipActive || !pipCanvasRef.current) return; setPipSignal(signal); setPipConfidence(confidence); const subText = signal === 'NO_TRADE' ? 'Conditions unclear — skip this trade' : `${signal === 'CALL' ? 'Buy CALL' : 'Buy PUT'} — execute now`; drawPipFrame(signal, confidence, subText); if ('vibrate' in navigator) { navigator.vibrate(signal === 'NO_TRADE' ? [200] : [150, 80, 150]); } };
 
@@ -375,6 +392,66 @@ export function LiveAnalysis() {
       videoRef.current.srcObject = null;
     }
     setIsCameraActive(false);
+  };
+
+  const startScreenShare = async () => {
+    if (!isScreenShareSupported) {
+      setScreenError(
+        isIOS
+          ? "Screen sharing is not supported on iOS. Please use Chrome or Edge on desktop."
+          : "Your browser does not support screen sharing. Please use Chrome or Edge."
+      );
+      return;
+    }
+
+    try {
+      setScreenError(null);
+
+      // Ask user to pick: a browser tab, a window, or entire screen
+      const stream = await (navigator.mediaDevices as any).getDisplayMedia({
+        video: {
+          displaySurface: "browser", // Prefers tab sharing — user can change
+          width:          { ideal: 1920 },
+          height:         { ideal: 1080 },
+          frameRate:      { ideal: 5 }  // 5fps is enough, saves CPU
+        },
+        audio: false
+      });
+
+      screenStreamRef.current = stream;
+
+      // Wire the stream into the hidden <video> element for preview
+      if (screenVideoRef.current) {
+        screenVideoRef.current.srcObject = stream;
+      }
+
+      // Auto-stop when user clicks native "Stop sharing" button in browser
+      stream.getVideoTracks()[0].addEventListener("ended", () => {
+        stopScreenShare();
+      });
+
+      setIsScreenActive(true);
+    } catch (err: any) {
+      if (err.name === "NotAllowedError") {
+        // User cancelled the picker — don"t show an error
+        return;
+      }
+      console.error("[ScreenShare] Error:", err);
+      setScreenError(`Screen share failed: ${err.message}`);
+    }
+  };
+
+  const stopScreenShare = () => {
+    if (screenStreamRef.current) {
+      screenStreamRef.current.getTracks().forEach((t: any) => t.stop());
+      screenStreamRef.current = null;
+    }
+    if (screenVideoRef.current) {
+      screenVideoRef.current.srcObject = null;
+    }
+    setIsScreenActive(false);
+    // Also close PiP if open
+    closePip(true);
   };
 
   useEffect(() => {
