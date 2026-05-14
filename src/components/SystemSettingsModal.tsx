@@ -25,6 +25,8 @@ export function SystemSettingsModal({ show, onClose }: Props) {
       localStorage.removeItem('app_user_hf_api_key');
       localStorage.removeItem('app_user_reasoning_engine');
       localStorage.removeItem('app_user_vision_model');
+      localStorage.removeItem('app_user_github_api_key');
+      localStorage.removeItem('app_user_google_api_key');
     }
     setSaveStatus('saved');
     setTimeout(() => setSaveStatus('idle'), 2000);
