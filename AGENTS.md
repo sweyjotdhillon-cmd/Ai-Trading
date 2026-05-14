@@ -1,7 +1,32 @@
 # AGENTS.md
 
 > **Purpose:** This file is the operational playbook for any AI/code agent working in this repository.  
-> It defines goals, standards, workflows, constraints, and quality bars so contributions are consistently high-value, safe, and production-ready.
+> It defines what the app does, goals, standards, workflows, constraints, and quality bars so contributions are consistently high-value, safe, and production-ready.
+
+---
+
+## 0) About ChartLens (Project Context)
+
+**What it is:** ChartLens is a **100% offline, real-time live camera feed chart analyzer** tailored for professional day traders. It captures chart images via camera/screen, processes them locally, and generates rule-based trading signals deterministically.
+
+**Technology Stack:**
+- **Frontend Core:** React, React Native (for UI primitives), TypeScript, Vite.
+- **Styling:** Tailwind CSS integrated via the `twrnc` library for React Native compatibility.
+- **Concurrency:** Extensive use of **Web Workers** (`src/workers/`) to keep the main UI thread perfectly responsive while heavy analysis runs in the background.
+
+**Architecture & Repository Structure:**
+- `src/vision/`: Handles image processing, machine vision, OCR, and chart axis extraction.
+- `src/quant/`: Contains the core quantitative trading signal logic (rule engine, stability filters, mathematical indicators). **Critical Note:** For performance-sensitive operations here, explicitly use and return `Float64Array` instead of standard `number[]` arrays to avoid unnecessary memory allocations.
+- `src/workers/`: Web Worker scripts executing the vision -> quant pipeline off the main thread.
+- `__tests__/`: Unit tests are collocated in `__tests__` subdirectories relative to the source code being tested (e.g., `src/vision/__tests__/`).
+
+**Development Commands:**
+- `npm run dev`: Start local dev server via Vite.
+- `npm run build`: Build for production.
+- `npm run start` / `npm run preview`: Serve production build locally.
+- `npx vitest run`: Execute the testing suite.
+- `npm run lint`: Run ESLint.
+- `npx tsc --noEmit`: Run Type Checking.
 
 ---
 
