@@ -6,6 +6,9 @@ function pseudoRandom() {
 import { runSingleAnalysis, onStableSignal } from '../utils/singleAnalysis';
 import { BulkTestPanel } from './BulkTestPanel';
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { Platform } from 'react-native';
+
+const isIOS = Platform.OS === 'ios' || (Platform.OS === 'web' && /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream);
 
 export function useWakeLock() {
   const wakeLockRef = useRef<any>(null);
@@ -63,7 +66,6 @@ import {   View,
   ActivityIndicator, 
   TextInput,
   Image,
-  Platform,
   Modal
 } from 'react-native';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
