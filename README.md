@@ -1,46 +1,37 @@
-# Pocket Quant: 100% Offline Deterministic Trading Signals
+# ChartLens
 
-A 100% offline, deterministic, Web Worker-powered technical analysis pipeline that converts a live camera feed of a candlestick chart into actionable trading signals (CALL/PUT) with real-time confidence scoring.
+ChartLens is a deterministic, offline-first web app for extracting candlestick structure from live chart screenshots/camera feeds and producing rule-based trading signals in real time.
 
-## Key Features
-- **100% Offline Deterministic Build**: The pipeline guarantees the same input image will result in the exact same output. Verified directly on worker boot.
-- **Latency Budget Enforcement**: If the geometric pipeline takes longer than 250ms on a 1280x720 frame, it automatically steps down the resolution to preserve the 30 FPS experience.
-- **Workerization**: The heavy Vision processing and Quant engine runs purely in an asynchronous Web Worker. The main thread never hangs.
-- **Four Independent Judges**: Bull, Bear, Skeptic, and Boundary. All algorithms must reach a consensus above a high threshold before a `STABLE 3/3` trade signal is produced.
+## What it does
+- Runs chart vision + signal logic locally in the browser.
+- Uses a Web Worker pipeline for responsive UI while analysis runs off the main thread.
+- Applies deterministic decision logic so identical inputs produce identical outputs.
+- Surfaces confidence and stability gating before showing a trade call.
 
-## Architecture
+## Core pipeline
+1. Capture frame input from the chart view.
+2. Preprocess and rectify chart geometry.
+3. Extract OHLC/candle-level features.
+4. Compute indicator + rule-engine verdicts.
+5. Apply stability filtering and display result.
 
-```text
-[ Camera Feed ] -> (OffscreenCanvas) -> [ ImageData ]
-        |
-    postMessage
-        |
-[ Web Worker (AnalysisWorker) ]
-        |
-        +-- 1. Vision Pipeline (pipeline.ts)
-        |      - Rectify & Crop (homography.ts)
-        |      - Feature Ext (Canny, Hough)
-        |      - OHLC Extraction (pixelScanner.ts)
-        |
-        +-- 2. Quant Engine (ruleEngine.ts)
-        |      - Indicators (RSI, MACD, Bollinger)
-        |      - 4-Judge Deterministic Voting 
-        |
-        +-- 3. Stability Filter (stabilityFilter.ts)
-        |      - 3 consecutive identical decisions required
-        |      - Outputs STABLE_SIGNAL
-        |
-    postMessage { ok, stage, ms, payload }
-        |
-[ Main Thread (LiveAnalysis.tsx) ]
-        |
-    [ UI Update (STABLE 3/3 Badge) ]
+## Local development
+```bash
+npm install
+npm run dev
 ```
 
-## Calibration Walkthrough
-*(1 GIF, captured separately)*
+## Production build
+```bash
+npm run build
+npm run preview
+```
 
-When pointing the camera at a new terminal or chart, press **"Calibrate Colors"**.
-- Tap a green candle to set the **Bullish** calibration band.
-- Tap a red candle to set the **Bearish** calibration band.
-- Press **Confirm**. The bands are passed to the worker and standardizes the machine vision against the specific screen.
+## Netlify
+This repository includes `netlify.toml` configured for Vite:
+- Build command: `npm run build`
+- Publish directory: `dist`
+- SPA fallback redirect to `index.html`
+
+## Notes
+- ChartLens is designed for research and workflow automation; validate signals independently before any live trading use.
