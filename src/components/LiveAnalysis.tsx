@@ -81,7 +81,9 @@ import {
   XCircle,
   ChevronDown,
   Check,
-  Zap
+  Zap,
+  Monitor,
+  Tv2
 } from 'lucide-react';
 import tw from 'twrnc';
 import { LossAutopsyModal } from './LossAutopsyModal';
@@ -113,6 +115,12 @@ export function LiveAnalysis() {
   const [scoutActive, setScoutActive] = useState(false);
   const [scoutData, setScoutData] = useState<{action: string, reason: string} | null>(null);
 
+  // PiP Widget state
+  const [pipActive, setPipActive]         = useState(false);
+  const [pipSignal, setPipSignal]         = useState<'ANALYZING' | 'CALL' | 'PUT' | 'NO_TRADE' | 'IDLE'>('IDLE');
+  const [pipConfidence, setPipConfidence] = useState<number>(0);
+  const [pipSupported, setPipSupported]   = useState(false);
+
   useEffect(() => {
     if (isBusy || scoutActive) {
       requestLock();
@@ -140,6 +148,15 @@ export function LiveAnalysis() {
   
   useEffect(() => {
     // Offline mode, no snapshot needed
+  }, []);
+
+  useEffect(() => {
+    // Check browser support for Picture-in-Picture API
+    setPipSupported(
+      typeof document !== 'undefined' &&
+      'pictureInPictureEnabled' in document &&
+      (document as any).pictureInPictureEnabled === true
+    );
   }, []);
 
   // Parallel Judge Logs
@@ -192,6 +209,12 @@ export function LiveAnalysis() {
   const techInputRef = useRef<any>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
+  // PiP Signal Widget refs
+  const pipCanvasRef    = useRef<HTMLCanvasElement | null>(null);
+  const pipVideoRef     = useRef<HTMLVideoElement | null>(null);
+  const pipStreamRef    = useRef<MediaStream | null>(null);
+  const pipAnimFrameRef = useRef<number | null>(null);
+
   const prefersReducedMotion = useReducedMotion();
   const springProps = { type: "spring" as const, stiffness: 400, damping: 22 };
   const cardHoverProps = prefersReducedMotion ? {} : { y: -2, boxShadow: "0 8px 24px rgba(0,0,0,0.25)" };
@@ -243,6 +266,7 @@ export function LiveAnalysis() {
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop());
       }
+      closePip(true);
     };
   }, []);
 
@@ -254,6 +278,16 @@ export function LiveAnalysis() {
 
   const timeframes = ['30 minutes', '15 minutes', '5 minutes', '3 minutes'];
   const durations = ['3m', '5m'];
+
+
+
+  const drawPipFrame = (signal: 'ANALYZING' | 'CALL' | 'PUT' | 'NO_TRADE' | 'IDLE', confidence: number = 0, subText: string = '') => { const canvas = pipCanvasRef.current; if (!canvas) return; const ctx = canvas.getContext('2d'); if (!ctx) return; const W = 480, H = 270; ctx.clearRect(0, 0, W, H); const bgColors: Record<string, string> = { ANALYZING: '#0d0d14', CALL: '#021a0b', PUT: '#1a0202', NO_TRADE: '#141008', IDLE: '#0d0d14' }; ctx.fillStyle = bgColors[signal] ?? '#0d0d14'; ctx.fillRect(0, 0, W, H); const accentColors: Record<string, string> = { ANALYZING: '#D9B382', CALL: '#22C55E', PUT: '#EF4444', NO_TRADE: '#F59E0B', IDLE: '#4B5570' }; const accent = accentColors[signal] ?? '#4B5570'; ctx.fillStyle = accent; ctx.fillRect(0, 0, W, 4); ctx.strokeStyle = 'rgba(255,255,255,0.03)'; ctx.lineWidth = 1; for (let x = 0; x < W; x += 30) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); } for (let y = 0; y < H; y += 30) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); } ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'left'; ctx.fillText('AI TRADING · PRO TERMINAL', 16, 26); if (signal === 'ANALYZING') { ctx.fillStyle = '#D9B382'; ctx.beginPath(); ctx.arc(W - 20, 20, 5, 0, Math.PI * 2); ctx.fill(); } const signalLabels: Record<string, string> = { ANALYZING: 'ANALYZING...', CALL: 'CALL  ▲', PUT: 'PUT   ▼', NO_TRADE: 'NO TRADE', IDLE: 'STANDBY' }; const label = signalLabels[signal] ?? signal; ctx.font = 'bold 64px Arial'; ctx.textAlign = 'center'; ctx.fillStyle = accent; ctx.shadowColor = accent; ctx.shadowBlur = signal === 'ANALYZING' ? 0 : 20; ctx.fillText(label, W / 2, 165); ctx.shadowBlur = 0; if ((signal === 'CALL' || signal === 'PUT') && confidence > 0) { const barW = 280, barH = 6; const barX = (W - barW) / 2, barY = 190; ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.beginPath(); (ctx as any).roundRect(barX, barY, barW, barH, 3); ctx.fill(); ctx.fillStyle = accent; ctx.beginPath(); (ctx as any).roundRect(barX, barY, barW * (confidence / 100), barH, 3); ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = 'bold 13px monospace'; ctx.fillText(`${confidence}% CONFIDENCE`, W / 2, 218); } if (subText) { ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.font = '12px monospace'; ctx.fillText(subText, W / 2, 245); } ctx.fillStyle = 'rgba(255,255,255,0.15)'; ctx.font = '10px monospace'; ctx.fillText('Switch back to broker when ready', W / 2, H - 10); };
+
+  const closePip = (exitPip = true) => { if (pipAnimFrameRef.current) { cancelAnimationFrame(pipAnimFrameRef.current); pipAnimFrameRef.current = null; } if (exitPip && document.pictureInPictureElement) { document.exitPictureInPicture().catch(() => {}); } pipStreamRef.current?.getTracks().forEach(t => t.stop()); pipStreamRef.current = null; if (pipVideoRef.current) { pipVideoRef.current.pause(); if (document.body.contains(pipVideoRef.current)) { document.body.removeChild(pipVideoRef.current); } pipVideoRef.current = null; } pipCanvasRef.current = null; setPipActive(false); setPipSignal('IDLE'); setPipConfidence(0); };
+
+  const startPip = async (): Promise<boolean> => { if (!pipSupported) { alert('Picture-in-Picture is not supported in this browser. Use Chrome or Edge.'); return false; } try { const canvas = document.createElement('canvas'); canvas.width = 480; canvas.height = 270; pipCanvasRef.current = canvas; drawPipFrame('ANALYZING', 0, 'Switching to your broker now...'); const stream = canvas.captureStream(2); pipStreamRef.current = stream; const video = document.createElement('video'); video.srcObject = stream; video.muted = true; pipVideoRef.current = video; document.body.appendChild(video); await video.play(); await (video as any).requestPictureInPicture(); video.addEventListener('leavepictureinpicture', () => { setPipActive(false); setPipSignal('IDLE'); closePip(false); }); setPipActive(true); setPipSignal('ANALYZING'); const redraw = () => { drawPipFrame(pipSignal === 'IDLE' ? 'ANALYZING' : pipSignal, pipConfidence); pipAnimFrameRef.current = requestAnimationFrame(redraw); }; pipAnimFrameRef.current = requestAnimationFrame(redraw); return true; } catch (err: any) { console.error('[PiP] Failed to start:', err); if (err.name !== 'NotAllowedError') { alert(`PiP failed: ${err.message}`); } return false; } };
+
+  const updatePip = (signal: 'CALL' | 'PUT' | 'NO_TRADE', confidence: number) => { if (!pipActive || !pipCanvasRef.current) return; setPipSignal(signal); setPipConfidence(confidence); const subText = signal === 'NO_TRADE' ? 'Conditions unclear — skip this trade' : `${signal === 'CALL' ? 'Buy CALL' : 'Buy PUT'} — execute now`; drawPipFrame(signal, confidence, subText); if ('vibrate' in navigator) { navigator.vibrate(signal === 'NO_TRADE' ? [200] : [150, 80, 150]); } };
 
   const handleReset = () => {
     setAnalysis(null);
@@ -294,6 +328,7 @@ export function LiveAnalysis() {
         videoRef.current.srcObject = null;
     }
     setIsCameraActive(false);
+    closePip(true);
 
     setTimeout(() => {
       alert("Analysis reset. Controls restored to defaults.");
@@ -663,6 +698,11 @@ export function LiveAnalysis() {
 
           setAnalysis(result.analysis);
 
+          if (pipActive) {
+            const pipDir = result.direction === 'UP' ? 'CALL' : result.direction === 'DOWN' ? 'PUT' : 'NO_TRADE';
+            updatePip(pipDir, result.analysis.judge?.finalConfidence ?? 0);
+          }
+
           setTimeout(() => {
             setTradingPhase('IDLE');
             setAnalysisStep('LIVE TICK SCOUT ACTIVE');
@@ -980,6 +1020,12 @@ export function LiveAnalysis() {
                      <Text style={tw`text-white font-bold text-[8px]`}>STOP</Text>
                    </Pressable>
                  )}
+                 {pipActive && (
+                   <View style={tw`absolute top-2 left-2 bg-[#22C55E]/20 border border-[#22C55E]/40 px-2 py-1 rounded-md flex-row items-center`}>
+                     <View style={tw`w-1.5 h-1.5 rounded-full bg-[#22C55E] mr-1.5`} />
+                     <Text style={tw`text-[#22C55E] font-black text-[8px] uppercase tracking-widest`}>PiP LIVE</Text>
+                   </View>
+                 )}
                  {scoutActive && (
                    <View style={tw`absolute bottom-2 left-2 right-2 bg-black bg-opacity-20 p-2 rounded-lg border ${scoutData?.action === 'ABORT' ? 'border-red-500' : scoutData?.action === 'WAIT' ? 'border-orange-500' : 'border-[#00FFFF]/30'}`}>
                       <View style={tw`flex-row justify-between items-center mb-1`}>
@@ -1141,6 +1187,14 @@ export function LiveAnalysis() {
                 </Text>
               </View>
             </Pressable>
+            {mode === 'live' && isCameraActive && !loading && (
+              <Pressable onPress={async () => { if (pipActive) { closePip(true); return; } const launched = await startPip(); if (launched) { handleAnalyze(); } }} style={({ pressed }) => [tw`h-12 rounded-xl items-center justify-center mt-2 flex-row`, pipActive ? tw`bg-[#22C55E]/10 border border-[#22C55E]/40` : tw`bg-[#D9B382]/10 border border-[#D9B382]/30`, { opacity: pressed ? 0.7 : 1 }]}><>{pipActive && (<View style={tw`w-2 h-2 rounded-full bg-[#22C55E] mr-2`} />)}<Text style={[tw`font-black uppercase tracking-[2px] text-xs`, pipActive ? tw`text-[#22C55E]` : tw`text-[#D9B382]`]}>{pipActive ? '📺 PiP Active — Tap to Close' : '📺 Float Signal & Switch App'}</Text></></Pressable>
+            )}
+            {mode === 'live' && !pipSupported && (
+              <View style={tw`mt-2 px-3 py-2 rounded-lg bg-yellow-500/10 border border-yellow-500/20`}>
+                <Text style={tw`text-yellow-400 text-[9px] font-black uppercase tracking-wider text-center`}>PiP not available — use Chrome or Edge browser</Text>
+              </View>
+            )}
           </div>
         )}
 
