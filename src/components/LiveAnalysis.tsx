@@ -82,8 +82,7 @@ import {
   ChevronDown,
   Check,
   Zap,
-  Monitor,
-  Tv2
+  Monitor
 } from 'lucide-react';
 import tw from 'twrnc';
 import { LossAutopsyModal } from './LossAutopsyModal';
@@ -1142,12 +1141,6 @@ export function LiveAnalysis() {
                     >
                      <Text style={tw`text-white font-bold text-[8px]`}>STOP</Text>
                    </Pressable>
-                 )}
-                 {pipActive && (
-                   <View style={tw`absolute top-2 left-2 bg-[#22C55E]/20 border border-[#22C55E]/40 px-2 py-1 rounded-md flex-row items-center`}>
-                     <View style={tw`w-1.5 h-1.5 rounded-full bg-[#22C55E] mr-1.5`} />
-                     <Text style={tw`text-[#22C55E] font-black text-[8px] uppercase tracking-widest`}>PiP LIVE</Text>
-                   </View>
                  )}
                  {scoutActive && (
                    <View style={tw`absolute bottom-2 left-2 right-2 bg-black bg-opacity-20 p-2 rounded-lg border ${scoutData?.action === 'ABORT' ? 'border-red-500' : scoutData?.action === 'WAIT' ? 'border-orange-500' : 'border-[#00FFFF]/30'}`}>
