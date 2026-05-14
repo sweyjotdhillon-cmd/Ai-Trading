@@ -144,6 +144,35 @@ export function LiveAnalysis() {
   // Live Camera States
   const videoRef = useRef<any>(null);
   const [isCameraActive, setIsCameraActive] = useState(false);
+
+  const screenVideoRef = useRef<any>(null);
+  const [isScreenActive, setIsScreenActive] = useState(false);
+
+  const startScreenShare = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+      if (screenVideoRef.current) {
+        screenVideoRef.current.srcObject = stream;
+      }
+      setIsScreenActive(true);
+
+      stream.getVideoTracks()[0].onended = () => {
+        stopScreenShare();
+      };
+    } catch (err) {
+      console.error('Error starting screen share:', err);
+      alert('Could not start screen share.');
+    }
+  };
+
+  const stopScreenShare = () => {
+    if (screenVideoRef.current && screenVideoRef.current.srcObject) {
+      screenVideoRef.current.srcObject.getTracks().forEach((track: any) => track.stop());
+      screenVideoRef.current.srcObject = null;
+    }
+    setIsScreenActive(false);
+  };
+
   
   // Offline deterministic mode -> tokens are always healthy (no tokens needed)
   const [encryptedSystemTokens, setEncryptedSystemTokens] = useState<string | undefined>('offline-mode-active');
