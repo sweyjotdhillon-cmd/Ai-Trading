@@ -395,17 +395,19 @@ export function LiveAnalysis() {
   };
 
   const startScreenShare = async () => {
-    if (!isScreenShareSupported) {
-      setScreenError(
-        isIOS
-          ? "Screen sharing is not supported on iOS. Please use Chrome or Edge on desktop."
-          : "Your browser does not support screen sharing. Please use Chrome or Edge."
-      );
+    if (!isScreenShareSupported && isIOS) {
+      const errorMsg = "Screen sharing is not supported on iOS. Please use Chrome or Edge on desktop.";
+      setScreenError(errorMsg);
+      alert(errorMsg);
       return;
     }
 
     try {
       setScreenError(null);
+
+      if (!navigator.mediaDevices || !(navigator.mediaDevices as any).getDisplayMedia) {
+        throw new Error("Screen sharing is not available. Please ensure you are using Chrome/Edge on a supported device and are using HTTPS.");
+      }
 
       // Ask user to pick: a browser tab, a window, or entire screen
       const stream = await (navigator.mediaDevices as any).getDisplayMedia({
@@ -1249,6 +1251,13 @@ export function LiveAnalysis() {
   {/* ── Screen Mode Content (non-iOS only) ───────────────────────────────── */}
   {!isIOS && mode === 'screen' && (
     <View>
+      {screenError && (
+        <View style={tw`bg-red-500/10 border border-red-500/20 rounded-xl p-3 mb-3 items-center`}>
+          <Text style={tw`text-red-400 font-black text-[10px] uppercase tracking-wider text-center`}>
+            {screenError}
+          </Text>
+        </View>
+      )}
       {/* Screen Preview Area */}
       <View style={[tw`w-full bg-black rounded-xl overflow-hidden border border-white/10 items-center justify-center mb-3`, { minHeight: 160 }]}>
 
@@ -1266,19 +1275,39 @@ export function LiveAnalysis() {
         {/* Overlay when screen not yet shared */}
         {!isScreenActive && (
           <View style={tw`absolute inset-0 bg-black/80 items-center justify-center`}>
-            <Pressable
-              onPress={startScreenShare}
-              style={({ pressed }) => [
-                tw`bg-[#D9B382] px-6 py-3 rounded-xl flex-row items-center`,
-                { opacity: pressed ? 0.7 : 1 }
-              ]}
-            >
-              {/* Use Monitor icon — add to your lucide imports */}
-              <Monitor size={18} color="#1A1308" style={tw`mr-2`} />
-              <Text style={tw`text-[#1A1308] font-black text-sm uppercase tracking-wider`}>
-                Share Your Broker Screen
-              </Text>
-            </Pressable>
+            {Platform.OS === 'web' ? (
+              <button
+                onClick={startScreenShare}
+                style={{
+                  backgroundColor: '#D9B382',
+                  padding: '12px 24px',
+                  borderRadius: '12px',
+                  display: 'flex',
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  border: 'none',
+                  cursor: 'pointer'
+                }}
+              >
+                <Monitor size={18} color="#1A1308" style={{ marginRight: 8 }} />
+                <span style={{ color: '#1A1308', fontWeight: 900, fontSize: '14px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Share Your Broker Screen
+                </span>
+              </button>
+            ) : (
+              <Pressable
+                onPress={startScreenShare}
+                style={({ pressed }) => [
+                  tw`bg-[#D9B382] px-6 py-3 rounded-xl flex-row items-center`,
+                  { opacity: pressed ? 0.7 : 1 }
+                ]}
+              >
+                <Monitor size={18} color="#1A1308" style={tw`mr-2`} />
+                <Text style={tw`text-[#1A1308] font-black text-sm uppercase tracking-wider`}>
+                  Share Your Broker Screen
+                </Text>
+              </Pressable>
+            )}
             <Text style={tw`text-white/30 text-[9px] mt-3 text-center px-6`}>
               Chrome will ask you to pick a tab, window, or full screen.{'\n'}
               Select your broker chart window.
