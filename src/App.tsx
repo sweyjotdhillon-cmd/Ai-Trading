@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   StyleSheet, 
   View, 
@@ -17,6 +17,35 @@ import { LiveAnalysis } from './components/LiveAnalysis';
 import { SystemSettingsModal } from './components/SystemSettingsModal';
 import { HeroIntro } from './components/HeroIntro';
 
+
+class TerminalErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; errorMessage: string | null }> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, errorMessage: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, errorMessage: error?.message ?? 'Unknown error' };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('[TerminalErrorBoundary] LiveAnalysis crashed:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Unable to load terminal.</Text>
+          <Text style={styles.errorHint}>Please refresh and try again.</Text>
+          {this.state.errorMessage ? <Text style={styles.errorDetails}>{this.state.errorMessage}</Text> : null}
+        </View>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 function App() {
   console.log("[App] Mounting...");
   const [showSystemSettings, setShowSystemSettings] = useState(false);
@@ -117,7 +146,9 @@ function App() {
                 transition={transitionProps}
                 style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, flexGrow: 1 }}
               >
-                <LiveAnalysis />
+                <TerminalErrorBoundary>
+                  <LiveAnalysis />
+                </TerminalErrorBoundary>
               </motion.div>
             )}
           </AnimatePresence>
@@ -150,6 +181,19 @@ const styles = StyleSheet.create({
     color: '#D9B382',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  errorHint: {
+    marginTop: 8,
+    color: '#8E9299',
+    fontSize: 13,
+  },
+  errorDetails: {
+    marginTop: 8,
+    color: '#B9BDC7',
+    fontSize: 12,
+    maxWidth: 500,
+    textAlign: 'center',
+    paddingHorizontal: 24,
   },
   authWrapper: {
     flex: 1,
