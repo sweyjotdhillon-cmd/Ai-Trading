@@ -116,7 +116,26 @@ export async function runSingleAnalysis(params: {
     messageResolvers.set(msgId, { resolve, reject });
     try {
       if (isTestMode) {
-
+        w.postMessage({
+          type: 'ANALYZE',
+          msgId,
+          imageData: imgData,
+          graphTimeframeMinutes: tfM,
+          investmentDurationMinutes: durM,
+          techniquesList: params.techniquesList
+        });
+      } else {
+        w.postMessage({
+          type: 'ANALYZE',
+          msgId,
+          imageData: imgData,
+          graphTimeframeMinutes: tfM,
+          investmentDurationMinutes: durM,
+          techniquesList: params.techniquesList
+        });
+      }
+    } catch (err: any) {
+      reject(err);
     }
 
     // Handle abort
