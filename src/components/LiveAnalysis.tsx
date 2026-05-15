@@ -7,14 +7,21 @@ import { runSingleAnalysis, onStableSignal } from '../utils/singleAnalysis';
 import { BulkTestPanel } from './BulkTestPanel';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Platform } from 'react-native';
-
-
 export function useWakeLock() {
   const wakeLockRef = useRef<any>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const isRequestedRef = useRef(false);
+
+  useEffect(() => {
+    // Create a silent audio element to play in the background to prevent the browser from throttling/killing the page.
+    const audio = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA');
+    audio.loop = true;
+    audioRef.current = audio;
+  }, []);
 
   const requestLock = useCallback(async () => {
     isRequestedRef.current = true;
+    audioRef.current?.play().catch((err: any) => console.log('Audio playback failed:', err.message));
     if ('wakeLock' in navigator && document.visibilityState === 'visible') {
       try {
         if (wakeLockRef.current) return;
@@ -34,6 +41,7 @@ export function useWakeLock() {
 
   const releaseLock = useCallback(async () => {
     isRequestedRef.current = false;
+    audioRef.current?.pause();
     if (wakeLockRef.current !== null) {
       try {
         await wakeLockRef.current.release();
