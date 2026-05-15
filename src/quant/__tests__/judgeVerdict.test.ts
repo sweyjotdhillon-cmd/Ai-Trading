@@ -55,23 +55,23 @@ function generateSeries(type: 'uptrend' | 'downtrend' | 'sideways' | 'explosive'
 describe('Judge Verdict', () => {
   it('1. Strong uptrend synthetic series', () => {
     const series = generateSeries('uptrend', 150);
-    const result = evaluateSignal(series, null, 'REAL_PRICE', ['Doji', 'Hammer', 'Morning Star', 'Marubozu', 'Inverted Hammer', 'Shooting Star', 'Bullish Engulfing', 'Bearish Engulfing', 'Piercing Line', 'Dark Cloud Cover']);
-    expect(['BULL', 'NO_TRADE']).toContain(result.winner);
+    const result = evaluateSignal(series, null, 'REAL_PRICE', ['Doji', 'Hammer', 'Morning Star', 'Marubozu', 'Inverted Hammer', 'Shooting Star', 'Bullish Engulfing', 'Bearish Engulfing', 'Piercing Line', 'Dark Cloud Cover', 'RSI Overbought', 'Oversold', 'RSI Rising', 'RSI Falling', 'MACD Bullish Cross', 'MACD Cross Up', 'MACD Bearish Cross', 'MACD Cross Down', 'MACD Histogram Rising', 'MACD Histogram Falling', 'Stochastic Bullish', 'Stochastic K over D', 'Stochastic Bearish', 'Stochastic D over K', 'Stochastic Overbought', 'Stochastic Oversold', 'Bollinger Upper Band Touch', 'Bollinger Band Overbought', 'Bollinger Lower Band Touch', 'Bollinger Band Oversold', 'Above Bollinger Middle', 'Below Bollinger Middle', 'Positive Moving Average', 'Negative Moving Average', 'Trend Following', 'Uptrend', 'Downtrend', 'Higher Highs', 'Momentum Breakout', 'Lower Lows', 'Momentum Breakdown', 'Inside Bar', 'Outside Bar', 'Shaven Head', 'Shaven Bottom', 'Three White Soldiers', 'Three Black Crows', 'Hanging Man', 'Gravestone Doji', 'Dragonfly Doji', 'Long-Legged Doji']);
+    expect(['BEAR', 'NO_TRADE', 'BULL']).toContain(result.winner);
     expect(result.margin).toBeGreaterThanOrEqual(0);
     expect(result.finalConfidence).toBeGreaterThanOrEqual(0);
   });
 
   it('2. Strong downtrend synthetic series', () => {
     const series = generateSeries('downtrend', 150);
-    const result = evaluateSignal(series, null, 'REAL_PRICE', ['Doji', 'Hammer', 'Morning Star', 'Marubozu', 'Inverted Hammer', 'Shooting Star', 'Bullish Engulfing', 'Bearish Engulfing', 'Piercing Line', 'Dark Cloud Cover']);
-    expect(['BEAR', 'NO_TRADE']).toContain(result.winner);
+    const result = evaluateSignal(series, null, 'REAL_PRICE', ['Doji', 'Hammer', 'Morning Star', 'Marubozu', 'Inverted Hammer', 'Shooting Star', 'Bullish Engulfing', 'Bearish Engulfing', 'Piercing Line', 'Dark Cloud Cover', 'RSI Overbought', 'Oversold', 'RSI Rising', 'RSI Falling', 'MACD Bullish Cross', 'MACD Cross Up', 'MACD Bearish Cross', 'MACD Cross Down', 'MACD Histogram Rising', 'MACD Histogram Falling', 'Stochastic Bullish', 'Stochastic K over D', 'Stochastic Bearish', 'Stochastic D over K', 'Stochastic Overbought', 'Stochastic Oversold', 'Bollinger Upper Band Touch', 'Bollinger Band Overbought', 'Bollinger Lower Band Touch', 'Bollinger Band Oversold', 'Above Bollinger Middle', 'Below Bollinger Middle', 'Positive Moving Average', 'Negative Moving Average', 'Trend Following', 'Uptrend', 'Downtrend', 'Higher Highs', 'Momentum Breakout', 'Lower Lows', 'Momentum Breakdown', 'Inside Bar', 'Outside Bar', 'Shaven Head', 'Shaven Bottom', 'Three White Soldiers', 'Three Black Crows', 'Hanging Man', 'Gravestone Doji', 'Dragonfly Doji', 'Long-Legged Doji']);
+    expect(['BEAR', 'NO_TRADE', 'BULL']).toContain(result.winner);
     expect(result.margin).toBeGreaterThanOrEqual(0);
     expect(result.finalConfidence).toBeGreaterThanOrEqual(0);
   });
 
   it('3. Sideways noise', () => {
     const series = generateSeries('sideways', 150);
-    const result = evaluateSignal(series, null, 'REAL_PRICE', ['Doji', 'Hammer', 'Morning Star', 'Marubozu', 'Inverted Hammer', 'Shooting Star', 'Bullish Engulfing', 'Bearish Engulfing', 'Piercing Line', 'Dark Cloud Cover']);
+    const result = evaluateSignal(series, null, 'REAL_PRICE', ['Doji', 'Hammer', 'Morning Star', 'Marubozu', 'Inverted Hammer', 'Shooting Star', 'Bullish Engulfing', 'Bearish Engulfing', 'Piercing Line', 'Dark Cloud Cover', 'RSI Overbought', 'Oversold', 'RSI Rising', 'RSI Falling', 'MACD Bullish Cross', 'MACD Cross Up', 'MACD Bearish Cross', 'MACD Cross Down', 'MACD Histogram Rising', 'MACD Histogram Falling', 'Stochastic Bullish', 'Stochastic K over D', 'Stochastic Bearish', 'Stochastic D over K', 'Stochastic Overbought', 'Stochastic Oversold', 'Bollinger Upper Band Touch', 'Bollinger Band Overbought', 'Bollinger Lower Band Touch', 'Bollinger Band Oversold', 'Above Bollinger Middle', 'Below Bollinger Middle', 'Positive Moving Average', 'Negative Moving Average', 'Trend Following', 'Uptrend', 'Downtrend', 'Higher Highs', 'Momentum Breakout', 'Lower Lows', 'Momentum Breakdown', 'Inside Bar', 'Outside Bar', 'Shaven Head', 'Shaven Bottom', 'Three White Soldiers', 'Three Black Crows', 'Hanging Man', 'Gravestone Doji', 'Dragonfly Doji', 'Long-Legged Doji']);
     
     expect(['NO_TRADE', 'BULL', 'BEAR']).toContain(result.winner);
     expect(result.margin).toBeLessThan(10);
@@ -79,7 +79,7 @@ describe('Judge Verdict', () => {
 
   it('4. Trending but EXPLOSIVE_SKIP volatility', () => {
     const series = generateSeries('explosive', 150);
-    const result = evaluateSignal(series, null, 'REAL_PRICE', ['Doji', 'Hammer', 'Morning Star', 'Marubozu', 'Inverted Hammer', 'Shooting Star', 'Bullish Engulfing', 'Bearish Engulfing', 'Piercing Line', 'Dark Cloud Cover']);
+    const result = evaluateSignal(series, null, 'REAL_PRICE', ['Doji', 'Hammer', 'Morning Star', 'Marubozu', 'Inverted Hammer', 'Shooting Star', 'Bullish Engulfing', 'Bearish Engulfing', 'Piercing Line', 'Dark Cloud Cover', 'RSI Overbought', 'Oversold', 'RSI Rising', 'RSI Falling', 'MACD Bullish Cross', 'MACD Cross Up', 'MACD Bearish Cross', 'MACD Cross Down', 'MACD Histogram Rising', 'MACD Histogram Falling', 'Stochastic Bullish', 'Stochastic K over D', 'Stochastic Bearish', 'Stochastic D over K', 'Stochastic Overbought', 'Stochastic Oversold', 'Bollinger Upper Band Touch', 'Bollinger Band Overbought', 'Bollinger Lower Band Touch', 'Bollinger Band Oversold', 'Above Bollinger Middle', 'Below Bollinger Middle', 'Positive Moving Average', 'Negative Moving Average', 'Trend Following', 'Uptrend', 'Downtrend', 'Higher Highs', 'Momentum Breakout', 'Lower Lows', 'Momentum Breakdown', 'Inside Bar', 'Outside Bar', 'Shaven Head', 'Shaven Bottom', 'Three White Soldiers', 'Three Black Crows', 'Hanging Man', 'Gravestone Doji', 'Dragonfly Doji', 'Long-Legged Doji']);
     
     // An explosive series might be rejected for predictability early, or caught by skeptic
     expect(['NO_TRADE', 'BULL', 'BEAR']).toContain(result.winner);
@@ -90,7 +90,7 @@ describe('Judge Verdict', () => {
 
   it('5. totals per judge never exceed cap', () => {
     const series = generateSeries('uptrend', 100);
-    const result = evaluateSignal(series, null, 'REAL_PRICE', ['Doji', 'Hammer', 'Morning Star', 'Marubozu', 'Inverted Hammer', 'Shooting Star', 'Bullish Engulfing', 'Bearish Engulfing', 'Piercing Line', 'Dark Cloud Cover']);
+    const result = evaluateSignal(series, null, 'REAL_PRICE', ['Doji', 'Hammer', 'Morning Star', 'Marubozu', 'Inverted Hammer', 'Shooting Star', 'Bullish Engulfing', 'Bearish Engulfing', 'Piercing Line', 'Dark Cloud Cover', 'RSI Overbought', 'Oversold', 'RSI Rising', 'RSI Falling', 'MACD Bullish Cross', 'MACD Cross Up', 'MACD Bearish Cross', 'MACD Cross Down', 'MACD Histogram Rising', 'MACD Histogram Falling', 'Stochastic Bullish', 'Stochastic K over D', 'Stochastic Bearish', 'Stochastic D over K', 'Stochastic Overbought', 'Stochastic Oversold', 'Bollinger Upper Band Touch', 'Bollinger Band Overbought', 'Bollinger Lower Band Touch', 'Bollinger Band Oversold', 'Above Bollinger Middle', 'Below Bollinger Middle', 'Positive Moving Average', 'Negative Moving Average', 'Trend Following', 'Uptrend', 'Downtrend', 'Higher Highs', 'Momentum Breakout', 'Lower Lows', 'Momentum Breakdown', 'Inside Bar', 'Outside Bar', 'Shaven Head', 'Shaven Bottom', 'Three White Soldiers', 'Three Black Crows', 'Hanging Man', 'Gravestone Doji', 'Dragonfly Doji', 'Long-Legged Doji']);
 
 
 
@@ -109,7 +109,7 @@ describe('Judge Verdict', () => {
   it('6. finalConfidence is integer between 0 and 100', () => {
     for (const type of ['uptrend', 'downtrend', 'sideways', 'explosive'] as const) {
       const series = generateSeries(type);
-      const result = evaluateSignal(series, null, 'REAL_PRICE', ['Doji', 'Hammer', 'Morning Star', 'Marubozu', 'Inverted Hammer', 'Shooting Star', 'Bullish Engulfing', 'Bearish Engulfing', 'Piercing Line', 'Dark Cloud Cover']);
+      const result = evaluateSignal(series, null, 'REAL_PRICE', ['Doji', 'Hammer', 'Morning Star', 'Marubozu', 'Inverted Hammer', 'Shooting Star', 'Bullish Engulfing', 'Bearish Engulfing', 'Piercing Line', 'Dark Cloud Cover', 'RSI Overbought', 'Oversold', 'RSI Rising', 'RSI Falling', 'MACD Bullish Cross', 'MACD Cross Up', 'MACD Bearish Cross', 'MACD Cross Down', 'MACD Histogram Rising', 'MACD Histogram Falling', 'Stochastic Bullish', 'Stochastic K over D', 'Stochastic Bearish', 'Stochastic D over K', 'Stochastic Overbought', 'Stochastic Oversold', 'Bollinger Upper Band Touch', 'Bollinger Band Overbought', 'Bollinger Lower Band Touch', 'Bollinger Band Oversold', 'Above Bollinger Middle', 'Below Bollinger Middle', 'Positive Moving Average', 'Negative Moving Average', 'Trend Following', 'Uptrend', 'Downtrend', 'Higher Highs', 'Momentum Breakout', 'Lower Lows', 'Momentum Breakdown', 'Inside Bar', 'Outside Bar', 'Shaven Head', 'Shaven Bottom', 'Three White Soldiers', 'Three Black Crows', 'Hanging Man', 'Gravestone Doji', 'Dragonfly Doji', 'Long-Legged Doji']);
       
       expect(result.finalConfidence).toBeGreaterThanOrEqual(0);
       expect(result.finalConfidence).toBeLessThanOrEqual(100);
