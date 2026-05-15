@@ -110,12 +110,12 @@ export async function runSingleAnalysis(params: {
     messageResolvers.set(msgId, { resolve, reject });
     try {
       if (isTestMode) {
-        w.postMessage({ type: 'ANALYZE', imageData: imgData, msgId, timestamp: performance.now() });
+        w.postMessage({ type: 'ANALYZE', imageData: imgData, msgId, timestamp: performance.now(), techniquesList: params.techniquesList });
       } else {
-        w.postMessage({ type: 'ANALYZE', imageData: imgData, msgId, timestamp: performance.now() }, [imgData.data.buffer]);
+        w.postMessage({ type: 'ANALYZE', imageData: imgData, msgId, timestamp: performance.now(), techniquesList: params.techniquesList }, [imgData.data.buffer]);
       }
     } catch {
-      w.postMessage({ type: 'ANALYZE', imageData: imgData, msgId, timestamp: performance.now() });
+      w.postMessage({ type: 'ANALYZE', imageData: imgData, msgId, timestamp: performance.now(), techniquesList: params.techniquesList });
     }
 
     // Handle abort
@@ -147,7 +147,7 @@ export async function runSingleAnalysis(params: {
     };
   }
 
-  const { signal, confidence, frameStable, debugTrace } = payload;
+  const { frameStable, debugTrace } = payload;
   const decision = debugTrace.decision;
   const meta = debugTrace.meta;
   
@@ -205,7 +205,7 @@ export async function runSingleAnalysis(params: {
         const msgId2 = generateId();
         const payloadPromise2 = new Promise<any>((resolve, reject) => {
           messageResolvers.set(msgId2, { resolve, reject });
-          w.postMessage({ type: 'ANALYZE', imageData: leftImgData, msgId: msgId2, timestamp: performance.now() }, [leftImgData.data.buffer]);
+          w.postMessage({ type: 'ANALYZE', imageData: leftImgData, msgId: msgId2, timestamp: performance.now(), techniquesList: params.techniquesList }, [leftImgData.data.buffer]);
         });
         const payload2 = await payloadPromise2;
         
@@ -263,13 +263,13 @@ export async function runSingleAnalysis(params: {
         totalScore: FS,
         tradeDetails: {
           latencyAdjustedForecast: `Signal: ${finalDecision.signal}`,
-          techniquesUsed: `RSI: ${finalDecision.evidence?.rsi?.toFixed(1) || 0}`
+          techniquesUsed: finalDecision.techniquesUsed || 'None'
         }
       },
       bull: { reasoning: `Score ${cases.bull.total}` },
       bear: { reasoning: `Score ${cases.bear.total}` },
       skeptic: { riskVerdict: `Multiplier ${J4}` },
-      techUsedCount: 3
+      techUsedCount: finalDecision.techUsedCount || 0
     },
     direction: mappedDirection,
     outcome,

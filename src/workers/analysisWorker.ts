@@ -43,7 +43,7 @@ self.onmessage = (e: MessageEvent) => {
     } 
     else if (data.type === 'ANALYZE') {
       const pipe = buildPipelineResult(data.imageData);
-      const decision = evaluateSignal(pipe.ohlcSeries, pipe.axis, pipe.meta.ohlcQuality);
+      const decision = evaluateSignal(pipe.ohlcSeries, pipe.axis, pipe.meta.ohlcQuality, data.techniquesList || []);
       const stab = emitStability(decision);
 
       const debugTrace = {
