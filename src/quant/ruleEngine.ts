@@ -7,14 +7,11 @@
  */
 import { rsi, macd, bollinger, atr, stochastic } from './indicators';
 import { emaSlope, emaCurvature } from './calculus';
-import { calculateBoundaryReversal } from './boundary';
+
 import { 
   calculateVolatilityRegime, 
   calculateZScoreSignificance,
-  calculatePredictability,
-  calculateRobustness,
-  calculateCEF,
-  calculateRQA
+    calculateRQA
 } from './mathEngine';
 import { PriceAxisTransform } from '../vision/axisReader';
 import { NumericOHLC } from '../vision/pipeline';
@@ -44,17 +41,21 @@ export interface DecisionResult extends JudgeVerdict {
   boundaryBias: number;
   finalScore: number;
   evidence: any;
+  techniquesUsed?: string;
+  techUsedCount?: number;
 }
 
-export function evaluateSignal(ohlcSeries: NumericOHLC[], priceAxis: PriceAxisTransform | null, ohlcQuality: 'REAL_PRICE' | 'NORMALIZED_FALLBACK' = 'REAL_PRICE'): DecisionResult {
+export function evaluateSignal(ohlcSeries: NumericOHLC[], priceAxis: PriceAxisTransform | null, ohlcQuality?: any, techniquesList: string[] = []): DecisionResult {
   const defaultCases = { bull: { j1: 0, j2: 0, j3: 0, total: 0 }, bear: { j1: 0, j2: 0, j3: 0, total: 0 } };
   const defaultNoTrade: DecisionResult = {
-    cases: defaultCases, skepticMultiplier: 1, winner: 'NO_TRADE', margin: 0, finalConfidence: 0, ruling: 'Insufficient data',
+    cases: defaultCases, skepticMultiplier: 1, winner: 'NO_TRADE', margin: 0, finalConfidence: 0, ruling: 'Insufficient data or techniques',
     signal: 'NO_TRADE', confidence: 0, bullScore: 0, bearScore: 0,
-    skepticPenalty: 0, boundaryBias: 0, finalScore: 0, evidence: {}
+    skepticPenalty: 0, boundaryBias: 0, finalScore: 0, evidence: {},
+    techniquesUsed: '', techUsedCount: 0
   };
   
   if (ohlcSeries.length < 30) return defaultNoTrade;
+  if (techniquesList.length < 10) return defaultNoTrade;
 
   const closes = ohlcSeries.map(c => c.close);
   const highs = ohlcSeries.map(c => c.high);
@@ -62,7 +63,7 @@ export function evaluateSignal(ohlcSeries: NumericOHLC[], priceAxis: PriceAxisTr
 
   // Constants
   const last = closes.length - 1;
-  const prev = closes.length - 2;
+
 
   // Compute indicators
   const rsiVals = rsi(closes, 14);
@@ -96,6 +97,129 @@ export function evaluateSignal(ohlcSeries: NumericOHLC[], priceAxis: PriceAxisTr
   if (isHH) bullJ1 += 1;
   if (isLL) bearJ1 += 1;
   
+  // --- Pattern Techniques Processing ---
+  const matchedTechniques: string[] = [];
+
+  if (techniquesList && techniquesList.length >= 10) {
+    // Look back at the last 3 candles for pattern matching
+    const c1 = ohlcSeries[last - 2];
+    const c2 = ohlcSeries[last - 1];
+    const c3 = ohlcSeries[last];
+
+    // Helper functions for pattern detection
+    const isBullishCandle = (c: any) => c.close > c.open;
+    const isBearishCandle = (c: any) => c.close < c.open;
+    const bodySize = (c: any) => Math.abs(c.close - c.open);
+    const upperWickSize = (c: any) => c.high - Math.max(c.open, c.close);
+    const lowerWickSize = (c: any) => Math.min(c.open, c.close) - c.low;
+
+    // Detect common candlestick patterns
+    const patterns = {
+      bullish: [] as string[],
+      bearish: [] as string[]
+    };
+
+    // 1. Doji
+    if (bodySize(c3) <= (c3.high - c3.low) * 0.1) {
+      if (slope && slope[last] < 0) patterns.bullish.push("Doji");
+      else if (slope && slope[last] > 0) patterns.bearish.push("Doji");
+    }
+
+    // 2. Hammer
+    if (isBullishCandle(c3) && lowerWickSize(c3) >= 2 * bodySize(c3) && upperWickSize(c3) <= bodySize(c3) * 0.1) {
+      if (slope && slope[last] < 0) patterns.bullish.push("Hammer");
+    }
+
+    // 3. Hanging Man
+    if (isBearishCandle(c3) && lowerWickSize(c3) >= 2 * bodySize(c3) && upperWickSize(c3) <= bodySize(c3) * 0.1) {
+      if (slope && slope[last] > 0) patterns.bearish.push("Hanging Man");
+    }
+
+    // 4. Inverted Hammer
+    if (upperWickSize(c3) >= 2 * bodySize(c3) && lowerWickSize(c3) <= bodySize(c3) * 0.1) {
+      if (slope && slope[last] < 0) patterns.bullish.push("Inverted Hammer");
+    }
+
+    // 5. Shooting Star
+    if (upperWickSize(c3) >= 2 * bodySize(c3) && lowerWickSize(c3) <= bodySize(c3) * 0.1) {
+      if (slope && slope[last] > 0) patterns.bearish.push("Shooting Star");
+    }
+
+    // 6. Bullish Engulfing
+    if (isBearishCandle(c2) && isBullishCandle(c3) && c3.open <= c2.close && c3.close >= c2.open) {
+      patterns.bullish.push("Bullish Engulfing");
+    }
+
+    // 7. Bearish Engulfing
+    if (isBullishCandle(c2) && isBearishCandle(c3) && c3.open >= c2.close && c3.close <= c2.open) {
+      patterns.bearish.push("Bearish Engulfing");
+    }
+
+    // 8. Morning Star
+    if (isBearishCandle(c1) && bodySize(c2) <= bodySize(c1) * 0.3 && isBullishCandle(c3) && c3.close > (c1.open + c1.close) / 2) {
+      patterns.bullish.push("Morning Star");
+    }
+
+    // 9. Evening Star
+    if (isBullishCandle(c1) && bodySize(c2) <= bodySize(c1) * 0.3 && isBearishCandle(c3) && c3.close < (c1.open + c1.close) / 2) {
+      patterns.bearish.push("Evening Star");
+    }
+
+    // 10. Piercing Line
+    if (isBearishCandle(c2) && isBullishCandle(c3) && c3.open < c2.low && c3.close > (c2.open + c2.close) / 2) {
+      patterns.bullish.push("Piercing Line");
+    }
+
+    // 11. Dark Cloud Cover
+    if (isBullishCandle(c2) && isBearishCandle(c3) && c3.open > c2.high && c3.close < (c2.open + c2.close) / 2) {
+      patterns.bearish.push("Dark Cloud Cover");
+    }
+
+    // 12. Three White Soldiers
+    if (isBullishCandle(c1) && isBullishCandle(c2) && isBullishCandle(c3) && c2.close > c1.close && c3.close > c2.close) {
+      patterns.bullish.push("Three White Soldiers");
+    }
+
+    // 13. Three Black Crows
+    if (isBearishCandle(c1) && isBearishCandle(c2) && isBearishCandle(c3) && c2.close < c1.close && c3.close < c2.close) {
+      patterns.bearish.push("Three Black Crows");
+    }
+
+    // 14. Marubozu Bullish
+    if (isBullishCandle(c3) && upperWickSize(c3) <= bodySize(c3) * 0.05 && lowerWickSize(c3) <= bodySize(c3) * 0.05) {
+      patterns.bullish.push("Marubozu");
+    }
+
+    // 15. Marubozu Bearish
+    if (isBearishCandle(c3) && upperWickSize(c3) <= bodySize(c3) * 0.05 && lowerWickSize(c3) <= bodySize(c3) * 0.05) {
+      patterns.bearish.push("Marubozu");
+    }
+
+    // Match techniques with requested list
+    const techniquesStr = techniquesList.join(" ").toLowerCase();
+
+    let bullPatternMatches = 0;
+    let bearPatternMatches = 0;
+
+    for (const pat of patterns.bullish) {
+      if (techniquesStr.includes(pat.toLowerCase())) {
+        matchedTechniques.push(pat + " (Bullish)");
+        bullPatternMatches += 1;
+      }
+    }
+
+    for (const pat of patterns.bearish) {
+      if (techniquesStr.includes(pat.toLowerCase())) {
+        matchedTechniques.push(pat + " (Bearish)");
+        bearPatternMatches += 1;
+      }
+    }
+
+    // If patterns matched requested techniques, give a J1 boost (since J1 is trend/momentum)
+    if (bullPatternMatches > 0) bullJ1 += bullPatternMatches * 0.5;
+    if (bearPatternMatches > 0) bearJ1 += bearPatternMatches * 0.5;
+  }
+
   bullJ1 = Math.min(4, bullJ1);
   bearJ1 = Math.min(4, bearJ1);
 
@@ -182,7 +306,7 @@ export function evaluateSignal(ohlcSeries: NumericOHLC[], priceAxis: PriceAxisTr
   
   const finalConfidence = Math.round((rawWinningTotal * skepticMultiplier / 11) * 100);
 
-  let ruling = winner === 'NO_TRADE' ? 'Points are tied.' : `Clear ${winner} edge.`;
+  const ruling = winner === 'NO_TRADE' ? 'Points are tied.' : `Clear ${winner} edge.`;
 
   return {
     cases,
@@ -206,6 +330,8 @@ export function evaluateSignal(ohlcSeries: NumericOHLC[], priceAxis: PriceAxisTr
       macdHist: macdVals.hist[last],
       bollMiddle: bollVals.middle[last],
       lastClose: closes[last]
-    }
+    },
+    techniquesUsed: matchedTechniques.join(", "),
+    techUsedCount: matchedTechniques.length
   };
 }
