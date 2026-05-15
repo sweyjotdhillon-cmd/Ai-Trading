@@ -330,7 +330,7 @@ export function LiveAnalysis() {
     }
     setIsCameraActive(false);
 
-    // Stop screen share and PiP on reset
+    // Stop PiP on reset
 
     closePip(true);
 
