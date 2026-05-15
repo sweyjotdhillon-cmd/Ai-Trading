@@ -116,12 +116,7 @@ export async function runSingleAnalysis(params: {
     messageResolvers.set(msgId, { resolve, reject });
     try {
       if (isTestMode) {
-        w.postMessage({ type: 'ANALYZE', imageData: imgData, msgId, timestamp: performance.now(), graphTimeframeMinutes: tfM, investmentDurationMinutes: durM });
-      } else {
-        w.postMessage({ type: 'ANALYZE', imageData: imgData, msgId, timestamp: performance.now(), graphTimeframeMinutes: tfM, investmentDurationMinutes: durM }, [imgData.data.buffer]);
-      }
-    } catch {
-      w.postMessage({ type: 'ANALYZE', imageData: imgData, msgId, timestamp: performance.now(), graphTimeframeMinutes: tfM, investmentDurationMinutes: durM });
+
     }
 
     // Handle abort
@@ -153,7 +148,7 @@ export async function runSingleAnalysis(params: {
     };
   }
 
-  const { signal, confidence, frameStable, debugTrace } = payload;
+  const { frameStable, debugTrace } = payload;
   const decision = debugTrace.decision;
   const meta = debugTrace.meta;
   
@@ -211,7 +206,7 @@ export async function runSingleAnalysis(params: {
         const msgId2 = generateId();
         const payloadPromise2 = new Promise<any>((resolve, reject) => {
           messageResolvers.set(msgId2, { resolve, reject });
-          w.postMessage({ type: 'ANALYZE', imageData: leftImgData, msgId: msgId2, timestamp: performance.now(), graphTimeframeMinutes: tfM, investmentDurationMinutes: durM }, [leftImgData.data.buffer]);
+
         });
         const payload2 = await payloadPromise2;
         
@@ -269,13 +264,13 @@ export async function runSingleAnalysis(params: {
         totalScore: FS,
         tradeDetails: {
           latencyAdjustedForecast: `Signal: ${finalDecision.signal}`,
-          techniquesUsed: `RSI: ${finalDecision.evidence?.rsi?.toFixed(1) || 0}`
+          techniquesUsed: finalDecision.techniquesUsed || 'None'
         }
       },
       bull: { reasoning: `Score ${cases.bull.total}` },
       bear: { reasoning: `Score ${cases.bear.total}` },
       skeptic: { riskVerdict: `Multiplier ${J4}` },
-      techUsedCount: 3
+      techUsedCount: finalDecision.techUsedCount || 0
     },
     direction: mappedDirection,
     outcome,
