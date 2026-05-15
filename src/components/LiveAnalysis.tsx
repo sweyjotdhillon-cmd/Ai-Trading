@@ -8,7 +8,6 @@ import { BulkTestPanel } from './BulkTestPanel';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Platform } from 'react-native';
 
-const isIOS = Platform.OS === 'ios' || (Platform.OS === 'web' && /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream);
 
 export function useWakeLock() {
   const wakeLockRef = useRef<any>(null);
@@ -84,8 +83,6 @@ import {
   ChevronDown,
   Check,
   Zap,
-  Monitor,
-  Tv2
 } from 'lucide-react';
 import tw from 'twrnc';
 import { LossAutopsyModal } from './LossAutopsyModal';
@@ -145,33 +142,6 @@ export function LiveAnalysis() {
   const videoRef = useRef<any>(null);
   const [isCameraActive, setIsCameraActive] = useState(false);
 
-  const screenVideoRef = useRef<any>(null);
-  const [isScreenActive, setIsScreenActive] = useState(false);
-
-  const startScreenShare = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-      if (screenVideoRef.current) {
-        screenVideoRef.current.srcObject = stream;
-      }
-      setIsScreenActive(true);
-
-      stream.getVideoTracks()[0].onended = () => {
-        stopScreenShare();
-      };
-    } catch (err) {
-      console.error('Error starting screen share:', err);
-      alert('Could not start screen share.');
-    }
-  };
-
-  const stopScreenShare = () => {
-    if (screenVideoRef.current && screenVideoRef.current.srcObject) {
-      screenVideoRef.current.srcObject.getTracks().forEach((track: any) => track.stop());
-      screenVideoRef.current.srcObject = null;
-    }
-    setIsScreenActive(false);
-  };
 
   
   // Offline deterministic mode -> tokens are always healthy (no tokens needed)
@@ -360,8 +330,8 @@ export function LiveAnalysis() {
     }
     setIsCameraActive(false);
 
-    // Stop screen share and PiP on reset
-    stopScreenShare();
+    // Stop PiP on reset
+
     closePip(true);
 
     setTimeout(() => {
@@ -645,23 +615,10 @@ export function LiveAnalysis() {
       }
     }
 
-    if (mode === 'screen' && isScreenActive && screenVideoRef.current) {
-      // ── NEW: Screen capture — grab one frame from the shared screen feed ──────
-      if (Platform.OS === 'web') {
-        const sv = screenVideoRef.current;
-        const canvas = document.createElement('canvas');
-        canvas.width  = sv.videoWidth  || 1280;
-        canvas.height = sv.videoHeight || 720;
-        const ctx = canvas.getContext('2d');
-        ctx?.drawImage(sv, 0, 0, canvas.width, canvas.height);
-        finalImageToAnalyze = canvas.toDataURL('image/jpeg');
-      }
-    }
+
 
     if (!finalImageToAnalyze) {
-      const msg = mode === 'screen'
-        ? 'Please start screen sharing first, then tap Analyze.'
-        : 'Please start the camera or upload a chart image first.';
+      const msg = 'Please start the camera or upload a chart image first.';
       setTimeout(() => alert(msg), 300);
       setIsBusy(false);
       return;
@@ -673,94 +630,6 @@ export function LiveAnalysis() {
         let timeoutId: any;
         try {
           setLoading(true);
-          // ── Launch PiP widget when in screen mode ────────────────────────────────────
-          if (mode === 'screen' && pipSupported) {
-            startPip().catch(console.error); // Non-blocking — analysis continues even if PiP fails
-          }
-          setAnalysisError(null);
-          setAutoGradeStatus('idle');
-          setAnalysis(null);
-          setTradingPhase('ANALYSING_DIRECTION');
-          setAnalysisStep(`SYNCHRONIZING ${techniquesList.length} TECHNIQUES...`);
-
-          controller = new AbortController();
-          timeoutId = setTimeout(() => controller?.abort(), 86400000); // 24 hours
-
-          if (mode === 'test') setAutoGradeStatus('grading');
-
-          const result = await runSingleAnalysis({
-            imageDataUrl: finalImageToAnalyze!,
-            stock: stockName,
-            graphTimeframe,
-            investmentDuration,
-            investmentAmount: investmentAmount as string,
-            profitabilityPercent: profitabilityPercent as string,
-            techniquesList,
-            encryptedSystemTokens,
-            signal: controller.signal,
-            onProgress: setAnalysisStep,
-            onJudgeLogs: setJudgeLogs,
-            isTestMode: mode === 'test'
-          });
-
-          clearTimeout(timeoutId);
-          setLoading(false);
-          setIsBusy(false);
-
-          setJudgeLogs({
-            judge1: { text: `Bull Score: ${result.analysis.judge.j1Score.toFixed(0)}`, status: 'done' },
-            judge2: { text: `Bear Score: ${result.analysis.judge.j2Score.toFixed(0)}`, status: 'done' },
-            judge3: { text: `Penalty: ${result.analysis.judge.j3Score.toFixed(0)}`, status: 'done' },
-            judge4: { text: `Boundary Bias: ${result.analysis.judge.j4Score.toFixed(0)}`, status: 'done' },
-            system: { text: `Score: ${result.analysis.judge.totalScore.toFixed(0)} | Stable: ${result.frameStable ? 'YES' : 'NO'}`, status: 'done' }
-          });
-
-          setAnalysisStep(`Analysis Complete: ${result.analysis.techUsedCount}/${techniquesList.length} Techniques Found`);
-
-          if (mode === 'test') {
-            setTestModeRightSlice(result.testModeRightSlice);
-            setTestModeLeftSlice(result.finalImageForAnalysis);
-            setAutoGradeReason(result.reason);
-            setAutoGradeConfidence(result.confidence);
-            setAutoGradeRawOutcome(result.rawOutcome || '');
-
-            const exactOutcome = result.outcome;
-            if (exactOutcome === 'WIN' || exactOutcome === 'LOSS') {
-              setTimeout(() => {
-                saveToStats(result.analysis, exactOutcome);
-                setAutoGradeStatus('done');
-                setAnalysisStep(`AUTO-GRADED: Signal=${result.direction} | ${exactOutcome === 'WIN' ? '✅ PROFIT' : '❌ LOSS'} (${result.confidence}%)`);
-              }, 800);
-            } else {
-              setAutoGradeStatus('failed');
-              setAnalysisStep(`AUTO-GRADE NO TRADE — please declare PROFIT or LOSS manually.`);
-            }
-          }
-          
-          setTradingDirection(result.direction);
-          
-          if (mode === 'live') {
-            setTradingPhase('WAITING_FOR_ENTRY');
-            setAnalysisStep(result.direction === 'NO_TRADE' ? (result.analysis.judge.finalConfidence < 70 ? `LOW CONFIDENCE (${result.analysis.judge.finalConfidence}%) - NO TRADE` : 'CONFIRMING NO-TRADE SIGNAL...') : 'HUNTING PERFECT ENTRY POINT...');
-            await new Promise(r => setTimeout(r, 4000));
-            setTradingPhase('ENTRY_CONFIRMED');
-            setAnalysisStep(result.direction === 'NO_TRADE' ? 'SIGNAL ABORTED' : 'EXECUTE NOW!');
-            setScoutActive(true);
-          } else {
-            setTradingPhase('ENTRY_CONFIRMED');
-            setAnalysisStep(result.direction === 'NO_TRADE' ? (result.analysis.judge.finalConfidence < 70 ? `LOW CONFIDENCE (${result.analysis.judge.finalConfidence}%) - ABORTED` : 'SIGNAL ABORTED') : 'SIGNAL CONFIRMED - EXECUTE NOW!');
-          }
-
-          setAnalysis(result.analysis);
-
-          // ── Push result to PiP widget ─────────────────────────────────────────────────
-          if (pipActive && mode === 'screen') {
-            const pipDir: 'CALL' | 'PUT' | 'NO_TRADE' =
-              result.direction === 'UP'   ? 'CALL'  :
-              result.direction === 'DOWN' ? 'PUT'   :
-              'NO_TRADE';
-            updatePip(pipDir, result.analysis.judge?.finalConfidence ?? 0);
-          }
 
           if (pipActive) {
             const pipDir = result.direction === 'UP' ? 'CALL' : result.direction === 'DOWN' ? 'PUT' : 'NO_TRADE';
@@ -1143,106 +1012,6 @@ export function LiveAnalysis() {
             </View>
         </View>
 
-        {/* ─────────────────────────────────────────────────────────────────────────
-    SCREEN SHARE + PiP CARD
-    This is a SEPARATE card — not inside the existing Chart Feed card.
-    Shows a toggle at the top to activate screen mode.
-───────────────────────────────────────────────────────────────────────── */}
-<View style={tw`bg-[#121419] rounded-2xl border border-white border-opacity-10 p-4 mb-4`}>
-
-  {/* ── Card Header with Toggle ──────────────────────────────────────────── */}
-  <View style={tw`flex-row justify-between items-center mb-3`}>
-    <View style={tw`flex-row items-center`}>
-      <View style={tw`w-2 h-2 rounded-full mr-2 ${mode === 'screen' ? 'bg-[#D9B382]' : 'bg-[#4B5570]'}`} />
-      <Text style={tw`text-[8px] font-black text-[#4B5570] uppercase tracking-widest`}>
-        Screen Share Mode
-      </Text>
-    </View>
-
-    {/* Toggle button — activates/deactivates screen mode */}
-    <Pressable
-      onPress={() => {
-        if (mode === 'screen') {
-          stopScreenShare();
-          setMode('live');
-        } else {
-          // Pause current camera if active (don't stop it — just switch mode view)
-          setMode('screen');
-          setScreenError(null);
-        }
-      }}
-      style={({ pressed }) => [
-        tw`px-4 py-1.5 rounded-full border`,
-        mode === 'screen'
-          ? tw`bg-[#D9B382]/20 border-[#D9B382]/50`
-          : tw`bg-transparent border-white/10`,
-        { opacity: pressed ? 0.7 : 1 }
-      ]}
-    >
-      <Text style={[
-        tw`text-[9px] font-black uppercase tracking-widest`,
-        mode === 'screen' ? tw`text-[#D9B382]` : tw`text-[#4B5570]`
-      ]}>
-        {mode === 'screen' ? 'Active ✓' : 'Enable'}
-      </Text>
-    </Pressable>
-  </View>
-
-  {/* ── iOS Not Supported Message ─────────────────────────────────────────── */}
-  {isIOS && (
-    <View style={tw`bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-3 items-center`}>
-      <Text style={tw`text-yellow-400 font-black text-[10px] uppercase tracking-wider text-center`}>
-        Screen sharing is not supported on iOS
-      </Text>
-      <Text style={tw`text-yellow-400/60 text-[9px] text-center mt-1`}>
-        Use Chrome or Edge on desktop for this feature
-      </Text>
-    </View>
-  )}
-
-  {/* ── Screen Mode Content (non-iOS only) ───────────────────────────────── */}
-  {!isIOS && mode === 'screen' && (
-    <View>
-      {/* Screen Preview Area */}
-      <View style={[tw`w-full bg-black rounded-xl overflow-hidden border border-white/10 items-center justify-center mb-3`, { minHeight: 160 }]}>
-
-        {/* Hidden video element that receives the screen stream */}
-        {Platform.OS === 'web' && (
-          <video
-            ref={screenVideoRef}
-            autoPlay
-            playsInline
-            muted
-            style={{ width: '100%', height: 160, objectFit: 'contain', background: '#000' }}
-          />
-        )}
-
-        {/* Overlay when screen not yet shared */}
-        {!isScreenActive && (
-          <View style={tw`absolute inset-0 bg-black/80 items-center justify-center`}>
-            <Pressable
-              onPress={startScreenShare}
-              style={({ pressed }) => [
-                tw`bg-[#D9B382] px-6 py-3 rounded-xl flex-row items-center`,
-                { opacity: pressed ? 0.7 : 1 }
-              ]}
-            >
-              {/* Use Monitor icon — add to your lucide imports */}
-              <Monitor size={18} color="#1A1308" style={tw`mr-2`} />
-              <Text style={tw`text-[#1A1308] font-black text-sm uppercase tracking-wider`}>
-                Share Your Broker Screen
-              </Text>
-            </Pressable>
-            <Text style={tw`text-white/30 text-[9px] mt-3 text-center px-6`}>
-              Chrome will ask you to pick a tab, window, or full screen.{'\n'}
-              Select your broker chart window.
-            </Text>
-          </View>
-        )}
-      </View>
-    </View>
-  )}
-</View>
 
         {/* Action Bar / Live Debate UI Overlay */}
         {loading ? (
