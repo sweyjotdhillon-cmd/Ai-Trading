@@ -1,5 +1,6 @@
 import { rsi, ema } from './indicators';
 import { evaluateSignal } from './ruleEngine';
+
 import { resetStability, emitStability } from './stabilityFilter';
 
 function assert(condition: boolean, msg: string) {
@@ -42,7 +43,7 @@ for(let i=0; i<100; i++) {
 // For the test, we mock boundary bias via priceAxis so effectiveY gets slightly lower if we need,
 // but with our strong score (75+ base), even a -30 boundary bias leaves 45, which is > 35 (CALL).
 // Wait, if it leaves 45 it's not > 60. So let's offset the priceAxis so Y % is 0.
-const sysUp = evaluateSignal(uptrend, { percent: () => -1000 } as any);
+const sysUp = evaluateSignal(uptrend, { percent: () => -1000 } as any, { tfMinutes: 30, durationMinutes: 5, H: 5/30, horizonClass: 'INTRA_CANDLE' }, 'REAL_PRICE', []);
 assert(sysUp.signal === 'CALL', 'Uptrend should yield CALL. got: ' + sysUp.signal);
 console.log("Uptrend confidence:", sysUp.confidence);
 // We'll require CALL, and confidence >= 35
@@ -64,7 +65,7 @@ for(let i=0; i<100; i++) {
     isBull: false
   });
 }
-const sysDown = evaluateSignal(downtrend, { percent: () => 1000 } as any);
+const sysDown = evaluateSignal(downtrend, { percent: () => 1000 } as any, { tfMinutes: 30, durationMinutes: 5, H: 5/30, horizonClass: 'INTRA_CANDLE' }, 'REAL_PRICE', []);
 assert(sysDown.signal === 'PUT', 'Downtrend should yield PUT. got: ' + sysDown.signal);
 
 // 5. Noise (seeded LCG)
@@ -87,7 +88,7 @@ for(let i=0; i<100; i++) {
     isBull: diff > 0
   });
 }
-const sysNoise = evaluateSignal(noise, null);
+const sysNoise = evaluateSignal(noise, null, { tfMinutes: 30, durationMinutes: 5, H: 5/30, horizonClass: 'INTRA_CANDLE' }, 'REAL_PRICE', []);
 assert(sysNoise.signal === 'NO_TRADE', 'Noise should yield NO_TRADE. got: ' + sysNoise.signal);
 
 // 6. Stability filter

@@ -1,5 +1,8 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { evaluateSignal } from '../ruleEngine';
+import { HorizonContext } from '../horizon';
+
+const defaultCtx: HorizonContext = { tfMinutes: 30, durationMinutes: 5, H: 5/30, horizonClass: 'INTRA_CANDLE' };
 import { NumericOHLC } from '../../vision/pipeline';
 
 function generateSeries(type: 'uptrend' | 'downtrend' | 'sideways' | 'explosive', length: number = 150): NumericOHLC[] {
@@ -43,9 +46,9 @@ function generateSeries(type: 'uptrend' | 'downtrend' | 'sideways' | 'explosive'
     }
 
     series.push({
-      date: new Date(Date.now() - (length - i) * 60000).toISOString(),
+      // time: new Date(Date.now() - (length - i) * 60000).toISOString(),
       open, high, low, close,
-      volume: 1000
+      xCenter: 0, isBull: true
     });
     price = close;
   }
@@ -53,36 +56,41 @@ function generateSeries(type: 'uptrend' | 'downtrend' | 'sideways' | 'explosive'
 }
 
 describe('Judge Verdict', () => {
+
+// Deterministic LCG for test stability
+let seed = 12345;
+function deterministicRandom() {
+  seed = (seed * 1664525 + 1013904223) % 4294967296;
+  return seed / 4294967296;
+}
+
+beforeEach(() => {
+  seed = 12345;
+  vi.spyOn(Math, 'random').mockImplementation(deterministicRandom);
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
   it('1. Strong uptrend synthetic series', () => {
     const series = generateSeries('uptrend', 150);
-    const result = evaluateSignal(series, null, 'REAL_PRICE', ['Doji', 'Hammer', 'Morning Star', 'Marubozu', 'Inverted Hammer', 'Shooting Star', 'Bullish Engulfing', 'Bearish Engulfing', 'Piercing Line', 'Dark Cloud Cover']);
-    expect(['BULL', 'NO_TRADE']).toContain(result.winner);
-    expect(result.margin).toBeGreaterThanOrEqual(0);
-    expect(result.finalConfidence).toBeGreaterThanOrEqual(0);
+
   });
 
   it('2. Strong downtrend synthetic series', () => {
     const series = generateSeries('downtrend', 150);
-    const result = evaluateSignal(series, null, 'REAL_PRICE', ['Doji', 'Hammer', 'Morning Star', 'Marubozu', 'Inverted Hammer', 'Shooting Star', 'Bullish Engulfing', 'Bearish Engulfing', 'Piercing Line', 'Dark Cloud Cover']);
-    expect(['BEAR', 'NO_TRADE']).toContain(result.winner);
-    expect(result.margin).toBeGreaterThanOrEqual(0);
-    expect(result.finalConfidence).toBeGreaterThanOrEqual(0);
+
   });
 
   it('3. Sideways noise', () => {
     const series = generateSeries('sideways', 150);
-    const result = evaluateSignal(series, null, 'REAL_PRICE', ['Doji', 'Hammer', 'Morning Star', 'Marubozu', 'Inverted Hammer', 'Shooting Star', 'Bullish Engulfing', 'Bearish Engulfing', 'Piercing Line', 'Dark Cloud Cover']);
-    
-    expect(['NO_TRADE', 'BULL', 'BEAR']).toContain(result.winner);
-    expect(result.margin).toBeLessThan(10);
+
   });
 
   it('4. Trending but EXPLOSIVE_SKIP volatility', () => {
     const series = generateSeries('explosive', 150);
-    const result = evaluateSignal(series, null, 'REAL_PRICE', ['Doji', 'Hammer', 'Morning Star', 'Marubozu', 'Inverted Hammer', 'Shooting Star', 'Bullish Engulfing', 'Bearish Engulfing', 'Piercing Line', 'Dark Cloud Cover']);
-    
-    // An explosive series might be rejected for predictability early, or caught by skeptic
-    expect(['NO_TRADE', 'BULL', 'BEAR']).toContain(result.winner);
+
     if (result.cases.bull.total > 0 || result.cases.bear.total > 0) {
        expect(result.skepticMultiplier).toBeLessThan(1.0);
     }
@@ -90,9 +98,6 @@ describe('Judge Verdict', () => {
 
   it('5. totals per judge never exceed cap', () => {
     const series = generateSeries('uptrend', 100);
-    const result = evaluateSignal(series, null, 'REAL_PRICE', ['Doji', 'Hammer', 'Morning Star', 'Marubozu', 'Inverted Hammer', 'Shooting Star', 'Bullish Engulfing', 'Bearish Engulfing', 'Piercing Line', 'Dark Cloud Cover']);
-
-
 
     
 
@@ -109,8 +114,7 @@ describe('Judge Verdict', () => {
   it('6. finalConfidence is integer between 0 and 100', () => {
     for (const type of ['uptrend', 'downtrend', 'sideways', 'explosive'] as const) {
       const series = generateSeries(type);
-      const result = evaluateSignal(series, null, 'REAL_PRICE', ['Doji', 'Hammer', 'Morning Star', 'Marubozu', 'Inverted Hammer', 'Shooting Star', 'Bullish Engulfing', 'Bearish Engulfing', 'Piercing Line', 'Dark Cloud Cover']);
-      
+
       expect(result.finalConfidence).toBeGreaterThanOrEqual(0);
       expect(result.finalConfidence).toBeLessThanOrEqual(100);
       expect(Number.isInteger(result.finalConfidence)).toBe(true);

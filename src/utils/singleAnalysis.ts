@@ -56,6 +56,8 @@ function generateId() {
   return String(performance.now()).replace(".","")+String(++msgCounter);
 }
 
+import { parseDurationToMinutes } from '../quant/horizon';
+
 export async function runSingleAnalysis(params: {
   imageDataUrl: string;
   stock: string;
@@ -106,16 +108,15 @@ export async function runSingleAnalysis(params: {
     throw err;
   }
 
+
+    const tfM = parseDurationToMinutes(params.graphTimeframe);
+    const durM = parseDurationToMinutes(params.investmentDuration);
+
   const payloadPromise = new Promise<any>((resolve, reject) => {
     messageResolvers.set(msgId, { resolve, reject });
     try {
       if (isTestMode) {
-        w.postMessage({ type: 'ANALYZE', imageData: imgData, msgId, timestamp: performance.now(), techniquesList: params.techniquesList });
-      } else {
-        w.postMessage({ type: 'ANALYZE', imageData: imgData, msgId, timestamp: performance.now(), techniquesList: params.techniquesList }, [imgData.data.buffer]);
-      }
-    } catch {
-      w.postMessage({ type: 'ANALYZE', imageData: imgData, msgId, timestamp: performance.now(), techniquesList: params.techniquesList });
+
     }
 
     // Handle abort
@@ -205,7 +206,7 @@ export async function runSingleAnalysis(params: {
         const msgId2 = generateId();
         const payloadPromise2 = new Promise<any>((resolve, reject) => {
           messageResolvers.set(msgId2, { resolve, reject });
-          w.postMessage({ type: 'ANALYZE', imageData: leftImgData, msgId: msgId2, timestamp: performance.now(), techniquesList: params.techniquesList }, [leftImgData.data.buffer]);
+
         });
         const payload2 = await payloadPromise2;
         

@@ -15,6 +15,7 @@ import {
 } from './mathEngine';
 import { PriceAxisTransform } from '../vision/axisReader';
 import { NumericOHLC } from '../vision/pipeline';
+import { HorizonContext, rescaledRangeHurst, PATTERN_WEIGHTS_BY_HORIZON } from './horizon';
 
 export interface CaseScore {
   j1: number;
@@ -45,7 +46,7 @@ export interface DecisionResult extends JudgeVerdict {
   techUsedCount?: number;
 }
 
-export function evaluateSignal(ohlcSeries: NumericOHLC[], priceAxis: PriceAxisTransform | null, ohlcQuality?: any, techniquesList: string[] = []): DecisionResult {
+
   const defaultCases = { bull: { j1: 0, j2: 0, j3: 0, total: 0 }, bear: { j1: 0, j2: 0, j3: 0, total: 0 } };
   const defaultNoTrade: DecisionResult = {
     cases: defaultCases, skepticMultiplier: 1, winner: 'NO_TRADE', margin: 0, finalConfidence: 0, ruling: 'Insufficient data or techniques',
@@ -73,6 +74,22 @@ export function evaluateSignal(ohlcSeries: NumericOHLC[], priceAxis: PriceAxisTr
   const slope = emaSlope(closes, 21);
   const curve = emaCurvature(closes, 21);
   const bollVals = bollinger(closes, 20, 2);
+
+  // --- R3: Expected Move ---
+  // Brownian scaling (see Macroption)
+  const expectedMove = atrVals[last] * Math.sqrt(horizonCtx.H);
+
+  let microRangeSum = 0;
+  const recentCount = Math.min(5, closes.length - 1);
+  for (let i = closes.length - 1; i > closes.length - 1 - recentCount; i--) {
+    microRangeSum += Math.abs(closes[i] - closes[i-1]);
+  }
+  const microRange = recentCount > 0 ? microRangeSum / recentCount : 0;
+  const snr = microRange > 0 ? expectedMove / microRange : 0;
+
+  // --- R6: Slope Strength ---
+  const slopeStrength = atrVals[last] > 0 ? Math.abs(slope[last]) / atrVals[last] : 0;
+
 
   let bullJ1 = 0, bullJ2 = 0, bullJ3 = 0;
   let bearJ1 = 0, bearJ2 = 0, bearJ3 = 0;
@@ -223,6 +240,45 @@ export function evaluateSignal(ohlcSeries: NumericOHLC[], priceAxis: PriceAxisTr
   bullJ1 = Math.min(4, bullJ1);
   bearJ1 = Math.min(4, bearJ1);
 
+  // --- R4: Pattern Detection & Re-weighting ---
+  const curr = ohlcSeries[last];
+  const prevCandle = ohlcSeries[prev];
+  const currBody = Math.abs(curr.close - curr.open);
+  const currRange = curr.high - curr.low;
+
+
+  let bullContinuation = false;
+  let bearContinuation = false;
+  let bullReversal = false;
+  let bearReversal = false;
+
+  // Marubozu (Continuation)
+  if (currRange > 0 && currBody / currRange > 0.9) {
+    if (curr.close > curr.open) bullContinuation = true;
+    else bearContinuation = true;
+  }
+  // Engulfing (Continuation in strong trends, can be reversal but keeping simple here as strong momentum)
+  if (prevCandle) {
+    if (curr.close > curr.open && prevCandle.close < prevCandle.open && curr.close > prevCandle.open && curr.open < prevCandle.close) bullContinuation = true;
+    if (curr.close < curr.open && prevCandle.close > prevCandle.open && curr.close < prevCandle.open && curr.open > prevCandle.close) bearContinuation = true;
+  }
+  // Doji/Pinbar (Reversal)
+  if (currRange > 0 && currBody / currRange < 0.2) {
+     const lowerWick = Math.min(curr.open, curr.close) - curr.low;
+     const upperWick = curr.high - Math.max(curr.open, curr.close);
+     if (lowerWick > currBody * 2 && upperWick < currBody) bullReversal = true;
+     if (upperWick > currBody * 2 && lowerWick < currBody) bearReversal = true;
+  }
+
+  const wCont = PATTERN_WEIGHTS_BY_HORIZON.CONTINUATION[horizonCtx.horizonClass];
+  const wRev = PATTERN_WEIGHTS_BY_HORIZON.REVERSAL[horizonCtx.horizonClass];
+
+  if (bullContinuation) bullJ1 += wCont;
+  if (bearContinuation) bearJ1 += wCont;
+  if (bullReversal) bullJ3 += wRev; // Apply reversal to Boundary/Reversal judge
+  if (bearReversal) bearJ3 += wRev;
+
+
   // --- Judge 2: Oscillator Consensus ---
   const rsiValue = rsiVals[last];
   if (!isNaN(rsiValue)) {
@@ -271,6 +327,21 @@ export function evaluateSignal(ohlcSeries: NumericOHLC[], priceAxis: PriceAxisTr
   bullJ3 = Math.min(3, bullJ3);
   bearJ3 = Math.min(3, bearJ3);
 
+
+  // --- R5: Hurst Balancer ---
+  const H_exp = rescaledRangeHurst(closes.slice(-32));
+  if (!isNaN(H_exp)) {
+    if (H_exp > 0.55) {
+       // Trending regime
+       bullJ1 *= 1.15; bearJ1 *= 1.15;
+       bullJ3 *= 0.85; bearJ3 *= 0.85;
+    } else if (H_exp < 0.45) {
+       // Mean-reverting regime
+       bullJ1 *= 0.85; bearJ1 *= 0.85;
+       bullJ3 *= 1.15; bearJ3 *= 1.15;
+    }
+  }
+
   const cases = {
     bull: { j1: Number(bullJ1.toFixed(2)), j2: Number(bullJ2.toFixed(2)), j3: Number(bullJ3.toFixed(2)), total: Number((bullJ1 + bullJ2 + bullJ3).toFixed(2)) },
     bear: { j1: Number(bearJ1.toFixed(2)), j2: Number(bearJ2.toFixed(2)), j3: Number(bearJ3.toFixed(2)), total: Number((bearJ1 + bearJ2 + bearJ3).toFixed(2)) }
@@ -292,6 +363,16 @@ export function evaluateSignal(ohlcSeries: NumericOHLC[], priceAxis: PriceAxisTr
 
   const rqa = calculateRQA(closes.slice(-20));
   if (rqa.laminarity < 0.1 && rqa.determinism < 0.15) skepticMultiplier *= 0.5;
+
+
+  if (expectedMove < microRange * 0.2) {
+     skepticMultiplier *= 0.1; // Extinguish confidence
+  }
+
+  // R6: Slope strength gate
+  if (slopeStrength < 0.15) {
+     skepticMultiplier *= 0.7; // Reduce confidence
+  }
 
   skepticMultiplier = Math.max(0, Math.min(1, skepticMultiplier));
 
@@ -329,9 +410,6 @@ export function evaluateSignal(ohlcSeries: NumericOHLC[], priceAxis: PriceAxisTr
       macd: macdVals.macd[last],
       macdHist: macdVals.hist[last],
       bollMiddle: bollVals.middle[last],
-      lastClose: closes[last]
-    },
-    techniquesUsed: matchedTechniques.join(", "),
-    techUsedCount: matchedTechniques.length
+
   };
 }
