@@ -1,5 +1,6 @@
 import { buildPipelineResult } from '../../vision/pipeline';
 import { evaluateSignal } from '../ruleEngine';
+import { HorizonContext } from '../horizon';
 
 export function runDeterminismGuard(): boolean {
   const w = 64;

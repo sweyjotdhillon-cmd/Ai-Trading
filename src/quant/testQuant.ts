@@ -1,5 +1,6 @@
 import { rsi, ema } from './indicators';
 import { evaluateSignal } from './ruleEngine';
+import { HorizonContext } from './horizon';
 import { resetStability, emitStability } from './stabilityFilter';
 
 function assert(condition: boolean, msg: string) {
