@@ -47,7 +47,7 @@ export interface DecisionResult extends JudgeVerdict {
   evidence: any;
 }
 
-export function evaluateSignal(ohlcSeries: NumericOHLC[], priceAxis: PriceAxisTransform | null, horizonCtx: HorizonContext, ohlcQuality: 'REAL_PRICE' | 'NORMALIZED_FALLBACK' = 'REAL_PRICE'): DecisionResult {
+export function evaluateSignal(ohlcSeries: NumericOHLC[], priceAxis: PriceAxisTransform | null, horizonCtx: HorizonContext, ohlcQuality: 'REAL_PRICE' | 'NORMALIZED_FALLBACK' = 'REAL_PRICE', techniquesList: string[] = [] /* eslint-disable-line @typescript-eslint/no-unused-vars */): DecisionResult {
   const defaultCases = { bull: { j1: 0, j2: 0, j3: 0, total: 0 }, bear: { j1: 0, j2: 0, j3: 0, total: 0 } };
   const defaultNoTrade: DecisionResult = {
     cases: defaultCases, skepticMultiplier: 1, winner: 'NO_TRADE', margin: 0, finalConfidence: 0, ruling: 'Insufficient data',
@@ -121,7 +121,7 @@ export function evaluateSignal(ohlcSeries: NumericOHLC[], priceAxis: PriceAxisTr
   const prevCandle = ohlcSeries[prev];
   const currBody = Math.abs(curr.close - curr.open);
   const currRange = curr.high - curr.low;
-  const prevBody = prevCandle ? Math.abs(prevCandle.close - prevCandle.open) : 0;
+
 
   let bullContinuation = false;
   let bearContinuation = false;
