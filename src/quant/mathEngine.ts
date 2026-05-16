@@ -66,6 +66,8 @@ export function calculateWassersteinSimilarity(source: number[], target: number[
  */
 export function calculateRQA(series: number[], epsilon = 0.1) {
   const n = series.length;
+  if (n < 10) return { recurrenceRate: 0, determinism: 0, laminarity: 0 };
+
   const rp = Array.from({ length: n }, () => Array(n).fill(0));
   const range = Math.max(...series) - Math.min(...series);
   const threshold = epsilon * range;
