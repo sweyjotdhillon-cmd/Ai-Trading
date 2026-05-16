@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { View, Text, Pressable, ScrollView, Modal, ActivityIndicator, Platform } from 'react-native';
+import { View, Text, Pressable, ScrollView, ActivityIndicator, Platform } from 'react-native';
 import { X, Upload, Activity, AlertTriangle, CheckCircle, Search, Download } from 'lucide-react';
 import tw from 'twrnc';
 import { motion, useReducedMotion } from 'motion/react';
@@ -121,6 +121,114 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, p
           explanation: `Final score was only ${totalScore.toFixed(0)}. Signals below 60 have higher loss probability. Should have waited for stronger confluence.`
         };
       }
+
+      // New Checks
+      const newRootCauses: string[] = [];
+
+      // 1. TRADE_AGAINST_TREND
+      const emaSlope = judge.evidence?.emaSlope || 0;
+      let trendConflict = false;
+      if (tradeSignal === 'CALL' && emaSlope < 0) trendConflict = true;
+      if (tradeSignal === 'PUT' && emaSlope > 0) trendConflict = true;
+
+      if (trendConflict) {
+        categories['TRADE_AGAINST_TREND'] = {
+          severity: 3,
+          label: 'Trade Against Trend',
+          explanation: 'Trade signal opposed the overall market trend direction.'
+        };
+        newRootCauses.push('TRADE_AGAINST_TREND');
+      }
+
+      // 2. LOW_SIGNAL_COUNT
+      const techCount = judge.techUsedCount || 0;
+      if (techCount > 0 && techCount < 5) {
+        categories['LOW_SIGNAL_COUNT'] = {
+          severity: 3,
+          label: 'Low Signal Count',
+          explanation: 'Signal based on fewer than 5 matched patterns — low confluence.'
+        };
+        newRootCauses.push('LOW_SIGNAL_COUNT');
+      }
+
+      // 3. SKEPTIC_WARNING_IGNORED
+      if (j3 > 25 && Math.abs(totalScore) > 60) {
+        categories['SKEPTIC_WARNING_IGNORED'] = {
+          severity: 3,
+          label: 'Skeptic Warning Ignored',
+          explanation: 'Skeptic raised strong caution but Judge overrode it.'
+        };
+        newRootCauses.push('SKEPTIC_WARNING_IGNORED');
+      }
+
+      // 4. CROWD_CONFUSION
+      const casesData = judge.cases || { bull: { total: 0 }, bear: { total: 0 } };
+      const bullTotal = casesData.bull.total || 0;
+      const bearTotal = casesData.bear.total || 0;
+      const skepticTotal = j3; // j3 is the skeptic penalty
+
+      const scoresArr = [bullTotal, bearTotal, skepticTotal];
+      const maxScore = Math.max(...scoresArr);
+      const minScore = Math.min(...scoresArr);
+      if (maxScore - minScore <= 15) {
+         categories['CROWD_CONFUSION'] = {
+           severity: 2,
+           label: 'Crowd Confusion',
+           explanation: 'Bull, Bear, and Skeptic were too close to call — market was undecided.'
+         };
+         newRootCauses.push('CROWD_CONFUSION');
+      }
+
+      // 5. OVERCONFIDENT_SIGNAL (Hubris Score)
+      let hubrisScore = 0;
+      if (totalScore !== 0) {
+         hubrisScore = (signalScore - counterScore) / Math.abs(totalScore);
+      }
+      if (hubrisScore > 0.8) {
+         categories['OVERCONFIDENT_SIGNAL'] = {
+           severity: 2,
+           label: 'Overconfident Signal (Hubris)',
+           explanation: 'The system showed excessive confidence in a single direction without balancing risks.'
+         };
+         newRootCauses.push('OVERCONFIDENT_SIGNAL');
+      }
+
+      // Opposing Side Extraction
+      const cases = judge.cases || { bull: { j1: 0, j2: 0, j3: 0 }, bear: { j1: 0, j2: 0, j3: 0 } };
+      let opposingSideData: any = null;
+      if (tradeSignal === 'CALL') {
+        // Opponent is BEAR
+        const bearCases = cases.bear || { j1: 0, j2: 0, j3: 0 };
+        const maxBear = Math.max(bearCases.j1, bearCases.j2, bearCases.j3);
+        let gunLabel = 'Unknown';
+        if (maxBear === bearCases.j1) gunLabel = 'Bear Structural Trend (j1)';
+        else if (maxBear === bearCases.j2) gunLabel = 'Bear Mean Reversion (j2)';
+        else if (maxBear === bearCases.j3) gunLabel = 'Bear Extemes (j3)';
+
+        opposingSideData = {
+           direction: 'BEAR',
+           j1: bearCases.j1,
+           j2: bearCases.j2,
+           j3: bearCases.j3,
+           smokingGun: { label: gunLabel, score: maxBear }
+        };
+      } else if (tradeSignal === 'PUT') {
+        // Opponent is BULL
+        const bullCases = cases.bull || { j1: 0, j2: 0, j3: 0 };
+        const maxBull = Math.max(bullCases.j1, bullCases.j2, bullCases.j3);
+        let gunLabel = 'Unknown';
+        if (maxBull === bullCases.j1) gunLabel = 'Bull Structural Trend (j1)';
+        else if (maxBull === bullCases.j2) gunLabel = 'Bull Mean Reversion (j2)';
+        else if (maxBull === bullCases.j3) gunLabel = 'Bull Extemes (j3)';
+
+        opposingSideData = {
+           direction: 'BULL',
+           j1: bullCases.j1,
+           j2: bullCases.j2,
+           j3: bullCases.j3,
+           smokingGun: { label: gunLabel, score: maxBull }
+        };
+      }
       
       const primaryRootCause = Object.keys(categories).filter(k => categories[k].severity >= 2);
       
@@ -145,7 +253,10 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, p
         },
         contrarianSignal: tradeSignal === 'CALL' ? 'PUT' : 'CALL',
         contrarianConfidence: 100 - finalConfidence,
-        contrarianRuling: 'Deterministic contrarian from local scoring inversion.'
+        contrarianRuling: 'Deterministic contrarian from local scoring inversion.',
+        newRootCauses,
+        hubrisScore,
+        opposingSide: opposingSideData
       });
       
       setLoading(false);
@@ -193,7 +304,7 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, p
   };
 
   useEffect(() => {
-    console.log('LossAutopsyModal isOpen check:', isOpen, 'analysisData?', !!analysisData);
+    console.log('LossAutopsy isOpen check:', isOpen, 'analysisData?', !!analysisData);
   }, [isOpen, analysisData]);
 
   if (!isOpen) return null;
@@ -280,6 +391,42 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, p
 
             {autopsyResult && (
               <View>
+                {/* OPPOSING SIDE BLOCK */}
+                {autopsyResult.opposingSide && (
+                  <View style={tw`bg-red-900 bg-opacity-30 border border-red-500 border-opacity-50 p-6 rounded-2xl mb-8`}>
+                    <View style={tw`flex-row items-center justify-between mb-3`}>
+                      <Text style={tw`text-red-400 font-black text-lg uppercase tracking-[2px]`}>
+                        What the {autopsyResult.opposingSide.direction} case was saying
+                      </Text>
+                    </View>
+
+                    <View style={tw`flex-row items-center gap-4 mb-4`}>
+                      <View style={tw`flex-1 bg-black bg-opacity-40 p-3 rounded-lg border border-red-500 border-opacity-30`}>
+                        <Text style={tw`text-red-300 text-[10px] uppercase tracking-wider mb-1`}>Structural (j1)</Text>
+                        <Text style={tw`text-red-300 font-black text-xl`}>{autopsyResult.opposingSide.j1}</Text>
+                      </View>
+                      <View style={tw`flex-1 bg-black bg-opacity-40 p-3 rounded-lg border border-red-500 border-opacity-30`}>
+                        <Text style={tw`text-red-300 text-[10px] uppercase tracking-wider mb-1`}>Mean Rev (j2)</Text>
+                        <Text style={tw`text-red-300 font-black text-xl`}>{autopsyResult.opposingSide.j2}</Text>
+                      </View>
+                      <View style={tw`flex-1 bg-black bg-opacity-40 p-3 rounded-lg border border-red-500 border-opacity-30`}>
+                        <Text style={tw`text-red-300 text-[10px] uppercase tracking-wider mb-1`}>Extremes (j3)</Text>
+                        <Text style={tw`text-red-300 font-black text-xl`}>{autopsyResult.opposingSide.j3}</Text>
+                      </View>
+                    </View>
+
+                    <View style={tw`bg-red-950 bg-opacity-60 p-4 rounded-xl border border-red-500 flex-row items-center`}>
+                      <Text style={tw`text-2xl mr-3`}>🔫</Text>
+                      <View style={tw`flex-1`}>
+                        <Text style={tw`text-red-400 font-black uppercase text-xs tracking-wider mb-1`}>Smoking Gun</Text>
+                        <Text style={tw`text-red-100 text-sm leading-relaxed`}>
+                          The primary driver for the {autopsyResult.opposingSide.direction} case was <Text style={tw`font-bold text-white`}>{autopsyResult.opposingSide.smokingGun.label}</Text> scoring <Text style={tw`font-bold text-white`}>{autopsyResult.opposingSide.smokingGun.score}</Text>.
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                )}
+
                 {/* CONTRARIAN COUNTER-VERDICT */}
                 {autopsyResult.contrarianSignal && (
                   <View style={tw`bg-indigo-900 bg-opacity-30 border border-yellow-400 border-opacity-50 p-6 rounded-2xl mb-8`}>
