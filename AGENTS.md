@@ -1,19 +1,43 @@
 # ChartLens Agent Guidelines
 
-This application acts as a 100% offline, local real-time live camera feed chart analyzer.
-It has no external dependencies (no Firebase, no external APIs).
-It uses Web Workers to run a deterministic machine vision and AI algorithm pipeline to generate trading signals.
+This `AGENTS.md` file serves as the operational playbook and project context guide for AI agents (sometimes referred to as "Jules" or "Julius") working in this repository.
 
-## Architecture
-- `src/quant/`: Contains all quantitative logic, rules, indicators, filters. Uses `Float64Array` heavily for performance.
-- `src/vision/`: Handles image processing, OpenCV/canvas interactions, OCR, and axis extraction.
-- `src/workers/`: Contains the Web Workers that bridge the main thread UI with the heavy quant/vision pipelines.
-- `src/components/`: React UI components (Tailwind via `twrnc`).
-- `src/utils/`: Helper functions.
+## Application Purpose & Architecture
+ChartLens acts as a 100% offline, completely local real-time live camera feed chart analyzer without any external dependencies (no Firebase, Firestore, or external API keys like Google/GitHub). It uses Web Workers to run a deterministic machine vision and AI algorithm pipeline for generating trading signals.
 
-## Testing & Execution
-- Run `npm run lint` for linting.
-- Run `npx tsc --noEmit` for type checking.
-- Run `npx vitest run` to run all tests.
-- For rapid execution of scratchpad scripts, use `npx tsx <filename>.ts`.
-- Tests must be run and pass before submitting any code changes.
+## Architecture & Directory Structure
+- `src/quant/`: Contains all quantitative logic, rules, indicators, and filters. For performance-sensitive quantitative operations, explicitly use and return `Float64Array` instead of standard `number[]` arrays to maintain execution speed and avoid unnecessary memory allocations.
+- `src/vision/`: Handles image processing, OpenCV/canvas interactions, OCR, and chart axis extraction.
+- `src/workers/`: Contains the Web Workers that bridge the main thread UI with the heavy quant/vision pipelines. The core analysis pipeline (`src/workers/analysisWorker.ts`) constructs a `HorizonContext` using timeframe and duration inputs, extracts `ohlcSeries` and `axis` using `buildPipelineResult` (from image data), evaluates the signal via `evaluateSignal`, and filters the result using `emitStability(decision)`.
+- `src/components/`: React UI components (Tailwind CSS via `twrnc` library for React Native compatibility).
+- `src/utils/`: Helper functions. Web worker communication for analysis (`src/utils/singleAnalysis.ts` to `src/workers/analysisWorker.ts`) requires that `techniquesList` is passed dynamically within the payload so the backend can process user-selected trading patterns.
+- `__tests__/`: Unit tests are typically located in `__tests__` subdirectories relative to the source code being tested (e.g., `src/vision/__tests__/`, `src/quant/__tests__/`).
+
+## Testing & Execution Commands
+- **Linting:** Run `npm run lint` for linting. Avoid running `npm run lint -- --fix` globally to prevent unintentional formatting changes to unrelated files across the codebase; scope lint fixes only to modified files.
+- **Type Checking:** Run `npx tsc --noEmit` for type checking.
+- **Testing:** Run `npx vitest run` to execute all tests. Tests must be run and pass before submitting any code changes.
+- **Scratchpad:** For rapid execution of standalone TypeScript scratchpad scripts during testing or debugging, use `npx tsx <filename>.ts`.
+- **Frontend Verification:** For frontend verification with Playwright, build the application with `npm run build` and serve it using `npm run start &` (which executes `vite preview` on http://localhost:4173).
+- **CI Deploy Checks:** If Netlify CI deploy checks (such as 'Pages changed' or 'Header rules') fail without displaying explicit logs, run `npm run build` locally to surface hidden Vite or esbuild compilation errors.
+
+## Coding & Environment Rules
+- **Rule Engine Specifics:** The quantitative rule engine (`evaluateSignal` in `src/quant/ruleEngine.ts`) enforces a strict rule: a minimum of 10 techniques (candlestick patterns/indicators) must be provided in `techniquesList` AND at least 10 must mathematically match the chart data to return a valid prediction, otherwise it defaults to 'NO_TRADE'.
+- **Test Bypass:** Unit tests (e.g., in `src/quant/__tests__/judgeVerdict.test.ts`) can bypass the strict minimum 10 mathematically matched techniques rule required for the signal engine by including a special `"__TEST_BYPASS__"` string inside the `techniquesList` mock array.
+- **Techniques List Parsing:** The `techniquesList` uploaded via technique files is parsed by the frontend as an array of objects (e.g., `[{name: 'Doji', description: '...'}]`), not raw strings. Backend logic (like in `ruleEngine.ts` and `singleAnalysis.ts`) must handle it appropriately (e.g., as `any[]` or `Technique[]`) and extract both the `name` and `description` properties when performing pattern matching.
+- **Randomness in Tests:** When tests fail due to unpredictable random values generated by synthetic series mock generators (e.g., `Math.random()` in `judgeVerdict.test.ts`), stabilize them by properly mocking `Math.random()` with a deterministic Linear Congruential Generator (LCG) via `vi.spyOn`, rather than weakening the test assertions.
+- **Silent Audio Hack:** To prevent browser throttling or suspension of background execution (such as during bulk testing via Web Workers), the application employs a 'silent audio' hack. This involves utilizing a looping, silent base64 `Audio` element (e.g., within a `useWakeLock` hook) to ensure the JavaScript event loop remains active when the tab loses focus.
+- **React State Integrity:** When resolving linting warnings such as 'unused variables' or 'defined but never used', do not indiscriminately delete React state declarations (e.g., `useState`) or UI components without checking cross-references, as this can introduce severe regressions (like `ReferenceError`s) and break the application.
+- **Global Tooling & Environments:** The project is configured as an ES module (`"type": "module"` in `package.json`). The environment has global installations of tools like `eslint`, `vitest`, `tsc`, `pm2`, `pnpm`, etc., though they may fail if they depend on missing local `node_modules`. If `npm install` is run, ensure `node_modules` and compiled build artifacts like `dist/` are added to `.gitignore` to prevent massive git diffs and committing generated files.
+
+## AI Planning Rules (For Agents/Jules)
+- **Deep Planning Mode (User Directive):**
+  1. Confirm assumptions via questions before planning.
+  2. Do not seek plan approval during questioning.
+  3. Avoid asking questions derivable from the codebase.
+  4. Use `request_user_input` and `message_user`.
+  5. Use `set_plan` only when 100% certain of requirements.
+  6. Execute autonomously after plan approval without seeking further confirmation.
+- **Specificity Rule:** When submitting execution plans to `request_plan_review`, ensure all steps specify concrete tool actions (e.g., "Use the write_file tool to...") rather than high-level concepts. All steps must outline a single, definitive action without conditions, optional paths, or ambiguous phrasing (e.g., "with a dummy commit if needed").
+- **Completeness Rule:** Execution plans must explicitly state that verification will include running both specifically modified test files and the full test suite to check for regressions. The final pre-commit step must use the exact required wording: "Complete pre-commit steps to ensure proper testing, verification, review, and reflection are done."
+- **Groundedness Rule:** Ensure all specific function names and code structures mentioned in the plan have been explicitly discovered and verified using file inspection tools (e.g., `read_file`) beforehand. Standard file reading commands (like `cat`) may truncate output for long files in the environment. To satisfy this rule when writing plans, use tools like `tail`, `head`, or `sed` to read the remaining unread sections of truncated files to verify code existence.
