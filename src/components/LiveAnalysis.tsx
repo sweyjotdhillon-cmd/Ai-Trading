@@ -638,17 +638,79 @@ export function LiveAnalysis() {
         let timeoutId: any;
         try {
           setLoading(true);
+          setAnalysisStep('INITIATING OFFLINE ANALYSIS...');
+
+          controller = new AbortController();
+
+          timeoutId = setTimeout(() => {
+            if (controller) controller.abort();
+          }, 360000);
+
+          const result = await runSingleAnalysis({
+            imageDataUrl: finalImageToAnalyze,
+            stock: stockName,
+            graphTimeframe,
+            investmentDuration,
+            investmentAmount: investmentAmount as string,
+            profitabilityPercent: profitabilityPercent as string,
+            techniquesList,
+            encryptedSystemTokens,
+            signal: controller.signal,
+            isTestMode: mode === 'test',
+            onProgress: (step) => setAnalysisStep(step),
+            onJudgeLogs: (logs) => setJudgeLogs(prev => ({...prev, ...logs}))
+          });
+
+          clearTimeout(timeoutId);
+
+          setAnalysis(result.analysis);
+
+          if (mode === 'test') {
+             if (result.testModeRightSlice) {
+               setTestModeRightSlice(result.testModeRightSlice);
+             }
+             if (result.finalImageForAnalysis) {
+               setTestModeLeftSlice(result.finalImageForAnalysis);
+             }
+             setConfirmedOutcome(null);
+             setAutoGradeReason(result.reason || '');
+             setAutoGradeConfidence(Number(result.confidence) || 0);
+             setAutoGradeRawOutcome(result.rawOutcome || '');
+
+             if (result.outcome === 'WIN' || result.outcome === 'LOSS') {
+                saveToStats(result.analysis, result.outcome);
+                setAutoGradeStatus('done');
+             } else {
+                setAutoGradeStatus('failed');
+             }
+          }
 
           if (pipActive) {
             const pipDir = result.direction === 'UP' ? 'CALL' : result.direction === 'DOWN' ? 'PUT' : 'NO_TRADE';
             updatePip(pipDir, result.analysis.judge?.finalConfidence ?? 0);
           }
 
-          setTimeout(() => {
+          if (result.direction !== 'NO_TRADE') {
+            setTradingDirection(result.direction);
+            setTradingPhase('WAITING_FOR_ENTRY');
+          } else {
+            setTradingDirection(null);
             setTradingPhase('IDLE');
-            setAnalysisStep('LIVE TICK SCOUT ACTIVE');
-            if (mode !== 'test') setTradingDirection(null);
+          }
+
+          setTimeout(() => {
+            if (result.direction !== 'NO_TRADE') {
+               // Usually on stable signal we do this, but if we're not running stable logic here
+            } else {
+              setTradingPhase('IDLE');
+              setAnalysisStep('LIVE TICK SCOUT ACTIVE');
+              if (mode !== 'test') setTradingDirection(null);
+            }
           }, 6000);
+
+          setLoading(false);
+          setIsBusy(false);
+          setScoutActive(true);
 
         } catch (error: any) {
           clearTimeout(timeoutId);
