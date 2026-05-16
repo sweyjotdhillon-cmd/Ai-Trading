@@ -7,16 +7,12 @@
  */
 import { rsi, macd, bollinger, atr, stochastic } from './indicators';
 import { emaSlope, emaCurvature } from './calculus';
-import { calculateBoundaryReversal } from './boundary';
 import { 
   calculateVolatilityRegime, 
   calculateZScoreSignificance,
-  calculatePredictability,
-  calculateRobustness,
-  calculateCEF,
   calculateRQA
 } from './mathEngine';
-import { PriceAxisTransform } from '../vision/axisReader';
+
 import { NumericOHLC } from '../vision/pipeline';
 
 export interface CaseScore {
@@ -46,7 +42,8 @@ export interface DecisionResult extends JudgeVerdict {
   evidence: any;
 }
 
-export function evaluateSignal(ohlcSeries: NumericOHLC[], priceAxis: PriceAxisTransform | null, ohlcQuality: 'REAL_PRICE' | 'NORMALIZED_FALLBACK' = 'REAL_PRICE'): DecisionResult {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function evaluateSignal(ohlcSeries: NumericOHLC[], _priceAxis?: any): DecisionResult {
   const defaultCases = { bull: { j1: 0, j2: 0, j3: 0, total: 0 }, bear: { j1: 0, j2: 0, j3: 0, total: 0 } };
   const defaultNoTrade: DecisionResult = {
     cases: defaultCases, skepticMultiplier: 1, winner: 'NO_TRADE', margin: 0, finalConfidence: 0, ruling: 'Insufficient data',
@@ -62,7 +59,6 @@ export function evaluateSignal(ohlcSeries: NumericOHLC[], priceAxis: PriceAxisTr
 
   // Constants
   const last = closes.length - 1;
-  const prev = closes.length - 2;
 
   // Compute indicators
   const rsiVals = rsi(closes, 14);
@@ -182,7 +178,7 @@ export function evaluateSignal(ohlcSeries: NumericOHLC[], priceAxis: PriceAxisTr
   
   const finalConfidence = Math.round((rawWinningTotal * skepticMultiplier / 11) * 100);
 
-  let ruling = winner === 'NO_TRADE' ? 'Points are tied.' : `Clear ${winner} edge.`;
+  const ruling = winner === "NO_TRADE" ? 'Points are tied.' : `Clear ${winner} edge.`;
 
   return {
     cases,

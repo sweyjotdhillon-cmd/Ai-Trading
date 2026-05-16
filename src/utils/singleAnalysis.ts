@@ -147,7 +147,7 @@ export async function runSingleAnalysis(params: {
     };
   }
 
-  const { signal, confidence, frameStable, debugTrace } = payload;
+  const { frameStable, debugTrace } = payload;
   const decision = debugTrace.decision;
   const meta = debugTrace.meta;
   

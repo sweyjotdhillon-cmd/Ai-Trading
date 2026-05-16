@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { View, Text, Pressable, ScrollView, Modal, ActivityIndicator, Platform } from 'react-native';
+import { View, Text, Pressable, ScrollView, ActivityIndicator, Platform } from 'react-native';
 import { X, Upload, Activity, AlertTriangle, CheckCircle, Search, Download } from 'lucide-react';
 import tw from 'twrnc';
 import { motion, useReducedMotion } from 'motion/react';
