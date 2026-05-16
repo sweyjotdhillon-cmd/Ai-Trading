@@ -5,8 +5,6 @@ import {
   Text, 
   Pressable, 
   SafeAreaView, 
-  ActivityIndicator,
-  Image,
   StatusBar,
   Platform
 } from 'react-native';

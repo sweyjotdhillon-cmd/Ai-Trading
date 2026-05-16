@@ -83,6 +83,7 @@ export async function runSingleAnalysis(params: {
   rawOutcome?: string;
   frameStable?: boolean;
 }> {
+  const t0 = performance.now();
   const { imageDataUrl, onJudgeLogs, isTestMode } = params;
 
   if (onJudgeLogs) {
@@ -115,8 +116,21 @@ export async function runSingleAnalysis(params: {
   const payloadPromise = new Promise<any>((resolve, reject) => {
     messageResolvers.set(msgId, { resolve, reject });
     try {
-      if (isTestMode) {
-
+      w.postMessage({
+        type: 'ANALYZE',
+        msgId,
+        imageData: imgData,
+        stock: params.stock,
+        graphTimeframeMinutes: tfM,
+        investmentDurationMinutes: durM,
+        investmentAmount: params.investmentAmount,
+        profitabilityPercent: params.profitabilityPercent,
+        techniquesList: params.techniquesList,
+        encryptedSystemTokens: params.encryptedSystemTokens,
+        isTestMode: isTestMode
+      });
+    } catch (e: any) {
+      reject(e);
     }
 
     // Handle abort
@@ -140,7 +154,7 @@ export async function runSingleAnalysis(params: {
     }
     return {
       analysis: {
-        judge: { winner: 'NONE', decision: 'FAULT', finalConfidence: 0, j1Score: 0, j2Score: 0, j3Score: 0, j4Score: 0, ruling: payload.message, totalScore: 0, tradeDetails: { latencyAdjustedForecast: '', techniquesUsed: '' } },
+        judge: { winner: 'NONE', decision: 'FAULT', finalConfidence: 0, j1Score: 0, j2Score: 0, j3Score: 0, j4Score: 0, ruling: payload.message, totalScore: 0, tradeDetails: { latencyAdjustedForecast: '', techniquesUsed: '', executionTimeMs: performance.now() - t0 } },
         bull: { reasoning: 'FAULT' }, bear: { reasoning: 'FAULT' }, skeptic: { riskVerdict: 'FAULT' }, techUsedCount: 0
       },
       direction: 'NO_TRADE', outcome: 'NEUTRAL', confidence: 0, reason: payload.message,
@@ -201,7 +215,7 @@ export async function runSingleAnalysis(params: {
         rightCanvas.width = 0;
         rightCanvas.height = 0;
 
-        const leftImgData = await dataUrlToImageData(finalImageForAnalysis);
+        // const leftImgData = await dataUrlToImageData(finalImageForAnalysis); // TSFix: remove unused
         
         const msgId2 = generateId();
         const payloadPromise2 = new Promise<any>((resolve, reject) => {
@@ -249,6 +263,8 @@ export async function runSingleAnalysis(params: {
     });
   }
 
+  const tTotal = performance.now() - t0;
+
   return {
     analysis: {
       judge: {
@@ -264,7 +280,8 @@ export async function runSingleAnalysis(params: {
         totalScore: FS,
         tradeDetails: {
           latencyAdjustedForecast: `Signal: ${finalDecision.signal}`,
-          techniquesUsed: finalDecision.techniquesUsed || 'None'
+          techniquesUsed: finalDecision.techniquesUsed || 'None',
+          executionTimeMs: tTotal
         }
       },
       bull: { reasoning: `Score ${cases.bull.total}` },

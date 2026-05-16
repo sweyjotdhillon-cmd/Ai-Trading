@@ -104,6 +104,7 @@ export interface BehaviorProfile {
 }
 
 export interface TradeAnalysis {
+  executionTimeMs?: number;
   id: string;
   uid: string;
   subUserId?: string;

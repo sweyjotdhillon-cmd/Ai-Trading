@@ -228,14 +228,7 @@ export function BulkTestPanel({
     });
   };
 
-  const fileToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-  };
+
 
   const runBatch = async () => {
     if (queue.length === 0 || manifestErrors.length > 0) return;
@@ -294,7 +287,7 @@ export function BulkTestPanel({
             profitabilityPercent: item.entry.profitabilityPercent ? String(item.entry.profitabilityPercent) : profitabilityPercent,
             techniquesList: item.entry.techniqueOverrides || techniquesList,
             encryptedSystemTokens,
-            signal: abortControllerRef.current.signal,
+            signal: abortControllerRef.current!.signal,
             isTestMode: true
           });
           
@@ -356,7 +349,7 @@ export function BulkTestPanel({
           const failuresData = losses.map(l => {
              const analysisCopy = l.result?.analysis ? JSON.parse(JSON.stringify(l.result.analysis)) : null;
              return {
-                fileName: l.file?.name || l.entry.fileName || "unknown",
+                fileName: l.file?.name || (l.entry as any).fileName || "unknown",
                 stock: l.entry.stock,
                 timeframe: l.entry.graphTimeframe,
                 expectedOutcome: l.entry.expectedOutcome,
