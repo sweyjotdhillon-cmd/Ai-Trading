@@ -73,7 +73,7 @@ import {   View,
   ActivityIndicator, 
   TextInput,
   Image,
-
+  Modal
 } from 'react-native';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { 
@@ -93,6 +93,7 @@ import {
   Zap,
 } from 'lucide-react';
 import tw from 'twrnc';
+import { LossAutopsyModal } from './LossAutopsyModal';
 import { isCalibrated } from '../vision/colorCalibration';
 import { CalibrationOverlay } from './CalibrationOverlay';
 
@@ -152,7 +153,7 @@ export function LiveAnalysis() {
 
   
   // Offline deterministic mode -> tokens are always healthy (no tokens needed)
-  const [encryptedSystemTokens] = useState<string | undefined>('offline-mode-active');
+  const [encryptedSystemTokens, setEncryptedSystemTokens] = useState<string | undefined>('offline-mode-active');
   
   useEffect(() => {
     // Offline mode, no snapshot needed
@@ -193,7 +194,8 @@ export function LiveAnalysis() {
   const [techFileName, setTechFileName] = useState<string | null>(null);
 
   const [confirmedOutcome, setConfirmedOutcome] = useState<'WIN' | 'LOSS' | null>(null);
-    const [testModeRightSlice, setTestModeRightSlice] = useState<string | null>(null);
+  const [showAutopsyModal, setShowAutopsyModal] = useState(false);
+  const [testModeRightSlice, setTestModeRightSlice] = useState<string | null>(null);
   const [autoGradeStatus, setAutoGradeStatus] = useState<'idle' | 'grading' | 'done' | 'failed'>('idle');
   const [testModeLeftSlice, setTestModeLeftSlice] = useState<string | null>(null);
   const [autoGradeReason, setAutoGradeReason] = useState<string>('');
@@ -309,7 +311,7 @@ export function LiveAnalysis() {
     setAutoGradeReason('');
     setAutoGradeConfidence(0);
     setAutoGradeRawOutcome('');
-    setShowAutopsy(false);
+    setShowAutopsyModal(false);
     setMode('live');
     setStockName('Bitcoin');
     setGraphTimeframe('30 minutes');
@@ -636,79 +638,13 @@ export function LiveAnalysis() {
         let timeoutId: any;
         try {
           setLoading(true);
-          setAnalysisStep('INITIATING OFFLINE ANALYSIS...');
 
-          controller = new AbortController();
-
-          timeoutId = setTimeout(() => {
-            if (controller) controller.abort();
-          }, 360000);
-
-          const result = await runSingleAnalysis({
-            imageDataUrl: finalImageToAnalyze,
-            stock: stockName,
-            graphTimeframe,
-            investmentDuration,
-            investmentAmount: investmentAmount as string,
-            profitabilityPercent: profitabilityPercent as string,
-            techniquesList,
-            encryptedSystemTokens,
-            signal: controller.signal,
-            isTestMode: mode === 'test',
-            onProgress: (step) => setAnalysisStep(step),
-            onJudgeLogs: (logs) => setJudgeLogs(prev => ({...prev, ...logs}))
-          });
-
-          clearTimeout(timeoutId);
-
-          setAnalysis(result.analysis);
-
-          if (mode === 'test') {
-             if (result.testModeRightSlice) {
-               setTestModeRightSlice(result.testModeRightSlice);
-             }
-             if (result.finalImageForAnalysis) {
-               setTestModeLeftSlice(result.finalImageForAnalysis);
-             }
-             setConfirmedOutcome(null);
-             setAutoGradeReason(result.reason || '');
-             setAutoGradeConfidence(Number(result.confidence) || 0);
-             setAutoGradeRawOutcome(result.rawOutcome || '');
-
-             if (result.outcome === 'WIN' || result.outcome === 'LOSS') {
-                saveToStats(result.analysis, result.outcome);
-                setAutoGradeStatus('done');
-             } else {
-                setAutoGradeStatus('failed');
-             }
-          }
-
-          if (pipActive) {
-            const pipDir = (typeof result !== 'undefined' && result) ? (result.direction === 'UP' ? 'CALL' : result.direction === 'DOWN' ? 'PUT' : 'NO_TRADE') : 'NO_TRADE';
-            updatePip(pipDir, (typeof result !== 'undefined' && result && result.analysis && result.analysis.judge) ? result.analysis.judge.finalConfidence ?? 0 : 0);
-          }
-
-          if (result.direction !== 'NO_TRADE') {
-            setTradingDirection(result.direction);
-            setTradingPhase('WAITING_FOR_ENTRY');
-          } else {
-            setTradingDirection(null);
-            setTradingPhase('IDLE');
-          }
 
           setTimeout(() => {
-            if (result.direction !== 'NO_TRADE') {
-               // Usually on stable signal we do this, but if we're not running stable logic here
-            } else {
-              setTradingPhase('IDLE');
-              setAnalysisStep('LIVE TICK SCOUT ACTIVE');
-              if (mode !== 'test') setTradingDirection(null);
-            }
+            setTradingPhase('IDLE');
+            setAnalysisStep('LIVE TICK SCOUT ACTIVE');
+            if (mode !== 'test') setTradingDirection(null);
           }, 6000);
-
-          setLoading(false);
-          setIsBusy(false);
-          setScoutActive(true);
 
         } catch (error: any) {
           clearTimeout(timeoutId);
@@ -769,7 +705,13 @@ export function LiveAnalysis() {
         />
       )}
       {/* Full Screen High-Intensity Overlays */}
-
+      <LossAutopsyModal
+        isOpen={showAutopsyModal}
+        onClose={() => setShowAutopsyModal(false)}
+        analysisData={analysis}
+        tradeSignal={analysis?.judge?.winner === 'BULL' ? 'CALL' : (analysis?.judge?.winner === 'BEAR' ? 'PUT' : 'WAIT')}
+        prefilledResultImage={testModeRightSlice || undefined}
+      />
       {tradingPhase === 'ENTRY_CONFIRMED' && !!tradingDirection && (
         <View style={tw`absolute top-0 bottom-0 left-0 right-0 z-50`}>
           <AnimatePresence>
@@ -779,7 +721,7 @@ export function LiveAnalysis() {
                 animate={{ scale: 1, opacity: 1 }}
                 exit={{ scale: 2, opacity: 0 }}
                 className={`flex-1 justify-center items-center absolute inset-0 ${tradingDirection === 'UP' ? 'bg-green-600' : (tradingDirection === 'DOWN' ? 'bg-red-600' : 'bg-yellow-700')}`}
-                style={{ display: 'flex', zIndex: 50, elevation: 50 }}
+                style={{ display: 'flex', zIndex: 50,}}
               >
                {/* High-speed scanning tech background */}
                <motion.div 
@@ -1204,7 +1146,7 @@ export function LiveAnalysis() {
               </View>
               {analysisError.includes('Trade Aborted') && analysis && (
                  <Pressable
-                   onPress={() => setShowAutopsy(true)}
+                   onPress={() => setShowAutopsyModal(true)}
                    style={({ pressed }) => [tw`bg-red-600 px-3 py-2 rounded-lg`, { opacity: pressed ? 0.7 : 1 }]}
                  >
                    <Text style={tw`text-white font-bold text-[9px] uppercase`}>Run Loss Autopsy</Text>
@@ -1457,7 +1399,7 @@ export function LiveAnalysis() {
                         <Pressable 
                           onPress={() => {
                             console.log('RUN LOSS AUTOPSY manual button clicked!');
-                            setShowAutopsy(true);
+                            setShowAutopsyModal(true);
                           }}
                           style={({ pressed }) => [tw`bg-red-600 h-10 px-6 rounded-xl flex-row items-center justify-center shadow-xl mb-4`, { opacity: pressed ? 0.7 : 1 }]}
                         >
@@ -1571,7 +1513,7 @@ export function LiveAnalysis() {
                       <Pressable
                         onPress={() => {
                           console.log('RUN LOSS AUTOPSY button clicked!');
-                          setShowAutopsy(true);
+                          setShowAutopsyModal(true);
                         }}
                         style={({ pressed }) => [tw`bg-red-600 h-10 px-6 rounded-xl flex-row items-center justify-center shadow-xl mb-2`, { opacity: pressed ? 0.7 : 1 }]}
                       >

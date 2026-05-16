@@ -8,8 +8,12 @@
 import { rsi, macd, bollinger, atr, stochastic } from './indicators';
 import { emaSlope, emaCurvature } from './calculus';
 
+import {
+  calculateVolatilityRegime,
+  calculateZScoreSignificance,
+    calculateRQA
 } from './mathEngine';
-
+import { PriceAxisTransform } from '../vision/axisReader';
 import { NumericOHLC } from '../vision/pipeline';
 import { HorizonContext, rescaledRangeHurst, PATTERN_WEIGHTS_BY_HORIZON } from './horizon';
 
@@ -42,7 +46,13 @@ export interface DecisionResult extends JudgeVerdict {
   techUsedCount?: number;
 }
 
-
+export function evaluateSignal(
+  ohlcSeries: NumericOHLC[],
+  priceAxis: PriceAxisTransform | null,
+  horizonCtx: HorizonContext,
+  priceMode: 'REAL_PRICE' | 'PERCENT_SCALE' | 'LOG_SCALE' = 'REAL_PRICE',
+  techniquesList: string[] = []
+): DecisionResult {
   const defaultCases = { bull: { j1: 0, j2: 0, j3: 0, total: 0 }, bear: { j1: 0, j2: 0, j3: 0, total: 0 } };
   const defaultNoTrade: DecisionResult = {
     cases: defaultCases, skepticMultiplier: 1, winner: 'NO_TRADE', margin: 0, finalConfidence: 0, ruling: 'Insufficient data or techniques',
@@ -383,7 +393,7 @@ export interface DecisionResult extends JudgeVerdict {
   
   const finalConfidence = Math.round((rawWinningTotal * skepticMultiplier / 11) * 100);
 
-
+  const ruling = winner === 'NO_TRADE' ? 'Points are tied.' : `Clear ${winner} edge.`;
 
   return {
     cases,
