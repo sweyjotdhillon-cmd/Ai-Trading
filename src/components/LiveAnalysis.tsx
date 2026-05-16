@@ -686,8 +686,8 @@ export function LiveAnalysis() {
           }
 
           if (pipActive) {
-            const pipDir = result.direction === 'UP' ? 'CALL' : result.direction === 'DOWN' ? 'PUT' : 'NO_TRADE';
-            updatePip(pipDir, result.analysis.judge?.finalConfidence ?? 0);
+            const pipDir = (typeof result !== 'undefined' && result) ? (result.direction === 'UP' ? 'CALL' : result.direction === 'DOWN' ? 'PUT' : 'NO_TRADE') : 'NO_TRADE';
+            updatePip(pipDir, (typeof result !== 'undefined' && result && result.analysis && result.analysis.judge) ? result.analysis.judge.finalConfidence ?? 0 : 0);
           }
 
           if (result.direction !== 'NO_TRADE') {
