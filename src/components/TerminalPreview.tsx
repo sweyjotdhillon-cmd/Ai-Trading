@@ -5,7 +5,7 @@ export function TerminalPreview() {
   const prefersReducedMotion = useReducedMotion();
 
   return (
-    <div className="w-full max-w-5xl mx-auto mt-6 md:mt-12 mb-6 px-0 relative z-10 flex-shrink-0">
+    <div className="w-full max-w-5xl mx-auto mt-6 md:mt-10 mb-0 px-0 relative z-10 flex-shrink-0">
       <motion.div
         initial={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, y: 20 }}
         whileInView={prefersReducedMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}

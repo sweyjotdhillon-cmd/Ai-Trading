@@ -56,6 +56,8 @@ function generateId() {
   return String(performance.now()).replace(".","")+String(++msgCounter);
 }
 
+import { parseDurationToMinutes } from '../quant/horizon';
+
 export async function runSingleAnalysis(params: {
   imageDataUrl: string;
   stock: string;
@@ -106,16 +108,34 @@ export async function runSingleAnalysis(params: {
     throw err;
   }
 
+
+    const tfM = parseDurationToMinutes(params.graphTimeframe);
+    const durM = parseDurationToMinutes(params.investmentDuration);
+
   const payloadPromise = new Promise<any>((resolve, reject) => {
     messageResolvers.set(msgId, { resolve, reject });
     try {
       if (isTestMode) {
-        w.postMessage({ type: 'ANALYZE', imageData: imgData, msgId, timestamp: performance.now() });
+        w.postMessage({
+          type: 'ANALYZE',
+          msgId,
+          imageData: imgData,
+          graphTimeframeMinutes: tfM,
+          investmentDurationMinutes: durM,
+          techniquesList: params.techniquesList
+        });
       } else {
-        w.postMessage({ type: 'ANALYZE', imageData: imgData, msgId, timestamp: performance.now() }, [imgData.data.buffer]);
+        w.postMessage({
+          type: 'ANALYZE',
+          msgId,
+          imageData: imgData,
+          graphTimeframeMinutes: tfM,
+          investmentDurationMinutes: durM,
+          techniquesList: params.techniquesList
+        });
       }
-    } catch {
-      w.postMessage({ type: 'ANALYZE', imageData: imgData, msgId, timestamp: performance.now() });
+    } catch (err: any) {
+      reject(err);
     }
 
     // Handle abort
@@ -204,8 +224,30 @@ export async function runSingleAnalysis(params: {
         
         const msgId2 = generateId();
         const payloadPromise2 = new Promise<any>((resolve, reject) => {
-          messageResolvers.set(msgId2, { resolve, reject });
-          w.postMessage({ type: 'ANALYZE', imageData: leftImgData, msgId: msgId2, timestamp: performance.now() }, [leftImgData.data.buffer]);
+          const timeout = setTimeout(() => {
+            messageResolvers.delete(msgId2);
+            reject(new Error("Worker analysis timed out after 15 seconds."));
+          }, 15000);
+
+          messageResolvers.set(msgId2, {
+            resolve: (val) => { clearTimeout(timeout); resolve(val); },
+            reject: (err) => { clearTimeout(timeout); reject(err); }
+          });
+
+          try {
+            w.postMessage({
+              type: 'ANALYZE',
+              msgId: msgId2,
+              imageData: leftImgData,
+              graphTimeframeMinutes: tfM,
+              investmentDurationMinutes: durM,
+              techniquesList: params.techniquesList
+            });
+          } catch (err) {
+            clearTimeout(timeout);
+            messageResolvers.delete(msgId2);
+            reject(err);
+          }
         });
         const payload2 = await payloadPromise2;
         
@@ -263,13 +305,13 @@ export async function runSingleAnalysis(params: {
         totalScore: FS,
         tradeDetails: {
           latencyAdjustedForecast: `Signal: ${finalDecision.signal}`,
-          techniquesUsed: `RSI: ${finalDecision.evidence?.rsi?.toFixed(1) || 0}`
+          techniquesUsed: finalDecision.techniquesUsed || 'None'
         }
       },
       bull: { reasoning: `Score ${cases.bull.total}` },
       bear: { reasoning: `Score ${cases.bear.total}` },
       skeptic: { riskVerdict: `Multiplier ${J4}` },
-      techUsedCount: 3
+      techUsedCount: finalDecision.techUsedCount || 0
     },
     direction: mappedDirection,
     outcome,
@@ -282,4 +324,3 @@ export async function runSingleAnalysis(params: {
     frameStable
   };
 }
-

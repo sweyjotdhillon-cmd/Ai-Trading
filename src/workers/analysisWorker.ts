@@ -1,6 +1,7 @@
 // Web Worker for analysis pipeline
 import { buildPipelineResult } from '../vision/pipeline';
 import { evaluateSignal } from '../quant/ruleEngine';
+import { HorizonContext } from '../quant/horizon';
 import { emitStability, resetStability } from '../quant/stabilityFilter';
 import { getCalibrationBands, setCalibrationBands } from '../vision/colorCalibration';
 import { runDeterminismGuard } from '../quant/__audit__/determinismGuard';
@@ -42,8 +43,25 @@ self.onmessage = (e: MessageEvent) => {
       sendOk('CALIBRATE', { type: 'CALIBRATED', bands: getCalibrationBands() });
     } 
     else if (data.type === 'ANALYZE') {
+
+      const tfMinutes = data.graphTimeframeMinutes || 30;
+      const durationMinutes = data.investmentDurationMinutes || 5;
+      const hRatio = Math.max(0.001, Math.min(4.0, durationMinutes / tfMinutes));
+      let hClass: 'INTRA_CANDLE' | 'NEAR_FULL' | 'MULTI_CANDLE' = 'INTRA_CANDLE';
+      if (hRatio >= 0.8 && hRatio <= 1.2) hClass = 'NEAR_FULL';
+      else if (hRatio > 1.2) hClass = 'MULTI_CANDLE';
+
+      const horizonCtx: HorizonContext = {
+        tfMinutes,
+        durationMinutes,
+        H: hRatio,
+        horizonClass: hClass
+      };
+
       const pipe = buildPipelineResult(data.imageData);
-      const decision = evaluateSignal(pipe.ohlcSeries, pipe.axis, pipe.meta.ohlcQuality);
+
+      const decision = evaluateSignal(pipe.ohlcSeries, pipe.axis, horizonCtx, 'REAL_PRICE', data.techniquesList || []);
+
       const stab = emitStability(decision);
 
       const debugTrace = {
