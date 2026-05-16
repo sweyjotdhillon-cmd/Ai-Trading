@@ -73,7 +73,7 @@ import {   View,
   ActivityIndicator, 
   TextInput,
   Image,
-  Modal
+
 } from 'react-native';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { 
@@ -93,7 +93,6 @@ import {
   Zap,
 } from 'lucide-react';
 import tw from 'twrnc';
-import { LossAutopsyModal } from './LossAutopsyModal';
 import { isCalibrated } from '../vision/colorCalibration';
 import { CalibrationOverlay } from './CalibrationOverlay';
 
@@ -153,7 +152,7 @@ export function LiveAnalysis() {
 
   
   // Offline deterministic mode -> tokens are always healthy (no tokens needed)
-  const [encryptedSystemTokens, setEncryptedSystemTokens] = useState<string | undefined>('offline-mode-active');
+  const [encryptedSystemTokens] = useState<string | undefined>('offline-mode-active');
   
   useEffect(() => {
     // Offline mode, no snapshot needed
@@ -194,8 +193,7 @@ export function LiveAnalysis() {
   const [techFileName, setTechFileName] = useState<string | null>(null);
 
   const [confirmedOutcome, setConfirmedOutcome] = useState<'WIN' | 'LOSS' | null>(null);
-  const [showAutopsyModal, setShowAutopsyModal] = useState(false);
-  const [testModeRightSlice, setTestModeRightSlice] = useState<string | null>(null);
+    const [testModeRightSlice, setTestModeRightSlice] = useState<string | null>(null);
   const [autoGradeStatus, setAutoGradeStatus] = useState<'idle' | 'grading' | 'done' | 'failed'>('idle');
   const [testModeLeftSlice, setTestModeLeftSlice] = useState<string | null>(null);
   const [autoGradeReason, setAutoGradeReason] = useState<string>('');
@@ -311,7 +309,7 @@ export function LiveAnalysis() {
     setAutoGradeReason('');
     setAutoGradeConfidence(0);
     setAutoGradeRawOutcome('');
-    setShowAutopsyModal(false);
+    setShowAutopsy(false);
     setMode('live');
     setStockName('Bitcoin');
     setGraphTimeframe('30 minutes');
@@ -771,13 +769,7 @@ export function LiveAnalysis() {
         />
       )}
       {/* Full Screen High-Intensity Overlays */}
-      <LossAutopsyModal
-        isOpen={showAutopsyModal}
-        onClose={() => setShowAutopsyModal(false)}
-        analysisData={analysis}
-        tradeSignal={analysis?.judge?.winner === 'BULL' ? 'CALL' : (analysis?.judge?.winner === 'BEAR' ? 'PUT' : 'WAIT')}
-        prefilledResultImage={testModeRightSlice || undefined}
-      />
+
       {tradingPhase === 'ENTRY_CONFIRMED' && !!tradingDirection && (
         <View style={tw`absolute top-0 bottom-0 left-0 right-0 z-50`}>
           <AnimatePresence>
@@ -1212,7 +1204,7 @@ export function LiveAnalysis() {
               </View>
               {analysisError.includes('Trade Aborted') && analysis && (
                  <Pressable
-                   onPress={() => setShowAutopsyModal(true)}
+                   onPress={() => setShowAutopsy(true)}
                    style={({ pressed }) => [tw`bg-red-600 px-3 py-2 rounded-lg`, { opacity: pressed ? 0.7 : 1 }]}
                  >
                    <Text style={tw`text-white font-bold text-[9px] uppercase`}>Run Loss Autopsy</Text>
@@ -1465,7 +1457,7 @@ export function LiveAnalysis() {
                         <Pressable 
                           onPress={() => {
                             console.log('RUN LOSS AUTOPSY manual button clicked!');
-                            setShowAutopsyModal(true);
+                            setShowAutopsy(true);
                           }}
                           style={({ pressed }) => [tw`bg-red-600 h-10 px-6 rounded-xl flex-row items-center justify-center shadow-xl mb-4`, { opacity: pressed ? 0.7 : 1 }]}
                         >
@@ -1579,7 +1571,7 @@ export function LiveAnalysis() {
                       <Pressable
                         onPress={() => {
                           console.log('RUN LOSS AUTOPSY button clicked!');
-                          setShowAutopsyModal(true);
+                          setShowAutopsy(true);
                         }}
                         style={({ pressed }) => [tw`bg-red-600 h-10 px-6 rounded-xl flex-row items-center justify-center shadow-xl mb-2`, { opacity: pressed ? 0.7 : 1 }]}
                       >
