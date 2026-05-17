@@ -65,7 +65,6 @@ for(let i=0; i<100; i++) {
     isBull: false
   });
 }
-
 assert(sysDown.signal === 'PUT', 'Downtrend should yield PUT. got: ' + sysDown.signal);
 
 // 5. Noise (seeded LCG)

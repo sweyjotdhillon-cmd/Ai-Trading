@@ -44,12 +44,7 @@ export interface DecisionResult extends JudgeVerdict {
 }
 
 
-export function evaluateSignal(
-  ohlcSeries: NumericOHLC[],
-  _axis: PriceAxisTransform | null, // TSFix: prefix unused
-  horizonCtx: HorizonContext = { tfMinutes: 30, durationMinutes: 5, H: 5/30, horizonClass: 'INTRA_CANDLE' },
-  techniquesList: string[] = []
-): DecisionResult {
+
   const defaultCases = { bull: { j1: 0, j2: 0, j3: 0, total: 0 }, bear: { j1: 0, j2: 0, j3: 0, total: 0 } };
   const defaultNoTrade: DecisionResult = {
     cases: defaultCases, skepticMultiplier: 1, winner: 'NO_TRADE', margin: 0, finalConfidence: 0, ruling: 'Insufficient data or techniques',

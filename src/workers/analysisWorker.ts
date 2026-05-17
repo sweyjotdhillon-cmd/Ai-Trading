@@ -18,7 +18,7 @@ try {
   faultStack = e.message || String(e);
 }
 
-self.onmessage = (e: MessageEvent) => {
+self.onmessage = async (e: MessageEvent) => {
   const tStart = performance.now();
   const data = e.data;
 

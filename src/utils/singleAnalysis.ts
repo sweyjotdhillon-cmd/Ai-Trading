@@ -113,7 +113,7 @@ export async function runSingleAnalysis(params: {
     const tfM = parseDurationToMinutes(params.graphTimeframe);
     const durM = parseDurationToMinutes(params.investmentDuration);
 
-  const payloadPromise = new Promise<any>((resolve, reject) => {
+    const payloadPromise = new Promise<any>((resolve, reject) => {
     messageResolvers.set(msgId, { resolve, reject });
     try {
 
@@ -204,32 +204,7 @@ export async function runSingleAnalysis(params: {
         // const leftImgData = await dataUrlToImageData(finalImageForAnalysis); // TSFix: remove unused
         
         const msgId2 = generateId();
-        const payloadPromise2 = new Promise<any>((resolve, reject) => {
-          const timeout = setTimeout(() => {
-            messageResolvers.delete(msgId2);
-            reject(new Error("Worker analysis timed out after 15 seconds."));
-          }, 15000);
 
-          messageResolvers.set(msgId2, {
-            resolve: (val) => { clearTimeout(timeout); resolve(val); },
-            reject: (err) => { clearTimeout(timeout); reject(err); }
-          });
-
-          try {
-            w.postMessage({
-              type: 'ANALYZE',
-              msgId: msgId2,
-              imageData: leftImgData,
-              graphTimeframeMinutes: tfM,
-              investmentDurationMinutes: durM,
-              techniquesList: params.techniquesList
-            });
-          } catch (err) {
-            clearTimeout(timeout);
-            messageResolvers.delete(msgId2);
-            reject(err);
-          }
-        });
         const payload2 = await payloadPromise2;
         
         if (payload2.type !== 'ERROR' && payload2.debugTrace?.decision?.evidence?.lastClose !== undefined) {
