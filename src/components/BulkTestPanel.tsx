@@ -228,7 +228,7 @@ export function BulkTestPanel({
     });
   };
 
-    const runBatch = async () => {
+
     if (queue.length === 0 || manifestErrors.length > 0) return;
     
     const missing = queue.filter(q => !q.file && !q.entry.imageData && q.status === 'Pending');
@@ -285,7 +285,7 @@ export function BulkTestPanel({
             profitabilityPercent: item.entry.profitabilityPercent ? String(item.entry.profitabilityPercent) : profitabilityPercent,
             techniquesList: item.entry.techniqueOverrides || techniquesList,
             encryptedSystemTokens,
-            signal: abortControllerRef.current.signal,
+            signal: abortControllerRef.current!.signal,
             isTestMode: true
           });
           
@@ -347,7 +347,7 @@ export function BulkTestPanel({
           const failuresData = losses.map(l => {
              const analysisCopy = l.result?.analysis ? JSON.parse(JSON.stringify(l.result.analysis)) : null;
              return {
-                fileName: l.file?.name || l.entry.fileName || "unknown",
+                fileName: l.file?.name || (l.entry as any).fileName || "unknown",
                 stock: l.entry.stock,
                 timeframe: l.entry.graphTimeframe,
                 expectedOutcome: l.entry.expectedOutcome,

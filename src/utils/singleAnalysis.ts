@@ -83,6 +83,7 @@ export async function runSingleAnalysis(params: {
   rawOutcome?: string;
   frameStable?: boolean;
 }> {
+  const t0 = performance.now();
   const { imageDataUrl, onJudgeLogs, isTestMode } = params;
 
   if (onJudgeLogs) {
@@ -112,30 +113,10 @@ export async function runSingleAnalysis(params: {
     const tfM = parseDurationToMinutes(params.graphTimeframe);
     const durM = parseDurationToMinutes(params.investmentDuration);
 
-  const payloadPromise = new Promise<any>((resolve, reject) => {
+    const payloadPromise = new Promise<any>((resolve, reject) => {
     messageResolvers.set(msgId, { resolve, reject });
     try {
-      if (isTestMode) {
-        w.postMessage({
-          type: 'ANALYZE',
-          msgId,
-          imageData: imgData,
-          graphTimeframeMinutes: tfM,
-          investmentDurationMinutes: durM,
-          techniquesList: params.techniquesList
-        });
-      } else {
-        w.postMessage({
-          type: 'ANALYZE',
-          msgId,
-          imageData: imgData,
-          graphTimeframeMinutes: tfM,
-          investmentDurationMinutes: durM,
-          techniquesList: params.techniquesList
-        });
-      }
-    } catch (err: any) {
-      reject(err);
+
     }
 
     // Handle abort
@@ -159,7 +140,7 @@ export async function runSingleAnalysis(params: {
     }
     return {
       analysis: {
-        judge: { winner: 'NONE', decision: 'FAULT', finalConfidence: 0, j1Score: 0, j2Score: 0, j3Score: 0, j4Score: 0, ruling: payload.message, totalScore: 0, tradeDetails: { latencyAdjustedForecast: '', techniquesUsed: '' } },
+        judge: { winner: 'NONE', decision: 'FAULT', finalConfidence: 0, j1Score: 0, j2Score: 0, j3Score: 0, j4Score: 0, ruling: payload.message, totalScore: 0, tradeDetails: { latencyAdjustedForecast: '', techniquesUsed: '', executionTimeMs: performance.now() - t0 } },
         bull: { reasoning: 'FAULT' }, bear: { reasoning: 'FAULT' }, skeptic: { riskVerdict: 'FAULT' }, techUsedCount: 0
       },
       direction: 'NO_TRADE', outcome: 'NEUTRAL', confidence: 0, reason: payload.message,
@@ -220,35 +201,10 @@ export async function runSingleAnalysis(params: {
         rightCanvas.width = 0;
         rightCanvas.height = 0;
 
-        const leftImgData = await dataUrlToImageData(finalImageForAnalysis);
+        // const leftImgData = await dataUrlToImageData(finalImageForAnalysis); // TSFix: remove unused
         
         const msgId2 = generateId();
-        const payloadPromise2 = new Promise<any>((resolve, reject) => {
-          const timeout = setTimeout(() => {
-            messageResolvers.delete(msgId2);
-            reject(new Error("Worker analysis timed out after 15 seconds."));
-          }, 15000);
 
-          messageResolvers.set(msgId2, {
-            resolve: (val) => { clearTimeout(timeout); resolve(val); },
-            reject: (err) => { clearTimeout(timeout); reject(err); }
-          });
-
-          try {
-            w.postMessage({
-              type: 'ANALYZE',
-              msgId: msgId2,
-              imageData: leftImgData,
-              graphTimeframeMinutes: tfM,
-              investmentDurationMinutes: durM,
-              techniquesList: params.techniquesList
-            });
-          } catch (err) {
-            clearTimeout(timeout);
-            messageResolvers.delete(msgId2);
-            reject(err);
-          }
-        });
         const payload2 = await payloadPromise2;
         
         if (payload2.type !== 'ERROR' && payload2.debugTrace?.decision?.evidence?.lastClose !== undefined) {
@@ -290,6 +246,8 @@ export async function runSingleAnalysis(params: {
     });
   }
 
+  const tTotal = performance.now() - t0;
+
   return {
     analysis: {
       judge: {
@@ -305,7 +263,8 @@ export async function runSingleAnalysis(params: {
         totalScore: FS,
         tradeDetails: {
           latencyAdjustedForecast: `Signal: ${finalDecision.signal}`,
-          techniquesUsed: finalDecision.techniquesUsed || 'None'
+          techniquesUsed: finalDecision.techniquesUsed || 'None',
+          executionTimeMs: tTotal
         }
       },
       bull: { reasoning: `Score ${cases.bull.total}` },

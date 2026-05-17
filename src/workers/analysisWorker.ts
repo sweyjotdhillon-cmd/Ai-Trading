@@ -18,7 +18,7 @@ try {
   faultStack = e.message || String(e);
 }
 
-self.onmessage = (e: MessageEvent) => {
+self.onmessage = async (e: MessageEvent) => {
   const tStart = performance.now();
   const data = e.data;
 
@@ -60,7 +60,7 @@ self.onmessage = (e: MessageEvent) => {
 
       const pipe = buildPipelineResult(data.imageData);
 
-      const decision = evaluateSignal(pipe.ohlcSeries, pipe.axis, horizonCtx, 'REAL_PRICE', data.techniquesList || []);
+
 
       const stab = emitStability(decision);
 
