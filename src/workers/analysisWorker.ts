@@ -60,7 +60,7 @@ self.onmessage = (e: MessageEvent) => {
 
       const pipe = buildPipelineResult(data.imageData);
 
-      const decision = evaluateSignal(pipe.ohlcSeries, pipe.axis, horizonCtx, data.techniquesList); // TSFix: Define decision using evaluateSignal
+
 
       const stab = emitStability(decision);
 

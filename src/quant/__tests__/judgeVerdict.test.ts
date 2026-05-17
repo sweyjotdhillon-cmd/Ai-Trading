@@ -99,7 +99,7 @@ afterEach(() => {
 
   it('5. totals per judge never exceed cap', () => {
     const series = generateSeries('uptrend', 100);
-    const result = evaluateSignal(series, null, defaultCtx, ['__TEST_BYPASS__']); // TSFix: Add null for PriceAxisTransform
+
 
     expect(result.cases.bull.j1).toBeLessThanOrEqual(4);
     expect(result.cases.bear.j1).toBeLessThanOrEqual(4);
@@ -114,7 +114,7 @@ afterEach(() => {
   it('6. finalConfidence is integer between 0 and 100', () => {
     for (const type of ['uptrend', 'downtrend', 'sideways', 'explosive'] as const) {
       const series = generateSeries(type);
-      const result = evaluateSignal(series, null, defaultCtx, ['__TEST_BYPASS__']); // TSFix: Add null for PriceAxisTransform
+
 
       expect(result.finalConfidence).toBeGreaterThanOrEqual(0);
       expect(result.finalConfidence).toBeLessThanOrEqual(100);

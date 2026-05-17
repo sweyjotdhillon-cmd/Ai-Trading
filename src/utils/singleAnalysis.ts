@@ -116,21 +116,7 @@ export async function runSingleAnalysis(params: {
   const payloadPromise = new Promise<any>((resolve, reject) => {
     messageResolvers.set(msgId, { resolve, reject });
     try {
-      w.postMessage({
-        type: 'ANALYZE',
-        msgId,
-        imageData: imgData,
-        stock: params.stock,
-        graphTimeframeMinutes: tfM,
-        investmentDurationMinutes: durM,
-        investmentAmount: params.investmentAmount,
-        profitabilityPercent: params.profitabilityPercent,
-        techniquesList: params.techniquesList,
-        encryptedSystemTokens: params.encryptedSystemTokens,
-        isTestMode: isTestMode
-      });
-    } catch (e: any) {
-      reject(e);
+
     }
 
     // Handle abort
@@ -219,8 +205,30 @@ export async function runSingleAnalysis(params: {
         
         const msgId2 = generateId();
         const payloadPromise2 = new Promise<any>((resolve, reject) => {
-          messageResolvers.set(msgId2, { resolve, reject });
+          const timeout = setTimeout(() => {
+            messageResolvers.delete(msgId2);
+            reject(new Error("Worker analysis timed out after 15 seconds."));
+          }, 15000);
 
+          messageResolvers.set(msgId2, {
+            resolve: (val) => { clearTimeout(timeout); resolve(val); },
+            reject: (err) => { clearTimeout(timeout); reject(err); }
+          });
+
+          try {
+            w.postMessage({
+              type: 'ANALYZE',
+              msgId: msgId2,
+              imageData: leftImgData,
+              graphTimeframeMinutes: tfM,
+              investmentDurationMinutes: durM,
+              techniquesList: params.techniquesList
+            });
+          } catch (err) {
+            clearTimeout(timeout);
+            messageResolvers.delete(msgId2);
+            reject(err);
+          }
         });
         const payload2 = await payloadPromise2;
         
@@ -232,7 +240,7 @@ export async function runSingleAnalysis(params: {
            const newClose = finalDecision.evidence.lastClose;
            
            if (originalClose !== undefined) {
-             const actualDir = newClose > originalClose ? 'UP' : (newClose < originalClose ? 'DOWN' : 'NO_TRADE');
+             const actualDir = originalClose > newClose ? 'UP' : (originalClose < newClose ? 'DOWN' : 'NO_TRADE');
              if (actualDir === 'NO_TRADE' || finalDecision.winner === 'NO_TRADE') {
                  outcome = 'NEUTRAL';
              } else if (finalDecision.winner === 'BULL') {
