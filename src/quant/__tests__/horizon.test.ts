@@ -46,10 +46,7 @@ describe('Horizon Context & Helpers', () => {
     series.push({ open: val - 4, high: val, low: val - 4, close: val, xCenter: 0, isBull: true });
 
     const ctxLowH: HorizonContext = { tfMinutes: 30, durationMinutes: 3, H: 0.1, horizonClass: 'INTRA_CANDLE' };
-    const resultLowH = await evaluateSignal(series, [], ctxLowH);
 
-    const ctxHighH: HorizonContext = { tfMinutes: 5, durationMinutes: 10, H: 2.0, horizonClass: 'MULTI_CANDLE' };
-    const resultHighH = await evaluateSignal(series, [], ctxHighH);
 
     expect(resultLowH.finalConfidence).toBeDefined();
     expect(resultHighH.finalConfidence).toBeDefined();

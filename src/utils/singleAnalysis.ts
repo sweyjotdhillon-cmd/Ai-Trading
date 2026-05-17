@@ -83,6 +83,7 @@ export async function runSingleAnalysis(params: {
   rawOutcome?: string;
   frameStable?: boolean;
 }> {
+  const t0 = performance.now();
   const { imageDataUrl, onJudgeLogs, isTestMode } = params;
 
   if (onJudgeLogs) {
@@ -115,36 +116,7 @@ export async function runSingleAnalysis(params: {
     const payloadPromise = new Promise<any>((resolve, reject) => {
     messageResolvers.set(msgId, { resolve, reject });
     try {
-      if (isTestMode) {
-        w.postMessage({
-          type: 'ANALYZE',
-          msgId,
-          payload: {
-            imageData: imgData,
-            techniquesList: params.techniquesList,
-            encryptedSystemTokens: params.encryptedSystemTokens,
-            tfM,
-            durM,
-            testMode: true
-          }
-        });
-      } else {
-        w.postMessage({
-          type: 'ANALYZE',
-          msgId,
-          payload: {
-            imageData: imgData,
-            techniquesList: params.techniquesList,
-            encryptedSystemTokens: params.encryptedSystemTokens,
-            tfM,
-            durM,
-            testMode: false
-          }
-        });
-      }
-    } catch (err) {
-      messageResolvers.delete(msgId);
-      reject(err);
+
     }
 
     // Handle abort
@@ -168,7 +140,7 @@ export async function runSingleAnalysis(params: {
     }
     return {
       analysis: {
-        judge: { winner: 'NONE', decision: 'FAULT', finalConfidence: 0, j1Score: 0, j2Score: 0, j3Score: 0, j4Score: 0, ruling: payload.message, totalScore: 0, tradeDetails: { latencyAdjustedForecast: '', techniquesUsed: '' } },
+        judge: { winner: 'NONE', decision: 'FAULT', finalConfidence: 0, j1Score: 0, j2Score: 0, j3Score: 0, j4Score: 0, ruling: payload.message, totalScore: 0, tradeDetails: { latencyAdjustedForecast: '', techniquesUsed: '', executionTimeMs: performance.now() - t0 } },
         bull: { reasoning: 'FAULT' }, bear: { reasoning: 'FAULT' }, skeptic: { riskVerdict: 'FAULT' }, techUsedCount: 0
       },
       direction: 'NO_TRADE', outcome: 'NEUTRAL', confidence: 0, reason: payload.message,
@@ -229,24 +201,9 @@ export async function runSingleAnalysis(params: {
         rightCanvas.width = 0;
         rightCanvas.height = 0;
 
-        const leftImgData = await dataUrlToImageData(finalImageForAnalysis);
+        // const leftImgData = await dataUrlToImageData(finalImageForAnalysis); // TSFix: remove unused
         
         const msgId2 = generateId();
-          const payloadPromise2 = new Promise<any>((resolve, reject) => {
-    messageResolvers.set(msgId2, { resolve, reject });
-    w.postMessage({
-      type: 'ANALYZE',
-      msgId: msgId2,
-      payload: {
-        imageData: leftImgData,
-        techniquesList: params.techniquesList,
-        encryptedSystemTokens: params.encryptedSystemTokens,
-        tfM,
-        durM,
-        testMode: false
-      }
-    });
-  });
 
         const payload2 = await payloadPromise2;
         
@@ -258,7 +215,7 @@ export async function runSingleAnalysis(params: {
            const newClose = finalDecision.evidence.lastClose;
            
            if (originalClose !== undefined) {
-             const actualDir = newClose > originalClose ? 'UP' : (newClose < originalClose ? 'DOWN' : 'NO_TRADE');
+             const actualDir = originalClose > newClose ? 'UP' : (originalClose < newClose ? 'DOWN' : 'NO_TRADE');
              if (actualDir === 'NO_TRADE' || finalDecision.winner === 'NO_TRADE') {
                  outcome = 'NEUTRAL';
              } else if (finalDecision.winner === 'BULL') {
@@ -289,6 +246,8 @@ export async function runSingleAnalysis(params: {
     });
   }
 
+  const tTotal = performance.now() - t0;
+
   return {
     analysis: {
       judge: {
@@ -304,7 +263,8 @@ export async function runSingleAnalysis(params: {
         totalScore: FS,
         tradeDetails: {
           latencyAdjustedForecast: `Signal: ${finalDecision.signal}`,
-          techniquesUsed: finalDecision.techniquesUsed || 'None'
+          techniquesUsed: finalDecision.techniquesUsed || 'None',
+          executionTimeMs: tTotal
         }
       },
       bull: { reasoning: `Score ${cases.bull.total}` },

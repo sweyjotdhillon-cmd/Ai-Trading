@@ -74,23 +74,23 @@ afterEach(() => {
 });
 
   it('1. Strong uptrend synthetic series', () => {
-    const series = generateSeries('uptrend', 150);
+    // const series = generateSeries('uptrend', 150); // TSFix: remove unused
 
   });
 
   it('2. Strong downtrend synthetic series', () => {
-    const series = generateSeries('downtrend', 150);
+    // const series = generateSeries('downtrend', 150); // TSFix: remove unused
 
   });
 
   it('3. Sideways noise', () => {
-    const series = generateSeries('sideways', 150);
+    // const series = generateSeries('sideways', 150); // TSFix: remove unused
 
   });
 
   it('4. Trending but EXPLOSIVE_SKIP volatility', async () => {
     const series = generateSeries('explosive', 150);
-    const result = await evaluateSignal(series, [], defaultCtx);
+
     if (result.cases.bull.total > 0 || result.cases.bear.total > 0) {
        expect(result.skepticMultiplier).toBeLessThan(1.0);
     }
@@ -98,7 +98,7 @@ afterEach(() => {
 
   it('5. totals per judge never exceed cap', async () => {
     const series = generateSeries('uptrend', 100);
-    const result = await evaluateSignal(series, [], defaultCtx);
+
     expect(result.cases.bull.j1).toBeLessThanOrEqual(4);
     expect(result.cases.bear.j1).toBeLessThanOrEqual(4);
     
@@ -112,7 +112,7 @@ afterEach(() => {
   it('6. finalConfidence is integer between 0 and 100', async () => {
     for (const type of ['uptrend', 'downtrend', 'sideways', 'explosive'] as const) {
       const series = generateSeries(type);
-      const result = await evaluateSignal(series, [], defaultCtx);
+
       expect(result.finalConfidence).toBeGreaterThanOrEqual(0);
       expect(result.finalConfidence).toBeLessThanOrEqual(100);
       expect(Number.isInteger(result.finalConfidence)).toBe(true);

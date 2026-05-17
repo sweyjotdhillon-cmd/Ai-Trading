@@ -1,4 +1,4 @@
-import React from "react";
+import "react";
 import { motion, useReducedMotion } from "motion/react";
 
 export function TerminalPreview() {
