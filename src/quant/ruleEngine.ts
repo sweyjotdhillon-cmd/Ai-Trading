@@ -9,8 +9,6 @@ import { rsi, macd, bollinger, atr, stochastic } from './indicators';
 import { emaSlope, emaCurvature } from './calculus';
 
 
-} from './mathEngine';
-
 import { NumericOHLC } from '../vision/pipeline';
 import { HorizonContext, rescaledRangeHurst, PATTERN_WEIGHTS_BY_HORIZON } from './horizon';
 
@@ -44,7 +42,6 @@ export interface DecisionResult extends JudgeVerdict {
 }
 
 
-
   const defaultCases = { bull: { j1: 0, j2: 0, j3: 0, total: 0 }, bear: { j1: 0, j2: 0, j3: 0, total: 0 } };
   const defaultNoTrade: DecisionResult = {
     cases: defaultCases, skepticMultiplier: 1, winner: 'NO_TRADE', margin: 0, finalConfidence: 0, ruling: 'Insufficient data or techniques',
@@ -54,7 +51,7 @@ export interface DecisionResult extends JudgeVerdict {
   };
   
   if (ohlcSeries.length < 30) return defaultNoTrade;
-  if (techniquesList.length < 10 && !techniquesList.includes("__TEST_BYPASS__")) return defaultNoTrade;
+  if (!techniquesList || (techniquesList.length < 10 && !techniquesList.includes("__TEST_BYPASS__"))) return defaultNoTrade;
 
   const closes = ohlcSeries.map(c => c.close);
   const highs = ohlcSeries.map(c => c.high);
@@ -76,7 +73,7 @@ export interface DecisionResult extends JudgeVerdict {
 
   // --- R3: Expected Move ---
   // Brownian scaling (see Macroption)
-  const expectedMove = atrVals[last] * Math.sqrt(horizonCtx.H);
+  let expectedMoveVar = atrVals[last] * Math.sqrt(horizonCtx.H);
 
   let microRangeSum = 0;
   const recentCount = Math.min(5, closes.length - 1);
@@ -435,7 +432,7 @@ export interface DecisionResult extends JudgeVerdict {
   if (rqa.laminarity < 0.1 && rqa.determinism < 0.15) skepticMultiplier *= 0.5;
 
 
-  if (expectedMove < microRange * 0.2) {
+  if (expectedMoveVar < microRange * 0.2) {
      skepticMultiplier *= 0.1; // Extinguish confidence
   }
 
@@ -465,7 +462,7 @@ export interface DecisionResult extends JudgeVerdict {
     winner,
     margin,
     finalConfidence,
-    ruling,
+    ruling: 'Computed by point logic',
     
     // Legacy fields
     signal: winner === 'BULL' ? 'CALL' : (winner === 'BEAR' ? 'PUT' : 'NO_TRADE'),
