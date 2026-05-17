@@ -19,7 +19,7 @@ export function runDeterminismGuard(): boolean {
   let firstRes = '';
   for (let i = 0; i < 10; i++) {
     const pipe = buildPipelineResult(img);
-    const decision = evaluateSignal(pipe.ohlcSeries, pipe.axis, { tfMinutes: 30, durationMinutes: 5, H: 5/30, horizonClass: 'INTRA_CANDLE' }, 'REAL_PRICE', []);
+    const decision = evaluateSignal(pipe.ohlcSeries, pipe.axis, { tfMinutes: 30, durationMinutes: 5, H: 5/30, horizonClass: 'INTRA_CANDLE' }, []); // TSFix: remove quality argument
     
     const trace = JSON.stringify({
       signal: decision.signal,

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import { ParticleOrb } from "./ParticleOrb";
 import { TerminalPreview } from "./TerminalPreview";

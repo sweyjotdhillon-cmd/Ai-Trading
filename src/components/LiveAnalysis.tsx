@@ -72,9 +72,7 @@ import {   View,
   ScrollView, 
   ActivityIndicator, 
   TextInput,
-  Image,
 
-} from 'react-native';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { 
   CheckCircle, 
@@ -193,7 +191,7 @@ export function LiveAnalysis() {
   const [techFileName, setTechFileName] = useState<string | null>(null);
 
   const [confirmedOutcome, setConfirmedOutcome] = useState<'WIN' | 'LOSS' | null>(null);
-    const [testModeRightSlice, setTestModeRightSlice] = useState<string | null>(null);
+
   const [autoGradeStatus, setAutoGradeStatus] = useState<'idle' | 'grading' | 'done' | 'failed'>('idle');
   const [testModeLeftSlice, setTestModeLeftSlice] = useState<string | null>(null);
   const [autoGradeReason, setAutoGradeReason] = useState<string>('');
@@ -632,7 +630,7 @@ export function LiveAnalysis() {
 
     setTimeout(() => {
       (async () => {
-        let controller: AbortController | undefined;
+        // // let controller: AbortController | undefined; // TSFix: remove unused
         let timeoutId: any;
         try {
           setLoading(true);
@@ -683,9 +681,7 @@ export function LiveAnalysis() {
              }
           }
 
-          if (pipActive) {
-            const pipDir = (typeof result !== 'undefined' && result) ? (result.direction === 'UP' ? 'CALL' : result.direction === 'DOWN' ? 'PUT' : 'NO_TRADE') : 'NO_TRADE';
-            updatePip(pipDir, (typeof result !== 'undefined' && result && result.analysis && result.analysis.judge) ? result.analysis.judge.finalConfidence ?? 0 : 0);
+
           }
 
           if (result.direction !== 'NO_TRADE') {
@@ -779,7 +775,7 @@ export function LiveAnalysis() {
                 animate={{ scale: 1, opacity: 1 }}
                 exit={{ scale: 2, opacity: 0 }}
                 className={`flex-1 justify-center items-center absolute inset-0 ${tradingDirection === 'UP' ? 'bg-green-600' : (tradingDirection === 'DOWN' ? 'bg-red-600' : 'bg-yellow-700')}`}
-                style={{ display: 'flex', zIndex: 50, elevation: 50 }}
+                style={{ display: 'flex', zIndex: 50 }}
               >
                {/* High-speed scanning tech background */}
                <motion.div 
@@ -1415,6 +1411,16 @@ export function LiveAnalysis() {
                   </motion.span>
                 </Text>
               </View>
+              {analysis.judge.tradeDetails?.executionTimeMs !== undefined && (
+                <View style={tw`flex-1 min-w-[120px] p-3 bg-black bg-opacity-20 rounded-xl border border-white border-opacity-10`}>
+                  <Text style={tw`text-[8px] font-black text-[#8B95B0] uppercase mb-1`}>Execution Time</Text>
+                  <Text style={tw`text-[#60A5FA] font-black text-lg`}>
+                    <motion.span key={analysis.judge.tradeDetails.executionTimeMs} initial={{ y: prefersReducedMotion ? 0 : -6, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: prefersReducedMotion ? 0 : 0.2 }}>
+                      {Math.floor(analysis.judge.tradeDetails.executionTimeMs / 60000) > 0 ? `${Math.floor(analysis.judge.tradeDetails.executionTimeMs / 60000)}m ` : ''}{((analysis.judge.tradeDetails.executionTimeMs % 60000) / 1000).toFixed(2)}s
+                    </motion.span>
+                  </Text>
+                </View>
+              )}
             </View>
 
             {/* Manual Trade Result Declaration */}
