@@ -112,11 +112,39 @@ export async function runSingleAnalysis(params: {
     const tfM = parseDurationToMinutes(params.graphTimeframe);
     const durM = parseDurationToMinutes(params.investmentDuration);
 
-  const payloadPromise = new Promise<any>((resolve, reject) => {
+    const payloadPromise = new Promise<any>((resolve, reject) => {
     messageResolvers.set(msgId, { resolve, reject });
     try {
       if (isTestMode) {
-
+        w.postMessage({
+          type: 'ANALYZE',
+          msgId,
+          payload: {
+            imageData: imgData,
+            techniquesList: params.techniquesList,
+            encryptedSystemTokens: params.encryptedSystemTokens,
+            tfM,
+            durM,
+            testMode: true
+          }
+        });
+      } else {
+        w.postMessage({
+          type: 'ANALYZE',
+          msgId,
+          payload: {
+            imageData: imgData,
+            techniquesList: params.techniquesList,
+            encryptedSystemTokens: params.encryptedSystemTokens,
+            tfM,
+            durM,
+            testMode: false
+          }
+        });
+      }
+    } catch (err) {
+      messageResolvers.delete(msgId);
+      reject(err);
     }
 
     // Handle abort
@@ -204,10 +232,22 @@ export async function runSingleAnalysis(params: {
         const leftImgData = await dataUrlToImageData(finalImageForAnalysis);
         
         const msgId2 = generateId();
-        const payloadPromise2 = new Promise<any>((resolve, reject) => {
-          messageResolvers.set(msgId2, { resolve, reject });
+          const payloadPromise2 = new Promise<any>((resolve, reject) => {
+    messageResolvers.set(msgId2, { resolve, reject });
+    w.postMessage({
+      type: 'ANALYZE',
+      msgId: msgId2,
+      payload: {
+        imageData: leftImgData,
+        techniquesList: params.techniquesList,
+        encryptedSystemTokens: params.encryptedSystemTokens,
+        tfM,
+        durM,
+        testMode: false
+      }
+    });
+  });
 
-        });
         const payload2 = await payloadPromise2;
         
         if (payload2.type !== 'ERROR' && payload2.debugTrace?.decision?.evidence?.lastClose !== undefined) {

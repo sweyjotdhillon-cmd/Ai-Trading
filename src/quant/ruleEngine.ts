@@ -47,6 +47,12 @@ export interface DecisionResult extends JudgeVerdict {
 }
 
 
+export async function evaluateSignal(
+  ohlcSeries: NumericOHLC[],
+  techniquesList: string[],
+  horizonCtx: HorizonContext
+): Promise<DecisionResult> {
+
   const defaultCases = { bull: { j1: 0, j2: 0, j3: 0, total: 0 }, bear: { j1: 0, j2: 0, j3: 0, total: 0 } };
   const defaultNoTrade: DecisionResult = {
     cases: defaultCases, skepticMultiplier: 1, winner: 'NO_TRADE', margin: 0, finalConfidence: 0, ruling: 'Insufficient data or techniques',
@@ -242,7 +248,7 @@ export interface DecisionResult extends JudgeVerdict {
 
   // --- R4: Pattern Detection & Re-weighting ---
   const curr = ohlcSeries[last];
-  const prevCandle = ohlcSeries[prev];
+  const prevCandle = ohlcSeries[last - 1];
   const currBody = Math.abs(curr.close - curr.open);
   const currRange = curr.high - curr.low;
 
@@ -409,7 +415,7 @@ export interface DecisionResult extends JudgeVerdict {
       rsi: rsiVals[last],
       macd: macdVals.macd[last],
       macdHist: macdVals.hist[last],
-      bollMiddle: bollVals.middle[last],
-
+      bollMiddle: bollVals.middle[last]
+    }
   };
 }
