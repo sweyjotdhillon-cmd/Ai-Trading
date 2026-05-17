@@ -91,6 +91,7 @@ afterEach(() => {
   it('4. Trending but EXPLOSIVE_SKIP volatility', () => {
     const series = generateSeries('explosive', 150);
 
+    const result = evaluateSignal(series, ['__TEST_BYPASS__']);
     if (result.cases.bull.total > 0 || result.cases.bear.total > 0) {
        expect(result.skepticMultiplier).toBeLessThan(1.0);
     }
