@@ -467,7 +467,7 @@ export function evaluateSignal(ohlcSeries: NumericOHLC[], techniquesList: string
     winner,
     margin,
     finalConfidence,
-    ruling: 'Computed by point logic',
+    ruling: margin < 3 || rawWinningTotal < 7 ? 'NO TRADE: Constraints not met' : `Clear ${winner} edge.`,
     
     // Legacy fields
     signal: winner === 'BULL' ? 'CALL' : (winner === 'BEAR' ? 'PUT' : 'NO_TRADE'),
