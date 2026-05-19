@@ -38,7 +38,11 @@ export const processImageFile = (file: File, maxWidth: number, maxHeight: number
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = async (e) => {
-      const base64 = e.target?.result as string;
+      const base64 = e.target?.result;
+      if (typeof base64 !== 'string') {
+        reject(new Error('Invalid file data'));
+        return;
+      }
       try {
         const compressed = await compressImage(base64, maxWidth, maxHeight, quality);
         resolve(compressed);
@@ -142,7 +146,10 @@ export function autoDetectCandles(imageSource: string): Promise<number> {
         resolve(Math.max(30, Math.floor(width / 12)));
       }
     };
-    img.onerror = () => resolve(80);
+    img.onerror = () => {
+      console.error('autoDetectCandles failed to load image');
+      resolve(80);
+    };
     img.src = imageSource;
   });
 }
@@ -167,15 +174,23 @@ export function cropRightByRatio(
       const canvasLeft = document.createElement('canvas');
       canvasLeft.width = leftWidth;
       canvasLeft.height = height;
-      canvasLeft.getContext('2d')!
-        .drawImage(img, 0, 0, leftWidth, height, 0, 0, leftWidth, height);
+      const ctxLeft = canvasLeft.getContext('2d');
+      if (!ctxLeft) {
+        reject(new Error('Failed to get 2d context for canvasLeft'));
+        return;
+      }
+      ctxLeft.drawImage(img, 0, 0, leftWidth, height, 0, 0, leftWidth, height);
 
       // Right slice = the "answer key" — upscaled 2x for OCR clarity
       const upscale = 2;
       const canvasRight = document.createElement('canvas');
       canvasRight.width = Math.floor(cutWidth * upscale);
       canvasRight.height = Math.floor(height * upscale);
-      const ctxRight = canvasRight.getContext('2d')!;
+      const ctxRight = canvasRight.getContext('2d');
+      if (!ctxRight) {
+        reject(new Error('Failed to get 2d context for canvasRight'));
+        return;
+      }
       ctxRight.imageSmoothingEnabled = true;
       ctxRight.imageSmoothingQuality = 'high';
       ctxRight.drawImage(img, leftWidth, 0, cutWidth, height,
@@ -189,7 +204,11 @@ export function cropRightByRatio(
       const canvasAnchor = document.createElement('canvas');
       canvasAnchor.width = Math.floor(anchorTotalWidth * upscale);
       canvasAnchor.height = Math.floor(height * upscale);
-      const ctxAnchor = canvasAnchor.getContext('2d')!;
+      const ctxAnchor = canvasAnchor.getContext('2d');
+      if (!ctxAnchor) {
+        reject(new Error('Failed to get 2d context for canvasAnchor'));
+        return;
+      }
       ctxAnchor.imageSmoothingEnabled = true;
       ctxAnchor.imageSmoothingQuality = 'high';
       ctxAnchor.drawImage(
@@ -210,7 +229,7 @@ export function cropRightByRatio(
         cropRatio,
       });
     };
-    img.onerror = reject;
+    img.onerror = () => reject(new Error(`Failed to load image: ${imageSource}`));
     img.src = imageSource;
   });
 }
@@ -221,9 +240,11 @@ export const createTemporalDelta = (currentBase64: string, cachedBase64: string)
   momentum_magnitude: number,
   energy_ratio: number
 }> => {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const img1 = new Image();
     const img2 = new Image();
+    img1.onerror = reject;
+    img2.onerror = reject;
     let loaded = 0;
 
     const analyze = () => {
