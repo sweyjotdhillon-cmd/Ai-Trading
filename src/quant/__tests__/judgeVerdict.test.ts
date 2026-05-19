@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { evaluateSignal } from '../ruleEngine';
-import { HorizonContext } from '../horizon';
+// import { HorizonContext } from '../horizon';
 
-const defaultCtx: HorizonContext = { tfMinutes: 30, durationMinutes: 5, H: 5/30, horizonClass: 'INTRA_CANDLE' };
+// const defaultCtx: HorizonContext = { tfMinutes: 30, durationMinutes: 5, H: 5/30, horizonClass: 'INTRA_CANDLE' };
 import { NumericOHLC } from '../../vision/pipeline';
 
 function generateSeries(type: 'uptrend' | 'downtrend' | 'sideways' | 'explosive', length: number = 150): NumericOHLC[] {
@@ -99,6 +99,7 @@ afterEach(() => {
 
   it('5. totals per judge never exceed cap', async () => {
     const series = generateSeries('uptrend', 100);
+    const result = evaluateSignal(series, ['__TEST_BYPASS__']);
 
     expect(result.cases.bull.j1).toBeLessThanOrEqual(4);
     expect(result.cases.bear.j1).toBeLessThanOrEqual(4);
@@ -113,6 +114,7 @@ afterEach(() => {
   it('6. finalConfidence is integer between 0 and 100', async () => {
     for (const type of ['uptrend', 'downtrend', 'sideways', 'explosive'] as const) {
       const series = generateSeries(type);
+      const result = evaluateSignal(series, ['__TEST_BYPASS__']);
 
       expect(result.finalConfidence).toBeGreaterThanOrEqual(0);
       expect(result.finalConfidence).toBeLessThanOrEqual(100);

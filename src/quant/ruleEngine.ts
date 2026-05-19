@@ -7,6 +7,7 @@
  */
 import { rsi, macd, bollinger, atr, stochastic } from './indicators';
 import { emaSlope, emaCurvature } from './calculus';
+import { calculateHurst, calculateZScore, calculateZScoreSignificance, calculateVolatilityRegimeLegacy, calculateVolatilityRegime, calculateRQA, calculateEMADerivatives, calculateMicroMomentumScore, detectRSIDivergence } from './mathEngine';
 
 
 import { NumericOHLC } from '../vision/pipeline';
@@ -42,6 +43,7 @@ export interface DecisionResult extends JudgeVerdict {
 }
 
 
+export function evaluateSignal(ohlcSeries: NumericOHLC[], techniquesList: string[], horizonCtx: HorizonContext = { tfMinutes: 5, durationMinutes: 5, H: 0.5, horizonClass: 'SAME_CANDLE' }): DecisionResult {
   const defaultCases = { bull: { j1: 0, j2: 0, j3: 0, total: 0 }, bear: { j1: 0, j2: 0, j3: 0, total: 0 } };
   const defaultNoTrade: DecisionResult = {
     cases: defaultCases, skepticMultiplier: 1, winner: 'NO_TRADE', margin: 0, finalConfidence: 0, ruling: 'Insufficient data or techniques',
@@ -59,6 +61,7 @@ export interface DecisionResult extends JudgeVerdict {
 
   // Constants
   const last = closes.length - 1;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const prev = Math.max(0, last - 1);
 
 
@@ -73,7 +76,7 @@ export interface DecisionResult extends JudgeVerdict {
 
   // --- R3: Expected Move ---
   // Brownian scaling (see Macroption)
-  let expectedMoveVar = atrVals[last] * Math.sqrt(horizonCtx.H);
+  const expectedMoveVar = atrVals[last] * Math.sqrt(horizonCtx.H);
 
   let microRangeSum = 0;
   const recentCount = Math.min(5, closes.length - 1);
@@ -450,7 +453,9 @@ export interface DecisionResult extends JudgeVerdict {
   const rawWinningTotal = winner === 'BULL' ? cases.bull.total : (winner === 'BEAR' ? cases.bear.total : 0);
   
   // Only neutral if points are tied or practically tied, as requested by strict point system
-  if (margin < 0.5) winner = 'NO_TRADE';
+  if (margin < 3 || rawWinningTotal < 7) {
+    winner = 'NO_TRADE';
+  }
   
   const finalConfidence = Math.round((rawWinningTotal * skepticMultiplier / 11) * 100);
 
