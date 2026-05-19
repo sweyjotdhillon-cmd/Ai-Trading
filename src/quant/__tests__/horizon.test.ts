@@ -48,8 +48,11 @@ describe('Horizon Context & Helpers', () => {
     const ctxLowH = { tfMinutes: 30, durationMinutes: 3, H: 0.1, horizonClass: 'INTRA_CANDLE' } as const;
     const ctxHighH = { tfMinutes: 5, durationMinutes: 15, H: 3.0, horizonClass: 'MULTI_CANDLE' } as const;
 
-    const resultLowH = evaluateSignal(series, ['__TEST_BYPASS__'], ctxLowH);
-    const resultHighH = evaluateSignal(series, ['__TEST_BYPASS__'], ctxHighH);
+    const ctxLowH = {tfMinutes: 30, durationMinutes: 5, H: 0.1, horizonClass: 'INTRA_CANDLE' as any};
+    const ctxHighH = {tfMinutes: 30, durationMinutes: 5, H: 1.0, horizonClass: 'INTRA_CANDLE' as any};
+    const resultLowH = evaluateSignal(series, ctxLowH, ['__TEST_BYPASS__']);
+    const resultHighH = evaluateSignal(series, ctxHighH, ['__TEST_BYPASS__']);
+
 
 
 
