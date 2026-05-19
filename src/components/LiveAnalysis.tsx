@@ -72,8 +72,7 @@ import {   View,
   Pressable, 
   ScrollView, 
   ActivityIndicator, 
-  TextInput
-} from 'react-native';
+
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { 
   CheckCircle, 
@@ -184,7 +183,7 @@ export function LiveAnalysis() {
   
   // Investment Details
   const [investmentAmount, setInvestmentAmount] = useState('100');
-  const [investmentDuration, setInvestmentDuration] = useState('5m');
+  const [investmentDuration, setInvestmentDuration] = useState('3m');
   const [profitabilityPercent, setProfitabilityPercent] = useState('85');
 
   // Technique Files
@@ -293,7 +292,7 @@ export function LiveAnalysis() {
 
   const startPip = async (): Promise<boolean> => { if (!pipSupported) { alert('Picture-in-Picture is not supported in this browser. Use Chrome or Edge.'); return false; } try { const canvas = document.createElement('canvas'); canvas.width = 480; canvas.height = 270; pipCanvasRef.current = canvas; drawPipFrame('ANALYZING', 0, 'Switching to your broker now...'); const stream = canvas.captureStream(2); pipStreamRef.current = stream; const video = document.createElement('video'); video.srcObject = stream; video.muted = true; pipVideoRef.current = video; document.body.appendChild(video); await video.play(); await (video as any).requestPictureInPicture(); video.addEventListener('leavepictureinpicture', () => { setPipActive(false); setPipSignal('IDLE'); closePip(false); }); setPipActive(true); setPipSignal('ANALYZING'); const redraw = () => { drawPipFrame(pipSignal === 'IDLE' ? 'ANALYZING' : pipSignal, pipConfidence); pipAnimFrameRef.current = requestAnimationFrame(redraw); }; pipAnimFrameRef.current = requestAnimationFrame(redraw); return true; } catch (err: any) { console.error('[PiP] Failed to start:', err); if (err.name !== 'NotAllowedError') { alert(`PiP failed: ${err.message}`); } return false; } };
 
-  const updatePip = (signal: 'CALL' | 'PUT' | 'NO_TRADE', confidence: number) => { if (!pipActive || !pipCanvasRef.current) return; setPipSignal(signal); setPipConfidence(confidence); const subText = signal === 'NO_TRADE' ? 'Conditions unclear — skip this trade' : `${signal === 'CALL' ? 'Buy CALL' : 'Buy PUT'} — execute now`; drawPipFrame(signal, confidence, subText); if ('vibrate' in navigator) { navigator.vibrate(signal === 'NO_TRADE' ? [200] : [150, 80, 150]); } };
+  // const updatePip = (signal: 'CALL' | 'PUT' | 'NO_TRADE', confidence: number) => { if (!pipActive || !pipCanvasRef.current) return; setPipSignal(signal); setPipConfidence(confidence); const subText = signal === 'NO_TRADE' ? 'Conditions unclear — skip this trade' : `${signal === 'CALL' ? 'Buy CALL' : 'Buy PUT'} — execute now`; drawPipFrame(signal, confidence, subText); if ('vibrate' in navigator) { navigator.vibrate(signal === 'NO_TRADE' ? [200] : [150, 80, 150]); } };
 
   const handleReset = () => {
     setAnalysis(null);
@@ -312,7 +311,7 @@ export function LiveAnalysis() {
     setMode('live');
     setStockName('Bitcoin');
     setGraphTimeframe('30 minutes');
-    setInvestmentDuration('5m');
+    setInvestmentDuration('3m');
     setScoutActive(false);
     setScoutData(null);
     setLoading(false);
@@ -683,7 +682,7 @@ export function LiveAnalysis() {
           }
 
 
-        if (result.direction !== 'NO_TRADE') {
+
             setTradingDirection(result.direction);
             setTradingPhase('WAITING_FOR_ENTRY');
           } else {
@@ -711,7 +710,7 @@ export function LiveAnalysis() {
           const lowerMsg = msg.toLowerCase();
           
           if (error.name === 'AbortError' || lowerMsg.includes('aborted') || lowerMsg.includes('abort')) {
-            msg = "Analysis timed out (360s limit). The models are deep in thought. Please try again.";
+            msg = "Analysis timed out (120s limit). The models are deep in thought. Please try again.";
           } else if (lowerMsg.includes('failed to fetch') || lowerMsg.includes('fetch failed') || lowerMsg.includes('network error') || lowerMsg.includes('load failed')) {
             msg = "Network connection dropped (took too long or backend reset). Please try again or use a smaller chart timeframe.";
           }
@@ -824,7 +823,7 @@ export function LiveAnalysis() {
       </View>
     )}
 
-      {tradingPhase === 'WAITING_FOR_ENTRY' && tradingDirection && (
+      {mode === 'live' && tradingPhase === 'WAITING_FOR_ENTRY' && tradingDirection && (
           <AnimatedArrows direction={tradingDirection} />
       )}
 

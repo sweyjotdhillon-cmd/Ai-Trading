@@ -45,12 +45,15 @@ describe('Horizon Context & Helpers', () => {
     val += 5;
     series.push({ open: val - 4, high: val, low: val - 4, close: val, xCenter: 0, isBull: true });
 
-    const ctxLowH: HorizonContext = { tfMinutes: 30, durationMinutes: 3, H: 0.1, horizonClass: 'INTRA_CANDLE' };
-    const ctxHighH: HorizonContext = { tfMinutes: 30, durationMinutes: 60, H: 2.0, horizonClass: 'MULTI_CANDLE' };
+
+
 
     const resultLowH = evaluateSignal(series, ['__TEST_BYPASS__'], ctxLowH);
     const resultHighH = evaluateSignal(series, ['__TEST_BYPASS__'], ctxHighH);
 
+
+    const resultLowH = evaluateSignal(series, {tfMinutes: 30, durationMinutes: 5, H: 0.1, horizonClass: 'INTRA_CANDLE'}, ['__TEST_BYPASS__']);
+    const resultHighH = evaluateSignal(series, {tfMinutes: 30, durationMinutes: 5, H: 1.0, horizonClass: 'INTRA_CANDLE'}, ['__TEST_BYPASS__']);
 
     expect(resultLowH.finalConfidence).toBeDefined();
     expect(resultHighH.finalConfidence).toBeDefined();

@@ -34,8 +34,12 @@ self.onmessage = async (e: MessageEvent) => {
     return;
   }
 
+  let heartbeat: any;
   try {
     const data = e.data;
+    if (data.msgId) {
+      heartbeat = setInterval(() => { self.postMessage({ ok: true, stage: 'HEARTBEAT', payload: { type: 'HEARTBEAT', msgId: data.msgId, ts: Date.now() } }); }, 3000);
+    }
     
     if (data.type === 'CALIBRATE') {
       const { bullColor, bearColor } = data.payload;
@@ -58,9 +62,6 @@ self.onmessage = async (e: MessageEvent) => {
         horizonClass: hClass
       };
 
-      const t0Worker = performance.now();
-      const pipe = buildPipelineResult(data.imageData);
-      console.log(`[PERF] buildPipelineResult: ${(performance.now()-t0Worker).toFixed(1)}ms`);
 
 
 
@@ -106,5 +107,7 @@ self.onmessage = async (e: MessageEvent) => {
     }
   } catch (err: any) {
     sendErr('UNKNOWN', err.message || String(err), { msgId: e.data?.msgId });
+  } finally {
+    if (heartbeat) clearInterval(heartbeat);
   }
 };

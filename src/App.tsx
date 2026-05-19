@@ -110,9 +110,23 @@ function App() {
             </Pressable>
             
             <View style={{ marginLeft: 10 }}>
-              <View style={[styles.profilePlaceholder, { marginLeft: 0 }]}>
-                <LogIn color="#1A1308" size={16} />
-              </View>
+              <Pressable
+                style={({ pressed }) => [styles.profilePlaceholder, { marginLeft: 0 }, { opacity: pressed ? 0.7 : 1 }]}
+                onPress={() => {
+                  if (typeof window !== 'undefined') {
+                    window.location.reload();
+                  }
+                }}
+              >
+                <motion.div
+                  whileHover={prefersReducedMotion ? {} : { scale: 1.04 }}
+                  whileTap={prefersReducedMotion ? {} : { scale: 0.96 }}
+                  transition={springProps}
+                  style={{ display: 'contents' }}
+                >
+                  <LogIn color="#1A1308" size={16} />
+                </motion.div>
+              </Pressable>
             </View>
           </View>
         </View>
