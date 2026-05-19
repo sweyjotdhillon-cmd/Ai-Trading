@@ -124,6 +124,7 @@ export async function runSingleAnalysis(params: {
         investmentDurationMinutes: durM
       });
 
+
     // Handle abort
     params.signal.addEventListener('abort', () => {
       messageResolvers.delete(msgId);
@@ -207,18 +208,6 @@ export async function runSingleAnalysis(params: {
         rightCanvas.height = 0;
 
         const leftImgData = await dataUrlToImageData(finalImageForAnalysis);
-        
-        const msgId2 = generateId();
-        const payloadPromise2 = new Promise<any>((resolve, reject) => {
-          messageResolvers.set(msgId2, { resolve, reject });
-          w.postMessage({
-            type: 'ANALYZE',
-            msgId: msgId2,
-            payload: leftImgData,
-            techniquesList: params.techniquesList,
-            graphTimeframeMinutes: tfM,
-            investmentDurationMinutes: durM
-          });
 
           params.signal.addEventListener('abort', () => {
             messageResolvers.delete(msgId2);

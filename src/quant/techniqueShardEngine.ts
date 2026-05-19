@@ -426,7 +426,7 @@ export function evaluateShard(
 export async function evaluateAllShards(
   techniquesList: string[],
   ohlcSeries: NumericOHLC[],
-  /* _horizonCtx: HorizonContext */
+
 ): Promise<{
   votes: TechniqueVote[];
   proofTokens: string;

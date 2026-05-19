@@ -136,6 +136,21 @@ export function BulkTestPanel({
   const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
+    if ((Platform.OS as string) === 'web') {
+      const handleGlobalDragOver = (e: any) => e.preventDefault();
+      const handleGlobalDrop = (e: any) => e.preventDefault();
+
+      window.addEventListener('dragover', handleGlobalDragOver, { passive: false });
+      window.addEventListener('drop', handleGlobalDrop, { passive: false });
+
+      return () => {
+        window.removeEventListener('dragover', handleGlobalDragOver);
+        window.removeEventListener('drop', handleGlobalDrop);
+      };
+    }
+  }, []);
+
+  useEffect(() => {
     if (isQueueRunning && !isPaused) {
       requestLock();
     } else {
@@ -230,7 +245,6 @@ export function BulkTestPanel({
   };
 
 
-  const startRun = async () => {
     if (queue.length === 0 || manifestErrors.length > 0) return;
     
     const missing = queue.filter(q => !q.file && !q.entry.imageData && q.status === 'Pending');
@@ -243,13 +257,11 @@ export function BulkTestPanel({
     setIsPaused(false);
     abortControllerRef.current = new AbortController();
 
-    const CONCURRENCY_LIMIT = 15;
+    const CONCURRENCY_LIMIT = 1;
     let currentIndex = 0;
-    let hasErrorHalted = false;
-
     const workerLoop = async () => {
       while (currentIndex < queue.length) {
-        if (abortControllerRef.current?.signal.aborted || isPaused || hasErrorHalted) break;
+        if (abortControllerRef.current?.signal.aborted || isPaused ) break;
         
         const i = currentIndex++;
         const item = queue[i];
@@ -279,7 +291,7 @@ export function BulkTestPanel({
           }
 
 
-          const result = await runWithTimeout(runSingleAnalysis({
+          const result = await runSingleAnalysis({
             imageDataUrl,
             stock: item.entry.stock || stockName,
             graphTimeframe: item.entry.graphTimeframe || graphTimeframe,
@@ -290,7 +302,7 @@ export function BulkTestPanel({
             encryptedSystemTokens,
             signal: abortControllerRef.current!.signal,
             isTestMode: true
-          }), TIMEOUTS.BATCH_ITEM_MS);
+          });
           
           if (isObjectUrl) {
              URL.revokeObjectURL(imageDataUrl);
@@ -309,13 +321,9 @@ export function BulkTestPanel({
             setQueue(q => q.map((r, idx) => idx === i ? { ...r, status: 'Pending' } : r));
             break;
           }
+          console.error(`[BulkTest] Item ${i + 1} failed:`, err.message);
           setQueue(q => q.map((r, idx) => idx === i ? { ...r, status: 'Error', error: err.message } : r));
-          
-          if (!hasErrorHalted) {
 
-            hasErrorHalted = true;
-          }
-          break;
         }
 
         // No massive delay, just briefly yield to event loop
@@ -330,12 +338,13 @@ export function BulkTestPanel({
     // After running, fetch the latest queue state logically
     setQueue(currentQueue => {
        const losses = currentQueue.filter(q => q.status === 'LOSS' && q.result);
-       if (losses.length > 0 && !hasErrorHalted && !abortControllerRef.current?.signal.aborted && !isPaused) {
+       if (losses.length > 0 && !abortControllerRef.current?.signal.aborted && !isPaused) {
           setTimeout(() => runMasterAutopsyChain(losses).catch(e => console.error("master autopsy error:", e)), 0);
        }
        return currentQueue;
     });
   };
+
 
 
   const [autopsyingBatch, setAutopsyingBatch] = useState(false);
@@ -422,21 +431,60 @@ export function BulkTestPanel({
         {tab === 'build' ? (
           <View style={tw`gap-6`}>
             {/* Same Tab 1 as before */}
-            <Pressable 
-              onPress={() => {
-                if (Platform.OS === 'web') {
+            {(Platform.OS as string) === 'web' ? (
+              <div
+                onClick={() => {
                   document.getElementById('bulk-image-upload')?.click();
-                }
-              }}
-              style={({ pressed }) => [
-                tw`border-2 border-dashed border-white border-opacity-10 rounded-xl p-8 flex-col items-center justify-center bg-black bg-opacity-20 relative`,
-                { opacity: pressed ? 0.7 : 1 }
-              ]}
-              // @ts-expect-error React Native type discrepancy for web events
-              onDragOver={handleDragOver} 
-              onDrop={handleDropImages}
-            >
-              {Platform.OS === 'web' && (
+                }}
+                onDragOver={handleDragOver as any}
+                onDrop={handleDropImages as any}
+                style={{ cursor: 'pointer', width: '100%', height: '100%' }}
+                className="hover:opacity-70 transition-opacity"
+              >
+                <View style={tw`border-2 border-dashed border-white border-opacity-10 rounded-xl p-8 flex-col items-center justify-center bg-black bg-opacity-20 relative`}>
+
+              {(Platform.OS as string) === 'web' && (
+                <input
+                  id="bulk-image-upload"
+                  type="file"
+                  multiple
+                  accept="image/*"
+                  onChange={handleFileSelect}
+                  style={{ display: 'none' }}
+                />
+              )}
+              <UploadCloud size={32} color="#D9B382" style={{ opacity: 0.8, marginBottom: 16 }} />
+              <Text style={tw`text-white font-black text-sm uppercase tracking-widest mb-2`}>
+                Drag & Drop or Click to Upload
+              </Text>
+              <Text style={tw`text-white text-[10px] text-opacity-40 uppercase font-bold tracking-widest mb-3 text-center`}>
+                Max Recommended Batch Size: Unlimited (Offline Engine)
+              </Text>
+              <Text style={tw`text-white text-opacity-50 text-xs text-center px-4`}>
+                Drop chart screenshots here to generate a matching JSON manifest sequence.
+              </Text>
+              {images.length > 0 && (
+                <View style={tw`mt-4 bg-[#D9B382] bg-opacity-10 py-1 px-3 rounded-md`}>
+                  <Text style={tw`text-[#D9B382] font-black text-[10px]`}>{images.length} IMAGES LOADED</Text>
+                </View>
+              )}
+
+                </View>
+              </div>
+            ) : (
+              <Pressable
+                onPress={() => {
+                  if ((Platform.OS as string) === 'web') {
+                    document.getElementById('bulk-image-upload')?.click();
+                  }
+                }}
+                style={({ pressed }) => [
+                  tw`border-2 border-dashed border-white border-opacity-10 rounded-xl p-8 flex-col items-center justify-center bg-black bg-opacity-20 relative`,
+                  { opacity: pressed ? 0.7 : 1 }
+                ]}
+              >
+
+              {(Platform.OS as string) === 'web' && (
                 <input 
                   id="bulk-image-upload" 
                   type="file" 
@@ -461,7 +509,9 @@ export function BulkTestPanel({
                   <Text style={tw`text-[#D9B382] font-black text-[10px]`}>{images.length} IMAGES LOADED</Text>
                 </View>
               )}
-            </Pressable>
+
+              </Pressable>
+            )}
 
             <View style={tw`pt-4 border-t border-white border-opacity-10`}>
               <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
@@ -482,11 +532,13 @@ export function BulkTestPanel({
           <View style={tw`gap-6`}>
              {queue.length === 0 ? (
                <View style={tw`gap-4`}>
-                 <View style={tw`bg-black bg-opacity-30 border border-white border-opacity-10 rounded-xl p-6`}>
-                   <Text style={tw`text-white font-black text-[10px] uppercase tracking-widest mb-4`}>1. Load Manifest JSON</Text>
-                   <input type="file" accept=".json" onChange={loadManifest} className="text-white text-xs opacity-70" />
+                 <View style={tw`bg-black bg-opacity-30 border-2 border-dashed border-white border-opacity-20 rounded-xl p-8 items-center justify-center relative overflow-hidden`}>
+                   <UploadCloud size={32} color="#D9B382" className="mb-3 opacity-80" />
+                   <Text style={tw`text-[#D9B382] font-black text-[12px] uppercase tracking-widest mb-1`}>1. Load Manifest JSON</Text>
+                   <Text style={tw`text-white text-opacity-50 text-[10px]`}>Tap to select manifest file</Text>
+                   <input type="file" accept=".json" onChange={loadManifest} className="opacity-0 absolute inset-0 w-full h-full cursor-pointer z-10" />
                    {manifestErrors.map((err, i) => (
-                     <Text key={i} style={tw`text-red-400 text-xs mt-2`}>• {err}</Text>
+                     <Text key={i} style={tw`text-red-400 text-xs mt-4`}>• {err}</Text>
                    ))}
                  </View>
                </View>

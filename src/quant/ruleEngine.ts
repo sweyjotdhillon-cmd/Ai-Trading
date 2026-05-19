@@ -1,5 +1,4 @@
-import { calculateHurst, calculateZScore, calculateEMADerivatives, calculateMicroMomentumScore, calculateVolatilityRegime, calculateZScoreSignificance, calculateRQA, detectRSIDivergence, calculateVolatilityRegimeLegacy } from './mathEngine';
-import { calculateHurst, calculateZScore, calculateEMADerivatives, calculateMicroMomentumScore, calculateVolatilityRegimeLegacy, calculateZScoreSignificance, calculateRQA, detectRSIDivergence } from './mathEngine';
+
 /**
  * CHANGELOG
  * Restructured judge system to follow deterministic point-based logic.
@@ -8,12 +7,15 @@ import { calculateHurst, calculateZScore, calculateEMADerivatives, calculateMicr
  * Preserved legacy keys (signal, confidence, bullScore, bearScore, etc.) for backward compatibility.
  */
 import { rsi, macd, bollinger, atr, stochastic } from './indicators';
+import { calculateHurst, calculateZScore, calculateEMADerivatives, calculateMicroMomentumScore, calculateVolatilityRegime, detectRSIDivergence, calculateVolatilityRegimeLegacy, calculateZScoreSignificance, calculateRQA } from './mathEngine';
 import { emaSlope, emaCurvature } from './calculus';
-import { calculateHurst, calculateZScore, calculateZScoreSignificance, calculateVolatilityRegimeLegacy, calculateVolatilityRegime, calculateRQA, calculateEMADerivatives, calculateMicroMomentumScore, detectRSIDivergence } from './mathEngine';
+
 
 
 import { NumericOHLC } from '../vision/pipeline';
 import { HorizonContext, rescaledRangeHurst, PATTERN_WEIGHTS_BY_HORIZON } from './horizon';
+import { featureFlags } from '../config/featureFlags';
+import { patternWeights } from '../config/patternWeights';
 
 export interface CaseScore {
   j1: number;
@@ -46,17 +48,30 @@ export interface DecisionResult extends JudgeVerdict {
 
 
 
-export function evaluateSignal(ohlcSeries: NumericOHLC[], techniquesList: string[], horizonCtx: HorizonContext, /* _debugLabel: string = 'UNKNOWN' */): DecisionResult {
   const defaultCases = { bull: { j1: 0, j2: 0, j3: 0, total: 0 }, bear: { j1: 0, j2: 0, j3: 0, total: 0 } };
   const defaultNoTrade: DecisionResult = {
-    cases: defaultCases, skepticMultiplier: 1, winner: 'NO_TRADE', margin: 0, finalConfidence: 0, ruling: 'Insufficient data or techniques',
-    signal: 'NO_TRADE', confidence: 0, bullScore: 0, bearScore: 0,
-    skepticPenalty: 0, boundaryBias: 0, finalScore: 0, evidence: {},
-    techniquesUsed: '', techUsedCount: 0
+    cases: defaultCases,
+    skepticMultiplier: 0,
+    winner: 'NO_TRADE',
+    margin: 0,
+    finalConfidence: 0,
+    ruling: 'Not enough data',
+    signal: 'NO_TRADE',
+    confidence: 0,
+    bullScore: 0,
+    bearScore: 0,
+    skepticPenalty: 0,
+    boundaryBias: 0,
+    finalScore: 0,
+    evidence: {}
   };
-  
+
   if (ohlcSeries.length < 30) return defaultNoTrade;
   if (!techniquesList || (techniquesList.length < 10 && !techniquesList.includes("__TEST_BYPASS__"))) return defaultNoTrade;
+
+  let bullJ1 = 0, bullJ2 = 0, bullJ3 = 0;
+  let bearJ1 = 0, bearJ2 = 0, bearJ3 = 0;
+  let skepticMultiplier = 1.0;
 
   const closes = new Float64Array(ohlcSeries.length);
   const highs = new Float64Array(ohlcSeries.length);
@@ -72,7 +87,6 @@ export function evaluateSignal(ohlcSeries: NumericOHLC[], techniquesList: string
 
 
 
-
   // Compute indicators
   const rsiVals = rsi(closes as unknown as number[], 14);
   const macdVals = macd(closes as unknown as number[], 12, 26, 9);
@@ -84,7 +98,7 @@ export function evaluateSignal(ohlcSeries: NumericOHLC[], techniquesList: string
 
   // --- R3: Expected Move ---
   // Brownian scaling (see Macroption)
-  const expectedMoveVar = atrVals[last] * Math.sqrt(horizonCtx.H);
+
 
   let microRangeSum = 0;
   const recentCount = Math.min(5, closes.length - 1);
@@ -95,11 +109,10 @@ export function evaluateSignal(ohlcSeries: NumericOHLC[], techniquesList: string
 
 
   // --- R6: Slope Strength ---
-  const slopeStrength = atrVals[last] > 0 ? Math.abs(slope[last]) / atrVals[last] : 0;
 
 
-  let bullJ1 = 0, bullJ2 = 0, bullJ3 = 0;
-  let bearJ1 = 0, bearJ2 = 0, bearJ3 = 0;
+
+
 
   // --- 3-5 MINUTE BINARY MATH ENGINE ---
   // 1. Hurst Exponent (Mean Reversion)
@@ -126,7 +139,6 @@ export function evaluateSignal(ohlcSeries: NumericOHLC[], techniquesList: string
   if (microMom === -3) bearJ1 += 2.0;
 
   // 5. Volatility Regime
-  let skepticMultiplier = 1.0;
   // Removed redeclared skeptic multiplier
   const regime = calculateVolatilityRegime(atrVals);
   if (regime === 'HIGH') {
@@ -406,8 +418,19 @@ export function evaluateSignal(ohlcSeries: NumericOHLC[], techniquesList: string
   bearJ3 = Math.min(3, bearJ3);
 
 
+  // --- New Feature: Candlestick Pattern Evidence ---
+  if (featureFlags.enableCandlestickRepoPatterns && confirmedPatterns) {
+    confirmedPatterns.forEach(ev => {
+      if (ev.direction === 'BULL') bullJ1 += patternWeights.BULLISH;
+      if (ev.direction === 'BEAR') bearJ1 += patternWeights.BEARISH;
+    });
+    // Ensure we don't bypass caps after applying the modifier
+    bullJ1 = Math.min(4, bullJ1);
+    bearJ1 = Math.min(4, bearJ1);
+  }
+
   // --- R5: Hurst Balancer ---
-  const H_exp = rescaledRangeHurst(closes.slice(-32));
+  const H_exp = rescaledRangeHurst(Array.from(closes).slice(-32));
   if (!isNaN(H_exp)) {
     if (H_exp > 0.55) {
        // Trending regime
@@ -429,8 +452,8 @@ export function evaluateSignal(ohlcSeries: NumericOHLC[], techniquesList: string
   // Removed redeclared skeptic multiplier
   const candlesForMathEngine = ohlcSeries.map((c, i) => ({ ...c, prevClose: i > 0 ? ohlcSeries[i-1].close : c.open }));
   
-  const vol = calculateVolatilityRegimeLegacy(Array.from(candlesForMathEngine.slice(-20)));
-  if (vol.status === 'EXPLOSIVE_SKIP') skepticMultiplier *= 0.5;
+
+
 
   const zScoreData = calculateZScoreSignificance(candlesForMathEngine.slice(-21));
   if (Math.abs(zScoreData.zScore) > 2.5) skepticMultiplier *= 0.6;
@@ -443,9 +466,13 @@ export function evaluateSignal(ohlcSeries: NumericOHLC[], techniquesList: string
   if (rqa.laminarity < 0.1 && rqa.determinism < 0.15) skepticMultiplier *= 0.5;
 
 
+
   if (expectedMoveVar < microRange * 0.2) {
      skepticMultiplier *= 0.1; // Extinguish confidence
   }
+
+  const slopeSeries = emaSlope(Array.from(closes), 9);
+  slopeStrength = slopeSeries.length > 0 ? Math.abs(slopeSeries[slopeSeries.length - 1]) : 0;
 
   // R6: Slope strength gate
   if (slopeStrength < 0.15) {

@@ -67,13 +67,6 @@ export function useWakeLock() {
   return { requestLock, releaseLock };
 }
 
-import {   View, 
-  Text, 
-  Pressable, 
-  ScrollView, 
-  ActivityIndicator, 
-  TextInput
-} from 'react-native';
 
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { 
@@ -185,7 +178,7 @@ export function LiveAnalysis() {
   
   // Investment Details
   const [investmentAmount, setInvestmentAmount] = useState('100');
-  const [investmentDuration, setInvestmentDuration] = useState('5m');
+  const [investmentDuration, setInvestmentDuration] = useState('3m');
   const [profitabilityPercent, setProfitabilityPercent] = useState('85');
 
   // Technique Files
@@ -313,7 +306,7 @@ export function LiveAnalysis() {
     setMode('live');
     setStockName('Bitcoin');
     setGraphTimeframe('30 minutes');
-    setInvestmentDuration('5m');
+    setInvestmentDuration('3m');
     setScoutActive(false);
     setScoutData(null);
     setLoading(false);
@@ -512,6 +505,18 @@ export function LiveAnalysis() {
     }
   };
 
+
+  const handleDrop = (e: any) => {
+    e.preventDefault();
+    const file = e.dataTransfer?.files[0];
+    if (file && file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = () => setSelectedImage(reader.result as string);
+      reader.readAsDataURL(file);
+    }
+  };
+  const preventDefault = (e: any) => e.preventDefault();
+
   const handlePickTechnique = () => {
     if (Platform.OS === 'web') {
       techInputRef.current?.click();
@@ -632,7 +637,7 @@ export function LiveAnalysis() {
 
     setTimeout(() => {
       (async () => {
-        // // let controller: AbortController | undefined; // TSFix: remove unused
+        let controller: AbortController | undefined;
         let timeoutId: any;
         try {
           setLoading(true);
@@ -683,14 +688,6 @@ export function LiveAnalysis() {
              }
           }
 
-
-          if (result.direction !== 'NO_TRADE') {
-            setTradingDirection(result.direction);
-            setTradingPhase('WAITING_FOR_ENTRY');
-          } else {
-            setTradingDirection(null);
-            setTradingPhase('IDLE');
-          }
 
           setTimeout(() => {
             if (result.direction !== 'NO_TRADE') {
@@ -825,7 +822,7 @@ export function LiveAnalysis() {
       </View>
     )}
 
-      {tradingPhase === 'WAITING_FOR_ENTRY' && tradingDirection && (
+      {mode === 'live' && tradingPhase === 'WAITING_FOR_ENTRY' && tradingDirection && (
           <AnimatedArrows direction={tradingDirection} />
       )}
 
@@ -1039,6 +1036,10 @@ export function LiveAnalysis() {
             {mode === 'test' && (
               <Pressable
                 onPress={handlePickImage}
+                // @ts-expect-error React Native Web missing typings
+                onDrop={handleDrop}
+                onDragOver={preventDefault}
+                onDragEnter={preventDefault}
                 style={({ pressed }) => [
                   tw`h-32 w-full rounded-xl bg-black bg-opacity-20 overflow-hidden border items-center justify-center`,
                   selectedImage ? tw`border-[#D9B382] border-opacity-20 ` : tw`border-dashed border-white border-opacity-10`,

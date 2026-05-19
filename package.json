@@ -14,6 +14,7 @@
     "@react-three/drei": "^9.114.0",
     "@react-three/fiber": "^8.17.10",
     "@react-three/postprocessing": "^2.16.3",
+    "candlestick": "^1.2.0",
     "cors": "^2.8.6",
     "d3": "^7.9.0",
     "express": "^5.2.1",

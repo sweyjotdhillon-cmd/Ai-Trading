@@ -1,5 +1,6 @@
 
 
+
 export async function runDeterminismGuard(): Promise<boolean> {
   const w = 64;
   const h = 64;
@@ -12,14 +13,14 @@ export async function runDeterminismGuard(): Promise<boolean> {
   for (let i = 0; i < w * h * 4; i++) {
     imgData[i] = Math.floor(rnd() * 255);
   }
-  /* const img = new ImageData(imgData, w, h); */
+
 
   let firstRes = '';
   for (let i = 0; i < 10; i++) {
     // const pipe = buildPipelineResult(img);
 
     
-    const decision = evaluateSignal(pipe.ohlcSeries, []);
+
     const trace = JSON.stringify({
       signal: decision.signal,
       confidence: decision.confidence,
