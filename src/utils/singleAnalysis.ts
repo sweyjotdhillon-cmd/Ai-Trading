@@ -199,8 +199,28 @@ export async function runSingleAnalysis(params: {
         rightCanvas.height = 0;
 
         const leftImgData = await dataUrlToImageData(finalImageForAnalysis);
-        
-
+        const payloadPromise2 = new Promise<any>((resolve, reject) => {
+          messageResolvers.set(msgId2, { resolve, reject });
+          try {
+            w.postMessage({
+              type: 'ANALYZE',
+              msgId: msgId2,
+              imageData: leftImgData,         // the cropped left slice
+              graphTimeframeMinutes: tfM,
+              investmentDurationMinutes: durM,
+              techniquesList: params.techniquesList,
+              stock: params.stock,
+              investmentAmount: parseFloat(params.investmentAmount),
+              profitabilityPercent: parseFloat(params.profitabilityPercent),
+            });
+          } catch (err) {
+            reject(err);
+          }
+          params.signal.addEventListener('abort', () => {
+            messageResolvers.delete(msgId2);
+            reject(new Error('Aborted'));
+          });
+        });
 
         const payload2 = await payloadPromise2;
         

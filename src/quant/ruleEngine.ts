@@ -8,6 +8,7 @@ import { calculateHurst, calculateZScore, calculateEMADerivatives, calculateMicr
  * Preserved legacy keys (signal, confidence, bullScore, bearScore, etc.) for backward compatibility.
  */
 import { rsi, macd, bollinger, atr, stochastic } from './indicators';
+import { calculateHurst, calculateZScore, calculateEMADerivatives, calculateMicroMomentumScore, calculateVolatilityRegime, detectRSIDivergence, calculateVolatilityRegimeLegacy, calculateZScoreSignificance, calculateRQA } from './mathEngine';
 import { emaSlope, emaCurvature } from './calculus';
 
 
@@ -43,18 +44,6 @@ export interface DecisionResult extends JudgeVerdict {
   techniquesUsed?: string;
   techUsedCount?: number;
 }
-
-export function evaluateSignal(
-  ohlcSeries: NumericOHLC[],
-  techniquesList: string[],
-  horizonCtx: HorizonContext,
-  microRange: number = 0.001,
-  slopeStrength: number = 0,
-  expectedMoveVar: number = 0
-): DecisionResult {
-  let bullJ1 = 0, bearJ1 = 0, bullJ2 = 0, bearJ2 = 0, bullJ3 = 0, bearJ3 = 0;
-  let skepticMultiplier = 1.0;
-
 
 
   

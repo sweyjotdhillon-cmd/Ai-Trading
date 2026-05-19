@@ -72,10 +72,9 @@ import {   View,
   Text, 
   Pressable, 
   ScrollView, 
-  ActivityIndicator, 
-
-} from 'react-native';
-
+  ActivityIndicator,
+  Image,
+} from "react-native";
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { 
   CheckCircle, 
@@ -645,7 +644,7 @@ export function LiveAnalysis() {
 
     setTimeout(() => {
       (async () => {
-        // // let controller: AbortController | undefined; // TSFix: remove unused
+        let controller: AbortController | undefined;
         let timeoutId: any;
         try {
           setLoading(true);
@@ -695,14 +694,12 @@ export function LiveAnalysis() {
                 setAutoGradeStatus('failed');
              }
           }
-
-
-          if (result.direction !== 'NO_TRADE') {
+          if (result.direction !== "NO_TRADE") {
             setTradingDirection(result.direction);
-            setTradingPhase('WAITING_FOR_ENTRY');
+            setTradingPhase("WAITING_FOR_ENTRY");
           } else {
             setTradingDirection(null);
-            setTradingPhase('IDLE');
+            setTradingPhase("IDLE");
           }
 
           setTimeout(() => {

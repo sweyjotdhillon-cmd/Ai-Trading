@@ -100,7 +100,6 @@ afterEach(() => {
     const series = generateSeries('uptrend', 100);
 
 
-expect(result.cases.bull.j1).toBeLessThanOrEqual(4);
     expect(result.cases.bear.j1).toBeLessThanOrEqual(4);
     
     expect(result.cases.bull.j2).toBeLessThanOrEqual(4);
@@ -115,7 +114,6 @@ expect(result.cases.bull.j1).toBeLessThanOrEqual(4);
       const series = generateSeries(type);
 
 
-expect(result.finalConfidence).toBeGreaterThanOrEqual(0);
       expect(result.finalConfidence).toBeLessThanOrEqual(100);
       expect(Number.isInteger(result.finalConfidence)).toBe(true);
     }

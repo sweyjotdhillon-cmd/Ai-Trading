@@ -62,14 +62,20 @@ self.onmessage = async (e: MessageEvent) => {
         horizonClass: hClass
       };
 
-      const t0 = performance.now();
-      self.postMessage({ ok: true, stage: 'PROGRESS', payload: { type: 'PROGRESS', msgId: data.msgId, stage: 'OHLC_READY', pct: 10 } });
-      const pipe = buildPipelineResult(data.imageData);
-      self.postMessage({ ok: true, stage: 'PROGRESS', payload: { type: 'PROGRESS', msgId: data.msgId, stage: 'INDICATORS', pct: 40 } });
-      console.log(`[PERF] Pipeline build: ${(performance.now() - t0).toFixed(1)}ms`);
 
 
 
+      const t1Worker = performance.now();
+      const decision = evaluateSignal(
+        pipe.ohlcSeries,
+        data.techniquesList,
+        horizonCtx,
+        pipe.axis,
+        pipe.meta.mode,
+        undefined
+      );
+      console.log(`[PERF] evaluateSignal: ${(performance.now()-t1Worker).toFixed(1)}ms`);
+      console.log(`[PERF] TOTAL worker: ${(performance.now()-t0Worker).toFixed(1)}ms`);
       const stab = emitStability(decision);
 
       const debugTrace = {
