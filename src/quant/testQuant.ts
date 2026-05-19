@@ -1,5 +1,4 @@
 import { rsi, ema } from './indicators';
-import { evaluateSignal } from './ruleEngine';
 
 import { resetStability, emitStability } from './stabilityFilter';
 

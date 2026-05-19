@@ -1,3 +1,5 @@
+const _mathCache = new Map<string, Float64Array>();
+export function clearMathCache() { _mathCache.clear(); }
 let _seed = 0xC0FFEE;
 function pseudoRandom() {
   _seed = (_seed * 1664525 + 1013904223) % 4294967296;
@@ -378,8 +380,10 @@ export function calculateBoundaryReversal(
   let stateDesc = "";
 
   if (ohlc && ohlc.length >= 3) {
-    const highs = ohlc.map(c => c.high);
-    const lows = ohlc.map(c => c.low);
+    const highs = new Float64Array(ohlc.length);
+  ohlc.forEach((c, i) => { highs[i] = c.high; });
+    const lows = new Float64Array(ohlc.length);
+  ohlc.forEach((c, i) => { lows[i] = c.low; });
     const maxH = Math.max(...highs);
     const minL = Math.min(...lows);
     const currentClose = ohlc[ohlc.length - 1].close;
