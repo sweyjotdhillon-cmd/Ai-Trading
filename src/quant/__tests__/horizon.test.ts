@@ -54,6 +54,8 @@ describe('Horizon Context & Helpers', () => {
     const resultHighH = evaluateSignal(series, ctxHighH, ['__TEST_BYPASS__']);
 
 
+    const resultLowH = evaluateSignal(series, ["__TEST_BYPASS__"], {tfMinutes: 30, durationMinutes: 5, H: 0.1, horizonClass: 'INTRA_CANDLE'}, "UNKNOWN");
+    const resultHighH = evaluateSignal(series, ["__TEST_BYPASS__"], {tfMinutes: 30, durationMinutes: 30, H: 1.0, horizonClass: 'NEAR_FULL'}, "UNKNOWN");
     expect(resultLowH.finalConfidence).toBeDefined();
     expect(resultHighH.finalConfidence).toBeDefined();
   });
