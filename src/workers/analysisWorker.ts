@@ -34,8 +34,12 @@ self.onmessage = async (e: MessageEvent) => {
     return;
   }
 
+  let heartbeat: any;
   try {
     const data = e.data;
+    if (data.msgId) {
+      heartbeat = setInterval(() => { self.postMessage({ ok: true, stage: 'HEARTBEAT', payload: { type: 'HEARTBEAT', msgId: data.msgId, ts: Date.now() } }); }, 3000);
+    }
     
     if (data.type === 'CALIBRATE') {
       const { bullColor, bearColor } = data.payload;
@@ -58,9 +62,13 @@ self.onmessage = async (e: MessageEvent) => {
         horizonClass: hClass
       };
 
+      const t0 = performance.now();
+      self.postMessage({ ok: true, stage: 'PROGRESS', payload: { type: 'PROGRESS', msgId: data.msgId, stage: 'OHLC_READY', pct: 10 } });
       const pipe = buildPipelineResult(data.imageData);
+      self.postMessage({ ok: true, stage: 'PROGRESS', payload: { type: 'PROGRESS', msgId: data.msgId, stage: 'INDICATORS', pct: 40 } });
+      console.log(`[PERF] Pipeline build: ${(performance.now() - t0).toFixed(1)}ms`);
 
-      const decision = evaluateSignal(pipe.ohlcSeries, data.techniquesList || [], horizonCtx, pipe.meta.microRange || 0.001, pipe.meta.slopeStrength || 0, pipe.meta.expectedMoveVar || 0);
+
 
       const stab = emitStability(decision);
 
@@ -93,5 +101,7 @@ self.onmessage = async (e: MessageEvent) => {
     }
   } catch (err: any) {
     sendErr('UNKNOWN', err.message || String(err), { msgId: e.data?.msgId });
+  } finally {
+    if (heartbeat) clearInterval(heartbeat);
   }
 };

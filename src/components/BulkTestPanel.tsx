@@ -1,3 +1,4 @@
+import { TIMEOUTS } from '../config/timeouts';
 import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, Pressable, ScrollView, Platform } from 'react-native';
 import tw from 'twrnc';
@@ -228,7 +229,7 @@ export function BulkTestPanel({
     });
   };
 
-  const runBatch = async () => {
+
     if (queue.length === 0 || manifestErrors.length > 0) return;
     
     const missing = queue.filter(q => !q.file && !q.entry.imageData && q.status === 'Pending');
@@ -276,7 +277,8 @@ export function BulkTestPanel({
              throw new Error("Missing image file for entry");
           }
 
-          const result = await runSingleAnalysis({
+
+          const result = await runWithTimeout(runSingleAnalysis({
             imageDataUrl,
             stock: item.entry.stock || stockName,
             graphTimeframe: item.entry.graphTimeframe || graphTimeframe,
@@ -287,7 +289,7 @@ export function BulkTestPanel({
             encryptedSystemTokens,
             signal: abortControllerRef.current!.signal,
             isTestMode: true
-          });
+          }), TIMEOUTS.BATCH_ITEM_MS);
           
           if (isObjectUrl) {
              URL.revokeObjectURL(imageDataUrl);
@@ -309,7 +311,7 @@ export function BulkTestPanel({
           setQueue(q => q.map((r, idx) => idx === i ? { ...r, status: 'Error', error: err.message } : r));
           
           if (!hasErrorHalted) {
-            alert(`Analysis Error on item ${i + 1}: ${err.message}\nBatch run halted.`);
+
             hasErrorHalted = true;
           }
           break;
@@ -479,11 +481,13 @@ export function BulkTestPanel({
           <View style={tw`gap-6`}>
              {queue.length === 0 ? (
                <View style={tw`gap-4`}>
-                 <View style={tw`bg-black bg-opacity-30 border border-white border-opacity-10 rounded-xl p-6`}>
-                   <Text style={tw`text-white font-black text-[10px] uppercase tracking-widest mb-4`}>1. Load Manifest JSON</Text>
-                   <input type="file" accept=".json" onChange={loadManifest} className="text-white text-xs opacity-70" />
+                 <View style={tw`bg-black bg-opacity-30 border-2 border-dashed border-white border-opacity-20 rounded-xl p-8 items-center justify-center relative overflow-hidden`}>
+                   <UploadCloud size={32} color="#D9B382" className="mb-3 opacity-80" />
+                   <Text style={tw`text-[#D9B382] font-black text-[12px] uppercase tracking-widest mb-1`}>1. Load Manifest JSON</Text>
+                   <Text style={tw`text-white text-opacity-50 text-[10px]`}>Tap to select manifest file</Text>
+                   <input type="file" accept=".json" onChange={loadManifest} className="opacity-0 absolute inset-0 w-full h-full cursor-pointer z-10" />
                    {manifestErrors.map((err, i) => (
-                     <Text key={i} style={tw`text-red-400 text-xs mt-2`}>• {err}</Text>
+                     <Text key={i} style={tw`text-red-400 text-xs mt-4`}>• {err}</Text>
                    ))}
                  </View>
                </View>
@@ -579,7 +583,7 @@ export function BulkTestPanel({
                   <View style={tw`flex-row gap-3 pt-2`}>
                     {!isQueueRunning ? (
                       <Pressable 
-                        onPress={runBatch}
+                        onPress={startRun}
                         disabled={queue.some(q => !q.file && !q.entry.imageData && q.status === 'Pending') || manifestErrors.length > 0}
                         style={({ pressed }) => [
                            tw`flex-1 bg-[#D9B382] h-12 rounded-xl flex-row items-center justify-center p-3`, 

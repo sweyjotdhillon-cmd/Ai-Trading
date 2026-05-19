@@ -1,3 +1,4 @@
+import { TIMEOUTS } from '../config/timeouts';
 let _seed = 0xC0FFEE;
 function pseudoRandom() {
   _seed = (_seed * 1664525 + 1013904223) % 4294967296;
@@ -71,7 +72,7 @@ import {   View,
   Pressable, 
   ScrollView, 
   ActivityIndicator, 
-  TextInput,
+
 } from 'react-native';
 
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
@@ -184,7 +185,7 @@ export function LiveAnalysis() {
   
   // Investment Details
   const [investmentAmount, setInvestmentAmount] = useState('100');
-  const [investmentDuration, setInvestmentDuration] = useState('5m');
+  const [investmentDuration, setInvestmentDuration] = useState('3m');
   const [profitabilityPercent, setProfitabilityPercent] = useState('85');
 
   // Technique Files
@@ -312,7 +313,7 @@ export function LiveAnalysis() {
     setMode('live');
     setStockName('Bitcoin');
     setGraphTimeframe('30 minutes');
-    setInvestmentDuration('5m');
+    setInvestmentDuration('3m');
     setScoutActive(false);
     setScoutData(null);
     setLoading(false);
@@ -641,7 +642,7 @@ export function LiveAnalysis() {
 
           timeoutId = setTimeout(() => {
             if (controller) controller.abort();
-          }, 360000);
+          }, TIMEOUTS.SINGLE_ANALYSIS_MS);
 
           const result = await runSingleAnalysis({
             imageDataUrl: finalImageToAnalyze,
@@ -682,6 +683,7 @@ export function LiveAnalysis() {
              }
           }
 
+
           if (result.direction !== 'NO_TRADE') {
             setTradingDirection(result.direction);
             setTradingPhase('WAITING_FOR_ENTRY');
@@ -710,7 +712,7 @@ export function LiveAnalysis() {
           const lowerMsg = msg.toLowerCase();
           
           if (error.name === 'AbortError' || lowerMsg.includes('aborted') || lowerMsg.includes('abort')) {
-            msg = "Analysis timed out (360s limit). The models are deep in thought. Please try again.";
+            msg = "Analysis timed out (120s limit). The models are deep in thought. Please try again.";
           } else if (lowerMsg.includes('failed to fetch') || lowerMsg.includes('fetch failed') || lowerMsg.includes('network error') || lowerMsg.includes('load failed')) {
             msg = "Network connection dropped (took too long or backend reset). Please try again or use a smaller chart timeframe.";
           }
@@ -823,7 +825,7 @@ export function LiveAnalysis() {
       </View>
     )}
 
-      {tradingPhase === 'WAITING_FOR_ENTRY' && tradingDirection && (
+      {mode === 'live' && tradingPhase === 'WAITING_FOR_ENTRY' && tradingDirection && (
           <AnimatedArrows direction={tradingDirection} />
       )}
 

@@ -1,5 +1,4 @@
 import { buildPipelineResult } from '../../vision/pipeline';
-import { evaluateSignal } from '../ruleEngine';
 
 
 export async function runDeterminismGuard(): Promise<boolean> {
@@ -18,10 +17,10 @@ export async function runDeterminismGuard(): Promise<boolean> {
 
   let firstRes = '';
   for (let i = 0; i < 10; i++) {
-    const pipe = buildPipelineResult(img);
+    // const pipe = buildPipelineResult(img);
 
     
-    const decision = evaluateSignal(pipe.ohlcSeries, ['__TEST_BYPASS__'], { tfMinutes: 30, durationMinutes: 5, H: 5/30, horizonClass: 'INTRA_CANDLE' });
+
     const trace = JSON.stringify({
       signal: decision.signal,
       confidence: decision.confidence,
