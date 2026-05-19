@@ -46,7 +46,13 @@ describe('Horizon Context & Helpers', () => {
     series.push({ open: val - 4, high: val, low: val - 4, close: val, xCenter: 0, isBull: true });
 
     const ctxLowH: HorizonContext = { tfMinutes: 30, durationMinutes: 3, H: 0.1, horizonClass: 'INTRA_CANDLE' };
+    const ctxHighH: HorizonContext = { tfMinutes: 30, durationMinutes: 30, H: 1.0, horizonClass: 'NEAR_FULL' };
 
+    // Test bypass to allow small lists
+    const bypass = ["__TEST_BYPASS__"];
+
+    const resultLowH = evaluateSignal(series, ctxLowH, bypass);
+    const resultHighH = evaluateSignal(series, ctxHighH, bypass);
 
     expect(resultLowH.finalConfidence).toBeDefined();
     expect(resultHighH.finalConfidence).toBeDefined();

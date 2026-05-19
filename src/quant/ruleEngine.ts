@@ -7,6 +7,28 @@
  */
 import { rsi, macd, bollinger, atr, stochastic } from './indicators';
 import { emaSlope, emaCurvature } from './calculus';
+import {
+  calculateHurst,
+  calculateZScore,
+  calculateZScoreSignificance,
+  calculateEMADerivatives,
+  calculateMicroMomentumScore,
+  calculateVolatilityRegime,
+  calculateVolatilityRegimeLegacy,
+  detectRSIDivergence,
+  calculateRQA
+} from './mathEngine';
+import {
+  calculateHurst,
+  calculateZScore,
+  calculateZScoreSignificance,
+  calculateEMADerivatives,
+  calculateMicroMomentumScore,
+  calculateVolatilityRegime,
+  calculateVolatilityRegimeLegacy,
+  detectRSIDivergence,
+  calculateRQA
+} from './mathEngine';
 
 
 import { NumericOHLC } from '../vision/pipeline';
@@ -42,6 +64,7 @@ export interface DecisionResult extends JudgeVerdict {
 }
 
 
+export function evaluateSignal(ohlcSeries: NumericOHLC[], horizonCtx: HorizonContext, techniquesList: string[]): DecisionResult {
   const defaultCases = { bull: { j1: 0, j2: 0, j3: 0, total: 0 }, bear: { j1: 0, j2: 0, j3: 0, total: 0 } };
   const defaultNoTrade: DecisionResult = {
     cases: defaultCases, skepticMultiplier: 1, winner: 'NO_TRADE', margin: 0, finalConfidence: 0, ruling: 'Insufficient data or techniques',
@@ -476,7 +499,11 @@ export interface DecisionResult extends JudgeVerdict {
       rsi: rsiVals[last],
       macd: macdVals.macd[last],
       macdHist: macdVals.hist[last],
-      bollMiddle: bollVals.middle[last]
+      bollMiddle: bollVals.middle[last],
+      lastClose: closes[last]
     }
   };
+
+
+
 }

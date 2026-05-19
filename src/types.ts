@@ -105,6 +105,8 @@ export interface BehaviorProfile {
 
 export interface TradeAnalysis {
   executionTimeMs?: number;
+  predictedDirection?: 'UP' | 'DOWN' | 'NO_TRADE';
+  actualDirection?: 'UP' | 'DOWN' | 'FLAT';
   id: string;
   uid: string;
   subUserId?: string;
