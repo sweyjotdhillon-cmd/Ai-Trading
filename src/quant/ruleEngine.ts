@@ -1,3 +1,4 @@
+
 /**
  * CHANGELOG
  * Restructured judge system to follow deterministic point-based logic.
@@ -45,14 +46,7 @@ export interface DecisionResult extends JudgeVerdict {
   techUsedCount?: number;
 }
 
-export function evaluateSignal(
-  ohlcSeries: NumericOHLC[],
-  techniquesList: string[],
-  horizonCtx: HorizonContext,
-  /* axis?: any */
-  /* mode?: string */
-  /* debugId?: string */
-): DecisionResult {
+
   const defaultCases = { bull: { j1: 0, j2: 0, j3: 0, total: 0 }, bear: { j1: 0, j2: 0, j3: 0, total: 0 } };
   const defaultNoTrade: DecisionResult = {
     cases: defaultCases,
@@ -435,7 +429,7 @@ export function evaluateSignal(
   }
 
   // --- R5: Hurst Balancer ---
-  const H_exp = rescaledRangeHurst(closes.slice(-32));
+  const H_exp = rescaledRangeHurst(Array.from(closes).slice(-32));
   if (!isNaN(H_exp)) {
     if (H_exp > 0.55) {
        // Trending regime
@@ -459,7 +453,6 @@ export function evaluateSignal(
   
 
 
-  if (vol.status === 'EXPLOSIVE_SKIP') skepticMultiplier *= 0.5;
 
   const zScoreData = calculateZScoreSignificance(candlesForMathEngine.slice(-21));
   if (Math.abs(zScoreData.zScore) > 2.5) skepticMultiplier *= 0.6;

@@ -54,8 +54,6 @@ describe('Horizon Context & Helpers', () => {
     const resultHighH = evaluateSignal(series, ctxHighH, ['__TEST_BYPASS__']);
 
 
-
-
     expect(resultLowH.finalConfidence).toBeDefined();
     expect(resultHighH.finalConfidence).toBeDefined();
   });
