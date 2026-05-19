@@ -1,5 +1,5 @@
 import { NumericOHLC } from '../vision/pipeline';
-import { HorizonContext } from './horizon';
+
 import { rsi, stochastic, macd, atr, bollinger } from './indicators';
 import { emaSlope, emaCurvature } from './calculus';
 import {
@@ -426,7 +426,7 @@ export function evaluateShard(
 export async function evaluateAllShards(
   techniquesList: string[],
   ohlcSeries: NumericOHLC[],
-  _horizonCtx: HorizonContext
+  /* _horizonCtx: HorizonContext */
 ): Promise<{
   votes: TechniqueVote[];
   proofTokens: string;
