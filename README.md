@@ -27,11 +27,12 @@ npm run build
 npm run preview
 ```
 
-## Netlify
-This repository includes `netlify.toml` configured for Vite:
+## Vercel
+This repository includes `vercel.json` configured for SPA routing:
+- Framework Preset: Vite
 - Build command: `npm run build`
-- Publish directory: `dist`
-- SPA fallback redirect to `index.html`
+- Output directory: `dist`
+- SPA fallback routing via `vercel.json`
 
 ## Notes
 - ChartLens is designed for research and workflow automation; validate signals independently before any live trading use.
