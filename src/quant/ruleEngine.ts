@@ -47,7 +47,14 @@ export interface DecisionResult extends JudgeVerdict {
   techUsedCount?: number;
 }
 
-
+export function evaluateSignal(ohlcSeries: NumericOHLC[], horizonCtx: HorizonContext, techniquesList?: string[], confirmedPatterns?: PatternEvidence[]): DecisionResult {
+  const defaultCases = { bull: { j1: 0, j2: 0, j3: 0, total: 0 }, bear: { j1: 0, j2: 0, j3: 0, total: 0 } };
+  const defaultNoTrade: DecisionResult = {
+    cases: defaultCases, skepticMultiplier: 1, winner: 'NO_TRADE', margin: 0, finalConfidence: 0, ruling: 'Insufficient data or techniques',
+    signal: 'NO_TRADE', confidence: 0, bullScore: 0, bearScore: 0,
+    skepticPenalty: 0, boundaryBias: 0, finalScore: 0, evidence: {},
+    techniquesUsed: '', techUsedCount: 0
+  };
   
   if (ohlcSeries.length < 30) return defaultNoTrade;
   if (!techniquesList || (techniquesList.length < 10 && !techniquesList.includes("__TEST_BYPASS__"))) return defaultNoTrade;
@@ -406,6 +413,7 @@ export interface DecisionResult extends JudgeVerdict {
     confirmedPatterns.forEach(ev => {
       if (ev.direction === 'BULL') bullJ1 += patternWeights.BULLISH;
       if (ev.direction === 'BEAR') bearJ1 += patternWeights.BEARISH;
+      matchedTechniques.push(`${ev.pattern} (Repo Evidence)`);
     });
     // Ensure we don't bypass caps after applying the modifier
     bullJ1 = Math.min(4, bullJ1);
@@ -498,6 +506,8 @@ export interface DecisionResult extends JudgeVerdict {
       macd: macdVals.macd[last],
       macdHist: macdVals.hist[last],
       bollMiddle: bollVals.middle[last]
-    }
+    },
+    techniquesUsed: matchedTechniques.join(', '),
+    techUsedCount: matchedTechniques.length
   };
 }

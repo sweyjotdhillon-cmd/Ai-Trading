@@ -67,7 +67,7 @@ export function useWakeLock() {
   return { requestLock, releaseLock };
 }
 
-
+import { View, Text, Pressable, ScrollView, ActivityIndicator, Image, TextInput } from 'react-native';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { 
   CheckCircle, 
@@ -505,18 +505,6 @@ export function LiveAnalysis() {
     }
   };
 
-
-  const handleDrop = (e: any) => {
-    e.preventDefault();
-    const file = e.dataTransfer?.files[0];
-    if (file && file.type.startsWith('image/')) {
-      const reader = new FileReader();
-      reader.onload = () => setSelectedImage(reader.result as string);
-      reader.readAsDataURL(file);
-    }
-  };
-  const preventDefault = (e: any) => e.preventDefault();
-
   const handlePickTechnique = () => {
     if (Platform.OS === 'web') {
       techInputRef.current?.click();
@@ -687,6 +675,16 @@ export function LiveAnalysis() {
                 setAutoGradeStatus('failed');
              }
           }
+
+
+
+            if (result.direction !== 'NO_TRADE') {
+                setTradingDirection(result.direction);
+                setTradingPhase('WAITING_FOR_ENTRY');
+            } else {
+                setTradingDirection(null);
+                setTradingPhase('IDLE');
+            }
 
 
           setTimeout(() => {
@@ -1036,10 +1034,6 @@ export function LiveAnalysis() {
             {mode === 'test' && (
               <Pressable
                 onPress={handlePickImage}
-                // @ts-expect-error React Native Web missing typings
-                onDrop={handleDrop}
-                onDragOver={preventDefault}
-                onDragEnter={preventDefault}
                 style={({ pressed }) => [
                   tw`h-32 w-full rounded-xl bg-black bg-opacity-20 overflow-hidden border items-center justify-center`,
                   selectedImage ? tw`border-[#D9B382] border-opacity-20 ` : tw`border-dashed border-white border-opacity-10`,
