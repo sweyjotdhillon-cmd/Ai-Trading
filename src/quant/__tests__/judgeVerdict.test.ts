@@ -88,8 +88,8 @@ afterEach(() => {
 
   it('4. Trending but EXPLOSIVE_SKIP volatility', async () => {
     const series = generateSeries('explosive', 150);
+    const result = evaluateSignal(series, ['__TEST_BYPASS__'], {tfMinutes: 30, durationMinutes: 5, H: 0.5, horizonClass: 'INTRA_CANDLE'});
 
-    const result = evaluateSignal(series, ["__TEST_BYPASS__"], {tfMinutes: 30, durationMinutes: 5, H: 0.1, horizonClass: 'INTRA_CANDLE'}, "UNKNOWN");
     if (result.cases.bull.total > 0 || result.cases.bear.total > 0) {
        expect(result.skepticMultiplier).toBeLessThan(1.0);
     }
@@ -97,9 +97,8 @@ afterEach(() => {
 
   it('5. totals per judge never exceed cap', async () => {
     const series = generateSeries('uptrend', 100);
-    const result = evaluateSignal(series, ['__TEST_BYPASS__']);
+    const result = evaluateSignal(series, ['__TEST_BYPASS__'], {tfMinutes: 30, durationMinutes: 5, H: 0.5, horizonClass: 'INTRA_CANDLE'});
 
-    const result = evaluateSignal(series, ["__TEST_BYPASS__"], {tfMinutes: 30, durationMinutes: 5, H: 0.1, horizonClass: 'INTRA_CANDLE'}, "UNKNOWN");
 expect(result.cases.bull.j1).toBeLessThanOrEqual(4);
     expect(result.cases.bear.j1).toBeLessThanOrEqual(4);
     
@@ -113,9 +112,8 @@ expect(result.cases.bull.j1).toBeLessThanOrEqual(4);
   it('6. finalConfidence is integer between 0 and 100', async () => {
     for (const type of ['uptrend', 'downtrend', 'sideways', 'explosive'] as const) {
       const series = generateSeries(type);
-      const result = evaluateSignal(series, ['__TEST_BYPASS__']);
+      const result = evaluateSignal(series, ['__TEST_BYPASS__'], {tfMinutes: 30, durationMinutes: 5, H: 0.5, horizonClass: 'INTRA_CANDLE'});
 
-      const result = evaluateSignal(series, ["__TEST_BYPASS__"], {tfMinutes: 30, durationMinutes: 5, H: 0.1, horizonClass: 'INTRA_CANDLE'}, "UNKNOWN");
 expect(result.finalConfidence).toBeGreaterThanOrEqual(0);
       expect(result.finalConfidence).toBeLessThanOrEqual(100);
       expect(Number.isInteger(result.finalConfidence)).toBe(true);
