@@ -100,6 +100,7 @@ afterEach(() => {
     const series = generateSeries('uptrend', 100);
 
 
+    const result = evaluateSignal(series, {tfMinutes: 1, durationMinutes: 5, H: 0.5, horizonClass: "INTRA_CANDLE"}, ["__TEST_BYPASS__"]);
 expect(result.cases.bull.j1).toBeLessThanOrEqual(4);
     expect(result.cases.bear.j1).toBeLessThanOrEqual(4);
     
@@ -115,6 +116,7 @@ expect(result.cases.bull.j1).toBeLessThanOrEqual(4);
       const series = generateSeries(type);
 
 
+    const result = evaluateSignal(series, {tfMinutes: 1, durationMinutes: 5, H: 0.5, horizonClass: "INTRA_CANDLE"}, ["__TEST_BYPASS__"]);
 expect(result.finalConfidence).toBeGreaterThanOrEqual(0);
       expect(result.finalConfidence).toBeLessThanOrEqual(100);
       expect(Number.isInteger(result.finalConfidence)).toBe(true);

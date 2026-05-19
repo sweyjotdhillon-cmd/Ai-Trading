@@ -136,7 +136,7 @@ export function BulkTestPanel({
   const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    if (Platform.OS === 'web') {
+    if ((Platform.OS as string) === 'web') {
       const handleGlobalDragOver = (e: any) => e.preventDefault();
       const handleGlobalDrop = (e: any) => e.preventDefault();
 
@@ -245,6 +245,7 @@ export function BulkTestPanel({
   };
 
 
+      const startRun = async () => {
     if (queue.length === 0 || manifestErrors.length > 0) return;
     
     const missing = queue.filter(q => !q.file && !q.entry.imageData && q.status === 'Pending');
@@ -293,7 +294,7 @@ export function BulkTestPanel({
           }
 
 
-          const result = await runWithTimeout(runSingleAnalysis({
+          const result = await runSingleAnalysis({
             imageDataUrl,
             stock: item.entry.stock || stockName,
             graphTimeframe: item.entry.graphTimeframe || graphTimeframe,
@@ -304,7 +305,7 @@ export function BulkTestPanel({
             encryptedSystemTokens,
             signal: abortControllerRef.current!.signal,
             isTestMode: true
-          }), TIMEOUTS.BATCH_ITEM_MS);
+          });
           
           if (isObjectUrl) {
              URL.revokeObjectURL(imageDataUrl);
@@ -436,7 +437,7 @@ export function BulkTestPanel({
         {tab === 'build' ? (
           <View style={tw`gap-6`}>
             {/* Same Tab 1 as before */}
-            {Platform.OS === 'web' ? (
+            {(Platform.OS as string) === 'web' ? (
               <div
                 onClick={() => {
                   document.getElementById('bulk-image-upload')?.click();
@@ -448,7 +449,7 @@ export function BulkTestPanel({
               >
                 <View style={tw`border-2 border-dashed border-white border-opacity-10 rounded-xl p-8 flex-col items-center justify-center bg-black bg-opacity-20 relative`}>
 
-              {Platform.OS === 'web' && (
+              {(Platform.OS as string) === 'web' && (
                 <input
                   id="bulk-image-upload"
                   type="file"
@@ -479,7 +480,7 @@ export function BulkTestPanel({
             ) : (
               <Pressable
                 onPress={() => {
-                  if (Platform.OS === 'web') {
+                  if ((Platform.OS as string) === 'web') {
                     document.getElementById('bulk-image-upload')?.click();
                   }
                 }}
@@ -489,7 +490,7 @@ export function BulkTestPanel({
                 ]}
               >
 
-              {Platform.OS === 'web' && (
+              {(Platform.OS as string) === 'web' && (
                 <input 
                   id="bulk-image-upload" 
                   type="file" 

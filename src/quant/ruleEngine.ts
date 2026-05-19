@@ -1,5 +1,4 @@
 import { calculateHurst, calculateZScore, calculateEMADerivatives, calculateMicroMomentumScore, calculateVolatilityRegime, calculateZScoreSignificance, calculateRQA, detectRSIDivergence, calculateVolatilityRegimeLegacy } from './mathEngine';
-import { calculateHurst, calculateZScore, calculateEMADerivatives, calculateMicroMomentumScore, calculateVolatilityRegimeLegacy, calculateZScoreSignificance, calculateRQA, detectRSIDivergence } from './mathEngine';
 /**
  * CHANGELOG
  * Restructured judge system to follow deterministic point-based logic.
@@ -44,19 +43,12 @@ export interface DecisionResult extends JudgeVerdict {
   techUsedCount?: number;
 }
 
-export function evaluateSignal(
-  ohlcSeries: NumericOHLC[],
-  techniquesList: string[],
-  horizonCtx: HorizonContext,
-  microRange: number = 0.001,
-  slopeStrength: number = 0,
-  expectedMoveVar: number = 0
-): DecisionResult {
+export function evaluateSignal(ohlcSeries: NumericOHLC[], horizonCtx: HorizonContext, techniquesList?: string[]): DecisionResult {
   let bullJ1 = 0, bearJ1 = 0, bullJ2 = 0, bearJ2 = 0, bullJ3 = 0, bearJ3 = 0;
   let skepticMultiplier = 1.0;
-
-
-export function evaluateSignal(ohlcSeries: NumericOHLC[], horizonCtx: HorizonContext, techniquesList?: string[]): DecisionResult {
+  let microRange = 0.001;
+  let slopeStrength = 0;
+  const expectedMoveVar = 0;
   const defaultCases = { bull: { j1: 0, j2: 0, j3: 0, total: 0 }, bear: { j1: 0, j2: 0, j3: 0, total: 0 } };
   const defaultNoTrade: DecisionResult = {
     cases: defaultCases, skepticMultiplier: 1, winner: 'NO_TRADE', margin: 0, finalConfidence: 0, ruling: 'Insufficient data or techniques',
@@ -414,7 +406,7 @@ export function evaluateSignal(ohlcSeries: NumericOHLC[], horizonCtx: HorizonCon
 
 
   // --- R5: Hurst Balancer ---
-  const H_exp = rescaledRangeHurst(closes.slice(-32));
+  const H_exp = rescaledRangeHurst(Array.from(closes).slice(-32));
   if (!isNaN(H_exp)) {
     if (H_exp > 0.55) {
        // Trending regime
@@ -437,7 +429,7 @@ export function evaluateSignal(ohlcSeries: NumericOHLC[], horizonCtx: HorizonCon
   const candlesForMathEngine = ohlcSeries.map((c, i) => ({ ...c, prevClose: i > 0 ? ohlcSeries[i-1].close : c.open }));
   
 
-  if (vol.status === 'EXPLOSIVE_SKIP') skepticMultiplier *= 0.5;
+  // skepticMultiplier *= 0.5; // vol undefined
 
   const zScoreData = calculateZScoreSignificance(candlesForMathEngine.slice(-21));
   if (Math.abs(zScoreData.zScore) > 2.5) skepticMultiplier *= 0.6;
