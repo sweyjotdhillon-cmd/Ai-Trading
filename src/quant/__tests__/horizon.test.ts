@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseDurationToMinutes, rescaledRangeHurst, HorizonContext } from '../horizon';
+import { parseDurationToMinutes, rescaledRangeHurst } from '../horizon';
 import { evaluateSignal } from '../ruleEngine';
 import { NumericOHLC } from '../../vision/pipeline';
 
@@ -45,8 +45,8 @@ describe('Horizon Context & Helpers', () => {
     val += 5;
     series.push({ open: val - 4, high: val, low: val - 4, close: val, xCenter: 0, isBull: true });
 
-
-
+    const ctxLowH = { tfMinutes: 30, durationMinutes: 3, H: 0.1, horizonClass: 'INTRA_CANDLE' } as const;
+    const ctxHighH = { tfMinutes: 5, durationMinutes: 15, H: 3.0, horizonClass: 'MULTI_CANDLE' } as const;
 
     const resultLowH = evaluateSignal(series, ['__TEST_BYPASS__'], ctxLowH);
     const resultHighH = evaluateSignal(series, ['__TEST_BYPASS__'], ctxHighH);

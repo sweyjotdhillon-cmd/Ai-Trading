@@ -1,5 +1,3 @@
-import { calculateHurst, calculateZScore, calculateEMADerivatives, calculateMicroMomentumScore, calculateVolatilityRegime, calculateZScoreSignificance, calculateRQA, detectRSIDivergence, calculateVolatilityRegimeLegacy } from './mathEngine';
-import { calculateHurst, calculateZScore, calculateEMADerivatives, calculateMicroMomentumScore, calculateVolatilityRegimeLegacy, calculateZScoreSignificance, calculateRQA, detectRSIDivergence } from './mathEngine';
 /**
  * CHANGELOG
  * Restructured judge system to follow deterministic point-based logic.
@@ -45,8 +43,32 @@ export interface DecisionResult extends JudgeVerdict {
   techUsedCount?: number;
 }
 
+export function evaluateSignal(
+  ohlcSeries: NumericOHLC[],
+  techniquesList: string[],
+  horizonCtx: HorizonContext,
+  /* axis?: any */
+  /* mode?: string */
+  /* debugId?: string */
+): DecisionResult {
+  const defaultCases = { bull: { j1: 0, j2: 0, j3: 0, total: 0 }, bear: { j1: 0, j2: 0, j3: 0, total: 0 } };
+  const defaultNoTrade: DecisionResult = {
+    cases: defaultCases,
+    skepticMultiplier: 0,
+    winner: 'NO_TRADE',
+    margin: 0,
+    finalConfidence: 0,
+    ruling: 'Not enough data',
+    signal: 'NO_TRADE',
+    confidence: 0,
+    bullScore: 0,
+    bearScore: 0,
+    skepticPenalty: 0,
+    boundaryBias: 0,
+    finalScore: 0,
+    evidence: {}
+  };
 
-  
   if (ohlcSeries.length < 30) return defaultNoTrade;
   if (!techniquesList || (techniquesList.length < 10 && !techniquesList.includes("__TEST_BYPASS__"))) return defaultNoTrade;
 
@@ -82,11 +104,16 @@ export interface DecisionResult extends JudgeVerdict {
   for (let i = closes.length - 1; i > closes.length - 1 - recentCount; i--) {
     microRangeSum += Math.abs(closes[i] - closes[i-1]);
   }
-  microRange = recentCount > 0 ? microRangeSum / recentCount : 0;
+  const microRange = recentCount > 0 ? microRangeSum / recentCount : 0;
 
 
   // --- R6: Slope Strength ---
-  slopeStrength = atrVals[last] > 0 ? Math.abs(slope[last]) / atrVals[last] : 0;
+  let slopeStrength = atrVals[last] > 0 ? Math.abs(slope[last]) / atrVals[last] : 0;
+
+  let bullJ1 = 0, bearJ1 = 0;
+  let bullJ2 = 0, bearJ2 = 0;
+  let bullJ3 = 0, bearJ3 = 0;
+  let skepticMultiplier = 1.0;
 
 
 
@@ -419,6 +446,7 @@ export interface DecisionResult extends JudgeVerdict {
   const candlesForMathEngine = ohlcSeries.map((c, i) => ({ ...c, prevClose: i > 0 ? ohlcSeries[i-1].close : c.open }));
   
 
+  const vol = calculateVolatilityRegimeLegacy(Array.from(closes));
   if (vol.status === 'EXPLOSIVE_SKIP') skepticMultiplier *= 0.5;
 
   const zScoreData = calculateZScoreSignificance(candlesForMathEngine.slice(-21));
@@ -432,9 +460,14 @@ export interface DecisionResult extends JudgeVerdict {
   if (rqa.laminarity < 0.1 && rqa.determinism < 0.15) skepticMultiplier *= 0.5;
 
 
+  const expectedMoveVar = atrMean * Math.sqrt(3);
+
   if (expectedMoveVar < microRange * 0.2) {
      skepticMultiplier *= 0.1; // Extinguish confidence
   }
+
+  const slopeSeries = emaSlope(Array.from(closes), 9);
+  slopeStrength = slopeSeries.length > 0 ? Math.abs(slopeSeries[slopeSeries.length - 1]) : 0;
 
   // R6: Slope strength gate
   if (slopeStrength < 0.15) {
