@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseDurationToMinutes, rescaledRangeHurst, HorizonContext } from '../horizon';
+import { parseDurationToMinutes, rescaledRangeHurst } from '../horizon';
 import { evaluateSignal } from '../ruleEngine';
 import { NumericOHLC } from '../../vision/pipeline';
 
@@ -45,14 +45,14 @@ describe('Horizon Context & Helpers', () => {
     val += 5;
     series.push({ open: val - 4, high: val, low: val - 4, close: val, xCenter: 0, isBull: true });
 
+    const ctxLowH = { tfMinutes: 30, durationMinutes: 3, H: 0.1, horizonClass: 'INTRA_CANDLE' } as const;
+    const ctxHighH = { tfMinutes: 5, durationMinutes: 15, H: 3.0, horizonClass: 'MULTI_CANDLE' } as const;
 
+    const ctxLowH = {tfMinutes: 30, durationMinutes: 5, H: 0.1, horizonClass: 'INTRA_CANDLE' as any};
+    const ctxHighH = {tfMinutes: 30, durationMinutes: 5, H: 1.0, horizonClass: 'INTRA_CANDLE' as any};
+    const resultLowH = evaluateSignal(series, ctxLowH, ['__TEST_BYPASS__']);
+    const resultHighH = evaluateSignal(series, ctxHighH, ['__TEST_BYPASS__']);
 
-    let resultLowH = evaluateSignal(series, {tfMinutes: 30, durationMinutes: 5, H: 0.1, horizonClass: 'INTRA_CANDLE'}, ['__TEST_BYPASS__']);
-    let resultHighH = evaluateSignal(series, {tfMinutes: 30, durationMinutes: 5, H: 1.0, horizonClass: 'INTRA_CANDLE'}, ['__TEST_BYPASS__']);
-
-
-    resultLowH = evaluateSignal(series, {tfMinutes: 30, durationMinutes: 5, H: 0.1, horizonClass: "INTRA_CANDLE"}, ["__TEST_BYPASS__"]);
-    resultHighH = evaluateSignal(series, {tfMinutes: 30, durationMinutes: 5, H: 1.0, horizonClass: "INTRA_CANDLE"}, ["__TEST_BYPASS__"]);
 
     expect(resultLowH.finalConfidence).toBeDefined();
     expect(resultHighH.finalConfidence).toBeDefined();

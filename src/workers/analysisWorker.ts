@@ -1,11 +1,15 @@
-// Web Worker for analysis pipeline
-import { buildPipelineResult } from '../vision/pipeline';
+
 import { evaluateSignal } from '../quant/ruleEngine';
 import { HorizonContext } from '../quant/horizon';
 import { emitStability, resetStability } from '../quant/stabilityFilter';
 import { getCalibrationBands, setCalibrationBands } from '../vision/colorCalibration';
 import { runDeterminismGuard } from '../quant/__audit__/determinismGuard';
 import { runEpsilonGuard } from '../vision/__audit__/epsilonGuard';
+import { featureFlags } from '../config/featureFlags';
+import { extractCandlestickPatterns, PatternEvidence } from '../quant/patternAdapter';
+import { PatternStabilityManager } from '../quant/patternStability';
+
+const patternStabilityManager = new PatternStabilityManager();
 
 let engineFault = false;
 let faultStack = '';
@@ -62,14 +66,27 @@ self.onmessage = async (e: MessageEvent) => {
         horizonClass: hClass
       };
 
-      const t0 = performance.now();
-      self.postMessage({ ok: true, stage: 'PROGRESS', payload: { type: 'PROGRESS', msgId: data.msgId, stage: 'OHLC_READY', pct: 10 } });
-      const pipe = buildPipelineResult(data.imageData);
-      self.postMessage({ ok: true, stage: 'PROGRESS', payload: { type: 'PROGRESS', msgId: data.msgId, stage: 'INDICATORS', pct: 40 } });
-      console.log(`[PERF] Pipeline build: ${(performance.now() - t0).toFixed(1)}ms`);
+      const t0Worker = performance.now();
+      const pipe = await buildPipelineResult(data.imageData, {
+        expectedSymbol: data.stock,
+        timeframeMinutes: tfMinutes
+      });
 
+      let confirmedPatterns: PatternEvidence[] = [];
+      if (featureFlags.enableCandlestickRepoPatterns) {
+        const rawPatterns = extractCandlestickPatterns(pipe.ohlcSeries);
+        confirmedPatterns = patternStabilityManager.processFrame(rawPatterns);
+      }
 
-
+      const t1Worker = performance.now();
+      const decision = evaluateSignal(
+        pipe.ohlcSeries,
+        horizonCtx,
+        data.techniquesList,
+        confirmedPatterns
+      );
+      console.log(`[PERF] evaluateSignal: ${(performance.now()-t1Worker).toFixed(1)}ms`);
+      console.log(`[PERF] TOTAL worker: ${(performance.now()-t0Worker).toFixed(1)}ms`);
       const stab = emitStability(decision);
 
       const debugTrace = {
@@ -96,6 +113,7 @@ self.onmessage = async (e: MessageEvent) => {
       }
     }
     else if (data.type === 'RESET') {
+      patternStabilityManager.reset();
       resetStability();
       sendOk('RESET', { type: 'RESET_OK' });
     }
