@@ -71,8 +71,9 @@ import {   View,
   Text, 
   Pressable, 
   ScrollView, 
-  ActivityIndicator, 
-
+  ActivityIndicator,
+  Image,
+} from "react-native";
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { 
   CheckCircle, 
@@ -680,14 +681,12 @@ export function LiveAnalysis() {
                 setAutoGradeStatus('failed');
              }
           }
-
-
-
+          if (result.direction !== "NO_TRADE") {
             setTradingDirection(result.direction);
-            setTradingPhase('WAITING_FOR_ENTRY');
+            setTradingPhase("WAITING_FOR_ENTRY");
           } else {
             setTradingDirection(null);
-            setTradingPhase('IDLE');
+            setTradingPhase("IDLE");
           }
 
           setTimeout(() => {
