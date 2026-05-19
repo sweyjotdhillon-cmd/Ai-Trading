@@ -1,4 +1,4 @@
-// Web Worker for analysis pipeline
+
 import { evaluateSignal } from '../quant/ruleEngine';
 import { HorizonContext } from '../quant/horizon';
 import { emitStability, resetStability } from '../quant/stabilityFilter';
@@ -66,8 +66,11 @@ self.onmessage = async (e: MessageEvent) => {
         horizonClass: hClass
       };
 
-
-
+      const t0Worker = performance.now();
+      const pipe = await buildPipelineResult(data.imageData, {
+        expectedSymbol: data.stock,
+        timeframeMinutes: tfMinutes
+      });
 
       let confirmedPatterns: PatternEvidence[] = [];
       if (featureFlags.enableCandlestickRepoPatterns) {

@@ -244,8 +244,7 @@ export function BulkTestPanel({
     });
   };
 
-
-
+  const startRun = async () => {
     if (queue.length === 0 || manifestErrors.length > 0) return;
     
     const missing = queue.filter(q => !q.file && !q.entry.imageData && q.status === 'Pending');
@@ -260,7 +259,7 @@ export function BulkTestPanel({
 
     const CONCURRENCY_LIMIT = 1;
     let currentIndex = 0;
-        const workerLoop = async () => {
+    const workerLoop = async () => {
       while (currentIndex < queue.length) {
         if (abortControllerRef.current?.signal.aborted || isPaused ) break;
         
