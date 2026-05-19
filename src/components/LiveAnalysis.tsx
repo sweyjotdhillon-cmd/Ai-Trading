@@ -185,7 +185,7 @@ export function LiveAnalysis() {
   
   // Investment Details
   const [investmentAmount, setInvestmentAmount] = useState('100');
-  const [investmentDuration, setInvestmentDuration] = useState('5m');
+  const [investmentDuration, setInvestmentDuration] = useState('3m');
   const [profitabilityPercent, setProfitabilityPercent] = useState('85');
 
   // Technique Files
@@ -313,7 +313,7 @@ export function LiveAnalysis() {
     setMode('live');
     setStockName('Bitcoin');
     setGraphTimeframe('30 minutes');
-    setInvestmentDuration('5m');
+    setInvestmentDuration('3m');
     setScoutActive(false);
     setScoutData(null);
     setLoading(false);
