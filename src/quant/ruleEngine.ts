@@ -1,3 +1,5 @@
+import { calculateHurst, calculateZScore, calculateEMADerivatives, calculateMicroMomentumScore, calculateVolatilityRegime, calculateZScoreSignificance, calculateRQA, detectRSIDivergence, calculateVolatilityRegimeLegacy } from './mathEngine';
+import { calculateHurst, calculateZScore, calculateEMADerivatives, calculateMicroMomentumScore, calculateVolatilityRegimeLegacy, calculateZScoreSignificance, calculateRQA, detectRSIDivergence } from './mathEngine';
 /**
  * CHANGELOG
  * Restructured judge system to follow deterministic point-based logic.
@@ -43,7 +45,7 @@ export interface DecisionResult extends JudgeVerdict {
 }
 
 
-export function evaluateSignal(ohlcSeries: NumericOHLC[], techniquesList: string[], horizonCtx: HorizonContext = { tfMinutes: 5, durationMinutes: 5, H: 0.5, horizonClass: 'SAME_CANDLE' }): DecisionResult {
+
   const defaultCases = { bull: { j1: 0, j2: 0, j3: 0, total: 0 }, bear: { j1: 0, j2: 0, j3: 0, total: 0 } };
   const defaultNoTrade: DecisionResult = {
     cases: defaultCases, skepticMultiplier: 1, winner: 'NO_TRADE', margin: 0, finalConfidence: 0, ruling: 'Insufficient data or techniques',
@@ -55,24 +57,29 @@ export function evaluateSignal(ohlcSeries: NumericOHLC[], techniquesList: string
   if (ohlcSeries.length < 30) return defaultNoTrade;
   if (!techniquesList || (techniquesList.length < 10 && !techniquesList.includes("__TEST_BYPASS__"))) return defaultNoTrade;
 
-  const closes = ohlcSeries.map(c => c.close);
-  const highs = ohlcSeries.map(c => c.high);
-  const lows = ohlcSeries.map(c => c.low);
+  const closes = new Float64Array(ohlcSeries.length);
+  const highs = new Float64Array(ohlcSeries.length);
+  const lows = new Float64Array(ohlcSeries.length);
+  ohlcSeries.forEach((c, i) => {
+    closes[i] = c.close;
+    highs[i] = c.high;
+    lows[i] = c.low;
+  });
 
   // Constants
   const last = closes.length - 1;
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const prev = Math.max(0, last - 1);
+
+
 
 
   // Compute indicators
-  const rsiVals = rsi(closes, 14);
-  const macdVals = macd(closes, 12, 26, 9);
+  const rsiVals = rsi(closes as unknown as number[], 14);
+  const macdVals = macd(closes as unknown as number[], 12, 26, 9);
   const stochVals = stochastic(ohlcSeries, 14, 3);
   const atrVals = atr(ohlcSeries, 14);
-  const slope = emaSlope(closes, 21);
-  const curve = emaCurvature(closes, 21);
-  const bollVals = bollinger(closes, 20, 2);
+  const slope = emaSlope(closes as unknown as number[], 21);
+  const curve = emaCurvature(closes as unknown as number[], 21);
+  const bollVals = bollinger(closes as unknown as number[], 20, 2);
 
   // --- R3: Expected Move ---
   // Brownian scaling (see Macroption)
@@ -95,10 +102,10 @@ export function evaluateSignal(ohlcSeries: NumericOHLC[], techniquesList: string
 
   // --- 3-5 MINUTE BINARY MATH ENGINE ---
   // 1. Hurst Exponent (Mean Reversion)
-  const hurst = calculateHurst(closes, 30);
+  const hurst = calculateHurst(Array.from(closes), 30);
 
   // 2. Z-Score Breakout
-  const currentZScore = calculateZScore(closes, 20);
+  const currentZScore = calculateZScore(Array.from(closes), 20);
   if (currentZScore > 2.0) bullJ2 += 1.5;
   if (currentZScore < -2.0) bearJ2 += 1.5;
 
@@ -111,8 +118,8 @@ export function evaluateSignal(ohlcSeries: NumericOHLC[], techniquesList: string
     }
     return ema;
   };
-  const ema9Series = calcEMA(closes, 9);
-  const derivatives = calculateEMADerivatives(ema9Series);
+  const ema9Series = calcEMA(Array.from(closes), 9);
+  const derivatives = calculateEMADerivatives(Array.from(ema9Series));
   const microMom = calculateMicroMomentumScore(currentZScore, derivatives.velocity, derivatives.acceleration);
   if (microMom === 3) bullJ1 += 2.0;
   if (microMom === -3) bearJ1 += 2.0;
@@ -129,7 +136,7 @@ export function evaluateSignal(ohlcSeries: NumericOHLC[], techniquesList: string
   }
 
   // 6. RSI Divergence
-  const divergence = detectRSIDivergence(closes, rsiVals);
+  const divergence = detectRSIDivergence(Array.from(closes), rsiVals);
   if (divergence === 'BULLISH') bullJ3 += 2.0;
   if (divergence === 'BEARISH') bearJ3 += 2.0;
 
@@ -421,7 +428,7 @@ export function evaluateSignal(ohlcSeries: NumericOHLC[], techniquesList: string
   // Removed redeclared skeptic multiplier
   const candlesForMathEngine = ohlcSeries.map((c, i) => ({ ...c, prevClose: i > 0 ? ohlcSeries[i-1].close : c.open }));
   
-  const vol = calculateVolatilityRegimeLegacy(candlesForMathEngine.slice(-20));
+  const vol = calculateVolatilityRegimeLegacy(Array.from(candlesForMathEngine.slice(-20)));
   if (vol.status === 'EXPLOSIVE_SKIP') skepticMultiplier *= 0.5;
 
   const zScoreData = calculateZScoreSignificance(candlesForMathEngine.slice(-21));
@@ -431,7 +438,7 @@ export function evaluateSignal(ohlcSeries: NumericOHLC[], techniquesList: string
   const atrMean = atrAvgSlice.length > 0 ? atrAvgSlice.reduce((a, b) => a + b, 0) / atrAvgSlice.length : 0;
   if (!isNaN(atrVals[last]) && atrMean > 0 && atrVals[last] > 2 * atrMean) skepticMultiplier *= 0.7;
 
-  const rqa = calculateRQA(closes.slice(-20));
+  const rqa = calculateRQA(Array.from(closes).slice(-20));
   if (rqa.laminarity < 0.1 && rqa.determinism < 0.15) skepticMultiplier *= 0.5;
 
 

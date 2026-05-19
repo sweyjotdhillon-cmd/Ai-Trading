@@ -1,3 +1,4 @@
+import { TIMEOUTS } from '../config/timeouts';
 import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, Pressable, ScrollView, Platform } from 'react-native';
 import tw from 'twrnc';
@@ -229,6 +230,7 @@ export function BulkTestPanel({
   };
 
 
+  const startRun = async () => {
     if (queue.length === 0 || manifestErrors.length > 0) return;
     
     const missing = queue.filter(q => !q.file && !q.entry.imageData && q.status === 'Pending');
@@ -276,7 +278,8 @@ export function BulkTestPanel({
              throw new Error("Missing image file for entry");
           }
 
-          const result = await runSingleAnalysis({
+
+          const result = await runWithTimeout(runSingleAnalysis({
             imageDataUrl,
             stock: item.entry.stock || stockName,
             graphTimeframe: item.entry.graphTimeframe || graphTimeframe,
@@ -287,7 +290,7 @@ export function BulkTestPanel({
             encryptedSystemTokens,
             signal: abortControllerRef.current!.signal,
             isTestMode: true
-          });
+          }), TIMEOUTS.BATCH_ITEM_MS);
           
           if (isObjectUrl) {
              URL.revokeObjectURL(imageDataUrl);
@@ -309,7 +312,7 @@ export function BulkTestPanel({
           setQueue(q => q.map((r, idx) => idx === i ? { ...r, status: 'Error', error: err.message } : r));
           
           if (!hasErrorHalted) {
-            alert(`Analysis Error on item ${i + 1}: ${err.message}\nBatch run halted.`);
+
             hasErrorHalted = true;
           }
           break;
@@ -579,7 +582,7 @@ export function BulkTestPanel({
                   <View style={tw`flex-row gap-3 pt-2`}>
                     {!isQueueRunning ? (
                       <Pressable 
-                        onPress={runBatch}
+                        onPress={startRun}
                         disabled={queue.some(q => !q.file && !q.entry.imageData && q.status === 'Pending') || manifestErrors.length > 0}
                         style={({ pressed }) => [
                            tw`flex-1 bg-[#D9B382] h-12 rounded-xl flex-row items-center justify-center p-3`, 

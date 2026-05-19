@@ -1,8 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { evaluateSignal } from '../ruleEngine';
-// import { HorizonContext } from '../horizon';
 
-// const defaultCtx: HorizonContext = { tfMinutes: 30, durationMinutes: 5, H: 5/30, horizonClass: 'INTRA_CANDLE' };
 import { NumericOHLC } from '../../vision/pipeline';
 
 function generateSeries(type: 'uptrend' | 'downtrend' | 'sideways' | 'explosive', length: number = 150): NumericOHLC[] {
@@ -91,7 +89,7 @@ afterEach(() => {
   it('4. Trending but EXPLOSIVE_SKIP volatility', async () => {
     const series = generateSeries('explosive', 150);
 
-    const result = evaluateSignal(series, ['__TEST_BYPASS__']);
+    const result = evaluateSignal(series, ["__TEST_BYPASS__"], {tfMinutes: 30, durationMinutes: 5, H: 0.1, horizonClass: 'INTRA_CANDLE'}, "UNKNOWN");
     if (result.cases.bull.total > 0 || result.cases.bear.total > 0) {
        expect(result.skepticMultiplier).toBeLessThan(1.0);
     }
@@ -101,7 +99,8 @@ afterEach(() => {
     const series = generateSeries('uptrend', 100);
     const result = evaluateSignal(series, ['__TEST_BYPASS__']);
 
-    expect(result.cases.bull.j1).toBeLessThanOrEqual(4);
+    const result = evaluateSignal(series, ["__TEST_BYPASS__"], {tfMinutes: 30, durationMinutes: 5, H: 0.1, horizonClass: 'INTRA_CANDLE'}, "UNKNOWN");
+expect(result.cases.bull.j1).toBeLessThanOrEqual(4);
     expect(result.cases.bear.j1).toBeLessThanOrEqual(4);
     
     expect(result.cases.bull.j2).toBeLessThanOrEqual(4);
@@ -116,7 +115,8 @@ afterEach(() => {
       const series = generateSeries(type);
       const result = evaluateSignal(series, ['__TEST_BYPASS__']);
 
-      expect(result.finalConfidence).toBeGreaterThanOrEqual(0);
+      const result = evaluateSignal(series, ["__TEST_BYPASS__"], {tfMinutes: 30, durationMinutes: 5, H: 0.1, horizonClass: 'INTRA_CANDLE'}, "UNKNOWN");
+expect(result.finalConfidence).toBeGreaterThanOrEqual(0);
       expect(result.finalConfidence).toBeLessThanOrEqual(100);
       expect(Number.isInteger(result.finalConfidence)).toBe(true);
     }
