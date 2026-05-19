@@ -82,6 +82,10 @@ export async function runSingleAnalysis(params: {
   entryAnchorBase64: string | null;
   rawOutcome?: string;
   frameStable?: boolean;
+  actualDirection?: 'UP' | 'DOWN' | 'FLAT' | null;
+  entryClose?: number;
+  exitClose?: number;
+  candlesCut?: number;
 }> {
   const t0 = performance.now();
   const { imageDataUrl, onJudgeLogs, isTestMode } = params;
@@ -114,16 +118,6 @@ export async function runSingleAnalysis(params: {
     const durM = parseDurationToMinutes(params.investmentDuration);
 
     const payloadPromise = new Promise<any>((resolve, reject) => {
-      messageResolvers.set(msgId, { resolve, reject });
-      w.postMessage({
-        type: 'ANALYZE',
-        msgId,
-        payload: imgData,
-        techniquesList: params.techniquesList,
-        graphTimeframeMinutes: tfM,
-        investmentDurationMinutes: durM
-      });
-
 
     // Handle abort
     params.signal.addEventListener('abort', () => {
@@ -150,7 +144,8 @@ export async function runSingleAnalysis(params: {
         bull: { reasoning: 'FAULT' }, bear: { reasoning: 'FAULT' }, skeptic: { riskVerdict: 'FAULT' }, techUsedCount: 0
       },
       direction: 'NO_TRADE', outcome: 'NEUTRAL', confidence: 0, reason: payload.message,
-      testModeRightSlice: null, finalImageForAnalysis: imageDataUrl, entryAnchorBase64: null, rawOutcome: 'ERROR', frameStable: false
+      testModeRightSlice: null, finalImageForAnalysis: imageDataUrl, entryAnchorBase64: null, rawOutcome: 'ERROR', frameStable: false,
+      actualDirection: null
     };
   }
 
@@ -172,9 +167,14 @@ export async function runSingleAnalysis(params: {
   
   let finalDecision = decision;
   let FS = finalDecision.finalScore;
+  let entryClose: number | undefined;
+  let exitClose: number | undefined;
+  let actualDirection: 'UP' | 'DOWN' | 'FLAT' | null = null;
+  let candlesCut: number | undefined;
 
   if (isTestMode && meta.candlesLength && meta.candlesLength > 10) {
     const nCut = parseInt(params.investmentDuration) || 5;
+    candlesCut = nCut;
     const cropRatio = nCut / meta.candlesLength;
     
     if (cropRatio < 0.5) {
@@ -184,13 +184,16 @@ export async function runSingleAnalysis(params: {
         const ctx = canvas.getContext('2d')!;
         ctx.putImageData(imgData, 0, 0);
 
-        const leftWidth = Math.floor(imgData.width * (1 - cropRatio));
+        const clampedRatio = Math.max(0.05, Math.min(0.40, cropRatio));
+        const cutWidth = Math.floor(imgData.width * clampedRatio);
+        const leftWidth = imgData.width - cutWidth;
+
         const leftCanvas = document.createElement('canvas');
         leftCanvas.width = leftWidth;
         leftCanvas.height = imgData.height;
         leftCanvas.getContext('2d')!.drawImage(canvas, 0, 0, leftWidth, imgData.height, 0, 0, leftWidth, imgData.height);
         
-        const rightWidth = imgData.width - leftWidth;
+        const rightWidth = cutWidth;
         const rightCanvas = document.createElement('canvas');
         rightCanvas.width = rightWidth;
         rightCanvas.height = imgData.height;
@@ -199,16 +202,27 @@ export async function runSingleAnalysis(params: {
         testModeRightSlice = rightCanvas.toDataURL('image/jpeg', 0.5);
         finalImageForAnalysis = leftCanvas.toDataURL('image/jpeg', 0.5);
 
-        // Memory cleanup
-        canvas.width = 0;
-        canvas.height = 0;
-        leftCanvas.width = 0;
-        leftCanvas.height = 0;
-        rightCanvas.width = 0;
-        rightCanvas.height = 0;
+        canvas.width = 0; canvas.height = 0;
+        leftCanvas.width = 0; leftCanvas.height = 0;
+        rightCanvas.width = 0; rightCanvas.height = 0;
 
         const leftImgData = await dataUrlToImageData(finalImageForAnalysis);
 
+
+        const payloadPromise2 = new Promise<any>((resolve, reject) => {
+          messageResolvers.set(msgId2, { resolve, reject });
+          try {
+            w.postMessage({
+              type: 'ANALYZE',
+              msgId: msgId2,
+              imageData: leftImgData,
+              graphTimeframeMinutes: tfM,
+              investmentDurationMinutes: durM,
+              techniquesList: params.techniquesList,
+            });
+          } catch (e: any) {
+            reject(e);
+          }
           params.signal.addEventListener('abort', () => {
             messageResolvers.delete(msgId2);
             reject(new Error('Aborted'));
@@ -217,21 +231,28 @@ export async function runSingleAnalysis(params: {
 
         const payload2 = await payloadPromise2;
         
-        if (payload2.type !== 'ERROR' && payload2.debugTrace?.decision?.evidence?.lastClose !== undefined) {
-           finalDecision = payload2.debugTrace.decision;
-           FS = finalDecision.finalScore;
+        if (payload2.type !== 'ERROR') {
+           finalDecision = payload2.debugTrace?.decision || payload2.decision || finalDecision;
+           FS = finalDecision.finalScore || 0;
            
-           const originalClose = decision.evidence?.lastClose;
-           const newClose = finalDecision.evidence.lastClose;
+           exitClose = decision?.evidence?.lastClose;
+           entryClose = finalDecision?.evidence?.lastClose;
            
-           if (originalClose !== undefined) {
-             const actualDir = originalClose > newClose ? 'UP' : (originalClose < newClose ? 'DOWN' : 'NO_TRADE');
-             if (actualDir === 'NO_TRADE' || finalDecision.winner === 'NO_TRADE') {
+           if (entryClose !== undefined && exitClose !== undefined) {
+             if (exitClose > entryClose) {
+               actualDirection = 'UP';
+             } else if (exitClose < entryClose) {
+               actualDirection = 'DOWN';
+             } else {
+               actualDirection = 'FLAT';
+             }
+
+             if (actualDirection === 'FLAT' || finalDecision.winner === 'NO_TRADE') {
                  outcome = 'NEUTRAL';
              } else if (finalDecision.winner === 'BULL') {
-                 outcome = actualDir === 'UP' ? 'WIN' : 'LOSS';
+                 outcome = actualDirection === 'UP' ? 'WIN' : 'LOSS';
              } else if (finalDecision.winner === 'BEAR') {
-                 outcome = actualDir === 'DOWN' ? 'WIN' : 'LOSS';
+                 outcome = actualDirection === 'DOWN' ? 'WIN' : 'LOSS';
              }
            }
         }
@@ -283,6 +304,7 @@ export async function runSingleAnalysis(params: {
       techUsedCount: finalDecision.techUsedCount || 0
     },
     direction: mappedDirection,
+    actualDirection,
     outcome,
     confidence: finalDecision.finalConfidence,
     reason: `Engine completed with finalScore=${FS}`,
@@ -290,6 +312,9 @@ export async function runSingleAnalysis(params: {
     finalImageForAnalysis,
     entryAnchorBase64: null,
     rawOutcome: finalDecision.signal,
-    frameStable
+    frameStable,
+    entryClose,
+    exitClose,
+    candlesCut
   };
 }

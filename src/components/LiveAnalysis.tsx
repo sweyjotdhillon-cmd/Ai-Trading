@@ -68,6 +68,7 @@ export function useWakeLock() {
 }
 
 
+
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { 
   CheckCircle, 
@@ -1482,6 +1483,25 @@ export function LiveAnalysis() {
                 <Text style={tw`text-[#D9B382] font-black uppercase tracking-[2px] text-xs mb-4 text-center`}>
                   AUTO-TEST RESULT
                 </Text>
+
+                {/* DUAL VERDICT: Predicted vs Actual */}
+                {analysis && (
+                  <View style={tw`flex-row items-center justify-center mb-4 gap-2`}>
+                    <View style={tw`bg-black bg-opacity-30 border border-white border-opacity-10 rounded-lg px-4 py-2`}>
+                      <Text style={tw`text-white text-opacity-40 text-[9px] uppercase tracking-widest`}>Predicted</Text>
+                      <Text style={tw`font-black text-lg ${tradingDirection === 'UP' ? 'text-green-400' : tradingDirection === 'DOWN' ? 'text-red-400' : 'text-white text-opacity-50'}`}>
+                        {tradingDirection === 'UP' ? '▲ UP' : tradingDirection === 'DOWN' ? '▼ DOWN' : '— NO TRADE'}
+                      </Text>
+                    </View>
+                    <Text style={tw`text-white text-opacity-30 text-xl`}>/</Text>
+                    <View style={tw`bg-black bg-opacity-30 border border-white border-opacity-10 rounded-lg px-4 py-2`}>
+                      <Text style={tw`text-white text-opacity-40 text-[9px] uppercase tracking-widest`}>Actual</Text>
+                      <Text style={tw`font-black text-lg ${actualDirection === 'UP' ? 'text-green-400' : actualDirection === 'DOWN' ? 'text-red-400' : 'text-white text-opacity-50'}`}>
+                        {actualDirection === 'UP' ? '▲ PROFIT' : actualDirection === 'DOWN' ? '▼ LOSS' : '— FLAT'}
+                      </Text>
+                    </View>
+                  </View>
+                )}
 
                 {/* Slice preview — visual confirmation that the crop did what user expected */}
                 {(testModeLeftSlice || testModeRightSlice) && (

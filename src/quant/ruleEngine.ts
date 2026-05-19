@@ -9,6 +9,28 @@
 import { rsi, macd, bollinger, atr, stochastic } from './indicators';
 import { calculateHurst, calculateZScore, calculateEMADerivatives, calculateMicroMomentumScore, calculateVolatilityRegime, detectRSIDivergence, calculateVolatilityRegimeLegacy, calculateZScoreSignificance, calculateRQA } from './mathEngine';
 import { emaSlope, emaCurvature } from './calculus';
+import {
+  calculateHurst,
+  calculateZScore,
+  calculateZScoreSignificance,
+  calculateEMADerivatives,
+  calculateMicroMomentumScore,
+  calculateVolatilityRegime,
+  calculateVolatilityRegimeLegacy,
+  detectRSIDivergence,
+  calculateRQA
+} from './mathEngine';
+import {
+  calculateHurst,
+  calculateZScore,
+  calculateZScoreSignificance,
+  calculateEMADerivatives,
+  calculateMicroMomentumScore,
+  calculateVolatilityRegime,
+  calculateVolatilityRegimeLegacy,
+  detectRSIDivergence,
+  calculateRQA
+} from './mathEngine';
 
 
 
@@ -516,9 +538,9 @@ export interface DecisionResult extends JudgeVerdict {
       rsi: rsiVals[last],
       macd: macdVals.macd[last],
       macdHist: macdVals.hist[last],
-      bollMiddle: bollVals.middle[last]
+      bollMiddle: bollVals.middle[last],
+      lastClose: closes[last]
     }
   };
 
 
-}
