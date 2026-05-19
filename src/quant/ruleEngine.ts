@@ -9,6 +9,7 @@ import { calculateHurst, calculateZScore, calculateEMADerivatives, calculateMicr
  */
 import { rsi, macd, bollinger, atr, stochastic } from './indicators';
 import { emaSlope, emaCurvature } from './calculus';
+import { calculateHurst, calculateZScore, calculateZScoreSignificance, calculateVolatilityRegimeLegacy, calculateVolatilityRegime, calculateRQA, calculateEMADerivatives, calculateMicroMomentumScore, detectRSIDivergence } from './mathEngine';
 
 
 import { NumericOHLC } from '../vision/pipeline';
@@ -44,8 +45,7 @@ export interface DecisionResult extends JudgeVerdict {
 }
 
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export function evaluateSignal(ohlcSeries: NumericOHLC[], techniquesList: string[], horizonCtx: HorizonContext, _stock: string): DecisionResult {
+
   const defaultCases = { bull: { j1: 0, j2: 0, j3: 0, total: 0 }, bear: { j1: 0, j2: 0, j3: 0, total: 0 } };
   const defaultNoTrade: DecisionResult = {
     cases: defaultCases, skepticMultiplier: 1, winner: 'NO_TRADE', margin: 0, finalConfidence: 0, ruling: 'Insufficient data or techniques',
@@ -68,6 +68,8 @@ export function evaluateSignal(ohlcSeries: NumericOHLC[], techniquesList: string
 
   // Constants
   const last = closes.length - 1;
+
+
 
 
   // Compute indicators
@@ -458,7 +460,9 @@ export function evaluateSignal(ohlcSeries: NumericOHLC[], techniquesList: string
   const rawWinningTotal = winner === 'BULL' ? cases.bull.total : (winner === 'BEAR' ? cases.bear.total : 0);
   
   // Only neutral if points are tied or practically tied, as requested by strict point system
-  if (margin < 0.5) winner = 'NO_TRADE';
+  if (margin < 3 || rawWinningTotal < 7) {
+    winner = 'NO_TRADE';
+  }
   
   const finalConfidence = Math.round((rawWinningTotal * skepticMultiplier / 11) * 100);
 

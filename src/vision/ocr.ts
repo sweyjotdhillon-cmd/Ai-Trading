@@ -56,7 +56,7 @@ export function recognizeDigits(roi: ImageData): { text: string; confidence: num
     let minY = h, maxY = -1;
     for (let y = 0; y < h; y++) {
       for (let x = roi.minX; x <= roi.maxX; x++) {
-        if (bin[y * w + x] > 0) {
+        if (x < w && bin[y * w + x] > 0) {
           if (y < minY) minY = y;
           if (y > maxY) maxY = y;
         }

@@ -114,8 +114,6 @@ export async function runSingleAnalysis(params: {
     const durM = parseDurationToMinutes(params.investmentDuration);
 
     const payloadPromise = new Promise<any>((resolve, reject) => {
-    messageResolvers.set(msgId, { resolve, reject });
-    try { w.postMessage({ type: 'ANALYZE', msgId, imageData: imgData, graphTimeframeMinutes: tfM, investmentDurationMinutes: durM, techniquesList: params.techniquesList, stock: params.stock, investmentAmount: parseFloat(params.investmentAmount), profitabilityPercent: parseFloat(params.profitabilityPercent) }); } catch (e) { reject(e); }
 
     // Handle abort
     params.signal.addEventListener('abort', () => {
@@ -199,9 +197,8 @@ export async function runSingleAnalysis(params: {
         rightCanvas.width = 0;
         rightCanvas.height = 0;
 
-        // const leftImgData = await dataUrlToImageData(finalImageForAnalysis); // TSFix: remove unused
+        const leftImgData = await dataUrlToImageData(finalImageForAnalysis);
         
-
 
         const payload2 = await payloadPromise2;
         

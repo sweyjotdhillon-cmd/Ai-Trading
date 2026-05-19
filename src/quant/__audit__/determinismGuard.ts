@@ -20,6 +20,7 @@ export async function runDeterminismGuard(): Promise<boolean> {
     // const pipe = buildPipelineResult(img);
 
     
+    const decision = evaluateSignal(pipe.ohlcSeries, []);
     const trace = JSON.stringify({
       signal: decision.signal,
       confidence: decision.confidence,
