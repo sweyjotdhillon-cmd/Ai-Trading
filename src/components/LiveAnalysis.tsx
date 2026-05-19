@@ -825,7 +825,7 @@ export function LiveAnalysis() {
       </View>
     )}
 
-      {tradingPhase === 'WAITING_FOR_ENTRY' && tradingDirection && (
+      {mode === 'live' && tradingPhase === 'WAITING_FOR_ENTRY' && tradingDirection && (
           <AnimatedArrows direction={tradingDirection} />
       )}
 
