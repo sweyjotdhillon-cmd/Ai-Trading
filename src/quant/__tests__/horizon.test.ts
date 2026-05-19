@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseDurationToMinutes, rescaledRangeHurst, HorizonContext } from '../horizon';
+import { parseDurationToMinutes, rescaledRangeHurst } from '../horizon';
 import { evaluateSignal } from '../ruleEngine';
 import { NumericOHLC } from '../../vision/pipeline';
 
@@ -45,15 +45,10 @@ describe('Horizon Context & Helpers', () => {
     val += 5;
     series.push({ open: val - 4, high: val, low: val - 4, close: val, xCenter: 0, isBull: true });
 
-    const ctxLowH: HorizonContext = { tfMinutes: 30, durationMinutes: 3, H: 0.1, horizonClass: 'INTRA_CANDLE' };
-    const ctxHighH: HorizonContext = { tfMinutes: 30, durationMinutes: 30, H: 1.0, horizonClass: 'NEAR_FULL' };
 
-    // Test bypass to allow small lists
-    const bypass = ["__TEST_BYPASS__"];
 
-    const resultLowH = evaluateSignal(series, ctxLowH, bypass);
-    const resultHighH = evaluateSignal(series, ctxHighH, bypass);
-
+    const resultLowH = evaluateSignal(series, ["__TEST_BYPASS__"], {tfMinutes: 30, durationMinutes: 5, H: 0.1, horizonClass: 'INTRA_CANDLE'}, "UNKNOWN");
+    const resultHighH = evaluateSignal(series, ["__TEST_BYPASS__"], {tfMinutes: 30, durationMinutes: 30, H: 1.0, horizonClass: 'NEAR_FULL'}, "UNKNOWN");
     expect(resultLowH.finalConfidence).toBeDefined();
     expect(resultHighH.finalConfidence).toBeDefined();
   });
