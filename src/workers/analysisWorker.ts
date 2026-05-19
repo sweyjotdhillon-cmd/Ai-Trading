@@ -58,10 +58,23 @@ self.onmessage = async (e: MessageEvent) => {
         horizonClass: hClass
       };
 
+      const t0Worker = performance.now();
       const pipe = buildPipelineResult(data.imageData);
+      console.log(`[PERF] buildPipelineResult: ${(performance.now()-t0Worker).toFixed(1)}ms`);
 
 
 
+      const t1Worker = performance.now();
+      const decision = evaluateSignal(
+        pipe.ohlcSeries,
+        data.techniquesList,
+        horizonCtx,
+        pipe.axis,
+        pipe.meta.mode,
+        undefined
+      );
+      console.log(`[PERF] evaluateSignal: ${(performance.now()-t1Worker).toFixed(1)}ms`);
+      console.log(`[PERF] TOTAL worker: ${(performance.now()-t0Worker).toFixed(1)}ms`);
       const stab = emitStability(decision);
 
       const debugTrace = {

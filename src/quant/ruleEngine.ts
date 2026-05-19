@@ -6,6 +6,7 @@
  * Preserved legacy keys (signal, confidence, bullScore, bearScore, etc.) for backward compatibility.
  */
 import { rsi, macd, bollinger, atr, stochastic } from './indicators';
+import { calculateHurst, calculateZScore, calculateEMADerivatives, calculateMicroMomentumScore, calculateVolatilityRegime, detectRSIDivergence, calculateVolatilityRegimeLegacy, calculateZScoreSignificance, calculateRQA } from './mathEngine';
 import { emaSlope, emaCurvature } from './calculus';
 
 
@@ -40,6 +41,16 @@ export interface DecisionResult extends JudgeVerdict {
   techniquesUsed?: string;
   techUsedCount?: number;
 }
+
+export function evaluateSignal(
+  ohlcSeries: NumericOHLC[],
+  techniquesList: string[],
+  horizonCtx: HorizonContext = { tfMinutes: 30, durationMinutes: 5, H: 5/30, horizonClass: 'INTRA_CANDLE' },
+  priceAxis?: any,
+  priceMode?: any,
+  snr?: any
+): DecisionResult {
+
 
 
   const defaultCases = { bull: { j1: 0, j2: 0, j3: 0, total: 0 }, bear: { j1: 0, j2: 0, j3: 0, total: 0 } };

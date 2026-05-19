@@ -116,7 +116,19 @@ export async function runSingleAnalysis(params: {
     const payloadPromise = new Promise<any>((resolve, reject) => {
     messageResolvers.set(msgId, { resolve, reject });
     try {
-
+      w.postMessage({
+        type: 'ANALYZE',
+        msgId,
+        imageData: imgData,
+        graphTimeframeMinutes: tfM,
+        investmentDurationMinutes: durM,
+        techniquesList: params.techniquesList,
+        stock: params.stock,
+        investmentAmount: parseFloat(params.investmentAmount),
+        profitabilityPercent: parseFloat(params.profitabilityPercent),
+      });
+    } catch (err) {
+      reject(err);
     }
 
     // Handle abort
@@ -204,6 +216,30 @@ export async function runSingleAnalysis(params: {
         // const leftImgData = await dataUrlToImageData(finalImageForAnalysis); // TSFix: remove unused
         
         const msgId2 = generateId();
+
+        const leftImgData = await dataUrlToImageData(finalImageForAnalysis);
+        const payloadPromise2 = new Promise<any>((resolve, reject) => {
+          messageResolvers.set(msgId2, { resolve, reject });
+          try {
+            w.postMessage({
+              type: 'ANALYZE',
+              msgId: msgId2,
+              imageData: leftImgData,         // the cropped left slice
+              graphTimeframeMinutes: tfM,
+              investmentDurationMinutes: durM,
+              techniquesList: params.techniquesList,
+              stock: params.stock,
+              investmentAmount: parseFloat(params.investmentAmount),
+              profitabilityPercent: parseFloat(params.profitabilityPercent),
+            });
+          } catch (err) {
+            reject(err);
+          }
+          params.signal.addEventListener('abort', () => {
+            messageResolvers.delete(msgId2);
+            reject(new Error('Aborted'));
+          });
+        });
 
         const payload2 = await payloadPromise2;
         

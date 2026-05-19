@@ -100,6 +100,7 @@ afterEach(() => {
   it('5. totals per judge never exceed cap', async () => {
     const series = generateSeries('uptrend', 100);
 
+    const result = evaluateSignal(series, ['__TEST_BYPASS__']);
     expect(result.cases.bull.j1).toBeLessThanOrEqual(4);
     expect(result.cases.bear.j1).toBeLessThanOrEqual(4);
     
@@ -114,6 +115,7 @@ afterEach(() => {
     for (const type of ['uptrend', 'downtrend', 'sideways', 'explosive'] as const) {
       const series = generateSeries(type);
 
+      const result = evaluateSignal(series, ['__TEST_BYPASS__']);
       expect(result.finalConfidence).toBeGreaterThanOrEqual(0);
       expect(result.finalConfidence).toBeLessThanOrEqual(100);
       expect(Number.isInteger(result.finalConfidence)).toBe(true);

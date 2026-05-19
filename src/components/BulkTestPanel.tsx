@@ -1,3 +1,4 @@
+import { TIMEOUTS } from '../config/timeouts';
 import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, Pressable, ScrollView, Platform } from 'react-native';
 import tw from 'twrnc';
@@ -229,6 +230,7 @@ export function BulkTestPanel({
   };
 
 
+  const runBatch = async () => {
     if (queue.length === 0 || manifestErrors.length > 0) return;
     
     const missing = queue.filter(q => !q.file && !q.entry.imageData && q.status === 'Pending');
@@ -241,13 +243,11 @@ export function BulkTestPanel({
     setIsPaused(false);
     abortControllerRef.current = new AbortController();
 
-    const CONCURRENCY_LIMIT = 15;
+    const CONCURRENCY_LIMIT = 1;
     let currentIndex = 0;
-    let hasErrorHalted = false;
-
-    const workerLoop = async () => {
+        const workerLoop = async () => {
       while (currentIndex < queue.length) {
-        if (abortControllerRef.current?.signal.aborted || isPaused || hasErrorHalted) break;
+        if (abortControllerRef.current?.signal.aborted || isPaused ) break;
         
         const i = currentIndex++;
         const item = queue[i];
@@ -306,13 +306,8 @@ export function BulkTestPanel({
             setQueue(q => q.map((r, idx) => idx === i ? { ...r, status: 'Pending' } : r));
             break;
           }
+          console.error(`[BulkTest] Item ${i + 1} failed:`, err.message);
           setQueue(q => q.map((r, idx) => idx === i ? { ...r, status: 'Error', error: err.message } : r));
-          
-          if (!hasErrorHalted) {
-            alert(`Analysis Error on item ${i + 1}: ${err.message}\nBatch run halted.`);
-            hasErrorHalted = true;
-          }
-          break;
         }
 
         // No massive delay, just briefly yield to event loop
@@ -327,7 +322,7 @@ export function BulkTestPanel({
     // After running, fetch the latest queue state logically
     setQueue(currentQueue => {
        const losses = currentQueue.filter(q => q.status === 'LOSS' && q.result);
-       if (losses.length > 0 && !hasErrorHalted && !abortControllerRef.current?.signal.aborted && !isPaused) {
+       if (losses.length > 0 && !abortControllerRef.current?.signal.aborted && !isPaused) {
           setTimeout(() => runMasterAutopsyChain(losses).catch(e => console.error("master autopsy error:", e)), 0);
        }
        return currentQueue;

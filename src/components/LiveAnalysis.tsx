@@ -1,3 +1,4 @@
+import { TIMEOUTS } from '../config/timeouts';
 let _seed = 0xC0FFEE;
 function pseudoRandom() {
   _seed = (_seed * 1664525 + 1013904223) % 4294967296;
@@ -71,8 +72,8 @@ import {   View,
   Pressable, 
   ScrollView, 
   ActivityIndicator, 
-  TextInput,
-
+  TextInput
+} from 'react-native';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { 
   CheckCircle, 
@@ -630,7 +631,7 @@ export function LiveAnalysis() {
 
     setTimeout(() => {
       (async () => {
-        // // let controller: AbortController | undefined; // TSFix: remove unused
+        let controller: AbortController | undefined;
         let timeoutId: any;
         try {
           setLoading(true);
@@ -640,7 +641,7 @@ export function LiveAnalysis() {
 
           timeoutId = setTimeout(() => {
             if (controller) controller.abort();
-          }, 360000);
+          }, TIMEOUTS.SINGLE_ANALYSIS_MS);
 
           const result = await runSingleAnalysis({
             imageDataUrl: finalImageToAnalyze,
@@ -682,9 +683,7 @@ export function LiveAnalysis() {
           }
 
 
-          }
-
-          if (result.direction !== 'NO_TRADE') {
+        if (result.direction !== 'NO_TRADE') {
             setTradingDirection(result.direction);
             setTradingPhase('WAITING_FOR_ENTRY');
           } else {
