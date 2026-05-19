@@ -136,6 +136,21 @@ export function BulkTestPanel({
   const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
+    if (Platform.OS === 'web') {
+      const handleGlobalDragOver = (e: any) => e.preventDefault();
+      const handleGlobalDrop = (e: any) => e.preventDefault();
+
+      window.addEventListener('dragover', handleGlobalDragOver, { passive: false });
+      window.addEventListener('drop', handleGlobalDrop, { passive: false });
+
+      return () => {
+        window.removeEventListener('dragover', handleGlobalDragOver);
+        window.removeEventListener('drop', handleGlobalDrop);
+      };
+    }
+  }, []);
+
+  useEffect(() => {
     if (isQueueRunning && !isPaused) {
       requestLock();
     } else {
@@ -421,20 +436,59 @@ export function BulkTestPanel({
         {tab === 'build' ? (
           <View style={tw`gap-6`}>
             {/* Same Tab 1 as before */}
-            <Pressable 
-              onPress={() => {
-                if (Platform.OS === 'web') {
+            {Platform.OS === 'web' ? (
+              <div
+                onClick={() => {
                   document.getElementById('bulk-image-upload')?.click();
-                }
-              }}
-              style={({ pressed }) => [
-                tw`border-2 border-dashed border-white border-opacity-10 rounded-xl p-8 flex-col items-center justify-center bg-black bg-opacity-20 relative`,
-                { opacity: pressed ? 0.7 : 1 }
-              ]}
-              // @ts-expect-error React Native type discrepancy for web events
-              onDragOver={handleDragOver} 
-              onDrop={handleDropImages}
-            >
+                }}
+                onDragOver={handleDragOver as any}
+                onDrop={handleDropImages as any}
+                style={{ cursor: 'pointer', width: '100%', height: '100%' }}
+                className="hover:opacity-70 transition-opacity"
+              >
+                <View style={tw`border-2 border-dashed border-white border-opacity-10 rounded-xl p-8 flex-col items-center justify-center bg-black bg-opacity-20 relative`}>
+
+              {Platform.OS === 'web' && (
+                <input
+                  id="bulk-image-upload"
+                  type="file"
+                  multiple
+                  accept="image/*"
+                  onChange={handleFileSelect}
+                  style={{ display: 'none' }}
+                />
+              )}
+              <UploadCloud size={32} color="#D9B382" style={{ opacity: 0.8, marginBottom: 16 }} />
+              <Text style={tw`text-white font-black text-sm uppercase tracking-widest mb-2`}>
+                Drag & Drop or Click to Upload
+              </Text>
+              <Text style={tw`text-white text-[10px] text-opacity-40 uppercase font-bold tracking-widest mb-3 text-center`}>
+                Max Recommended Batch Size: Unlimited (Offline Engine)
+              </Text>
+              <Text style={tw`text-white text-opacity-50 text-xs text-center px-4`}>
+                Drop chart screenshots here to generate a matching JSON manifest sequence.
+              </Text>
+              {images.length > 0 && (
+                <View style={tw`mt-4 bg-[#D9B382] bg-opacity-10 py-1 px-3 rounded-md`}>
+                  <Text style={tw`text-[#D9B382] font-black text-[10px]`}>{images.length} IMAGES LOADED</Text>
+                </View>
+              )}
+
+                </View>
+              </div>
+            ) : (
+              <Pressable
+                onPress={() => {
+                  if (Platform.OS === 'web') {
+                    document.getElementById('bulk-image-upload')?.click();
+                  }
+                }}
+                style={({ pressed }) => [
+                  tw`border-2 border-dashed border-white border-opacity-10 rounded-xl p-8 flex-col items-center justify-center bg-black bg-opacity-20 relative`,
+                  { opacity: pressed ? 0.7 : 1 }
+                ]}
+              >
+
               {Platform.OS === 'web' && (
                 <input 
                   id="bulk-image-upload" 
@@ -460,7 +514,9 @@ export function BulkTestPanel({
                   <Text style={tw`text-[#D9B382] font-black text-[10px]`}>{images.length} IMAGES LOADED</Text>
                 </View>
               )}
-            </Pressable>
+
+              </Pressable>
+            )}
 
             <View style={tw`pt-4 border-t border-white border-opacity-10`}>
               <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
