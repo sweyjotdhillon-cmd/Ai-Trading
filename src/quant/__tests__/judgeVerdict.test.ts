@@ -88,7 +88,7 @@ afterEach(() => {
 
   it('4. Trending but EXPLOSIVE_SKIP volatility', async () => {
     const series = generateSeries('explosive', 150);
-    const result = evaluateSignal(series, ['__TEST_BYPASS__'], {tfMinutes: 30, durationMinutes: 5, H: 0.5, horizonClass: 'INTRA_CANDLE'});
+    const result = evaluateSignal(series, {tfMinutes: 30, durationMinutes: 5, H: 0.5, horizonClass: 'INTRA_CANDLE'}, ['__TEST_BYPASS__']);
 
 
     if (result.cases.bull.total > 0 || result.cases.bear.total > 0) {
@@ -100,6 +100,7 @@ afterEach(() => {
     const series = generateSeries('uptrend', 100);
 
 
+    const result = evaluateSignal(series, {tfMinutes: 30, durationMinutes: 5, H: 0.5, horizonClass: 'INTRA_CANDLE'}, ['__TEST_BYPASS__']);
     expect(result.cases.bear.j1).toBeLessThanOrEqual(4);
     
     expect(result.cases.bull.j2).toBeLessThanOrEqual(4);
@@ -114,6 +115,7 @@ afterEach(() => {
       const series = generateSeries(type);
 
 
+      const result = evaluateSignal(series, {tfMinutes: 30, durationMinutes: 5, H: 0.5, horizonClass: 'INTRA_CANDLE'}, ['__TEST_BYPASS__']);
       expect(result.finalConfidence).toBeLessThanOrEqual(100);
       expect(Number.isInteger(result.finalConfidence)).toBe(true);
     }

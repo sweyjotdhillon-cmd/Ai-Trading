@@ -67,12 +67,7 @@ export function useWakeLock() {
   return { requestLock, releaseLock };
 }
 
-import {   View, 
-  Text, 
-  Pressable, 
-  ScrollView, 
-  ActivityIndicator, 
-
+import { View, Text, Pressable, ScrollView, ActivityIndicator, Image, TextInput } from 'react-native';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { 
   CheckCircle, 
@@ -683,12 +678,14 @@ export function LiveAnalysis() {
 
 
 
-            setTradingDirection(result.direction);
-            setTradingPhase('WAITING_FOR_ENTRY');
-          } else {
-            setTradingDirection(null);
-            setTradingPhase('IDLE');
-          }
+            if (result.direction !== 'NO_TRADE') {
+                setTradingDirection(result.direction);
+                setTradingPhase('WAITING_FOR_ENTRY');
+            } else {
+                setTradingDirection(null);
+                setTradingPhase('IDLE');
+            }
+
 
           setTimeout(() => {
             if (result.direction !== 'NO_TRADE') {

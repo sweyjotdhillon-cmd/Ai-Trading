@@ -15,6 +15,8 @@ import { emaSlope, emaCurvature } from './calculus';
 
 import { NumericOHLC } from '../vision/pipeline';
 import { HorizonContext, rescaledRangeHurst, PATTERN_WEIGHTS_BY_HORIZON } from './horizon';
+import { featureFlags } from '../config/featureFlags';
+import { patternWeights } from '../config/patternWeights';
 
 export interface CaseScore {
   j1: number;
@@ -45,13 +47,7 @@ export interface DecisionResult extends JudgeVerdict {
   techUsedCount?: number;
 }
 
-export function evaluateSignal(
-  ohlcSeries: NumericOHLC[],
-  techniquesList: string[],
-
-
-
-export function evaluateSignal(ohlcSeries: NumericOHLC[], horizonCtx: HorizonContext, techniquesList?: string[]): DecisionResult {
+export function evaluateSignal(ohlcSeries: NumericOHLC[], horizonCtx: HorizonContext, techniquesList?: string[], confirmedPatterns?: PatternEvidence[]): DecisionResult {
   const defaultCases = { bull: { j1: 0, j2: 0, j3: 0, total: 0 }, bear: { j1: 0, j2: 0, j3: 0, total: 0 } };
   const defaultNoTrade: DecisionResult = {
     cases: defaultCases, skepticMultiplier: 1, winner: 'NO_TRADE', margin: 0, finalConfidence: 0, ruling: 'Insufficient data or techniques',
@@ -62,6 +58,10 @@ export function evaluateSignal(ohlcSeries: NumericOHLC[], horizonCtx: HorizonCon
   
   if (ohlcSeries.length < 30) return defaultNoTrade;
   if (!techniquesList || (techniquesList.length < 10 && !techniquesList.includes("__TEST_BYPASS__"))) return defaultNoTrade;
+
+  let bullJ1 = 0, bullJ2 = 0, bullJ3 = 0;
+  let bearJ1 = 0, bearJ2 = 0, bearJ3 = 0;
+  let skepticMultiplier = 1.0;
 
   const closes = new Float64Array(ohlcSeries.length);
   const highs = new Float64Array(ohlcSeries.length);
@@ -95,11 +95,11 @@ export function evaluateSignal(ohlcSeries: NumericOHLC[], horizonCtx: HorizonCon
   for (let i = closes.length - 1; i > closes.length - 1 - recentCount; i--) {
     microRangeSum += Math.abs(closes[i] - closes[i-1]);
   }
-  microRange = recentCount > 0 ? microRangeSum / recentCount : 0;
+  const microRange = recentCount > 0 ? microRangeSum / recentCount : 0;
 
 
   // --- R6: Slope Strength ---
-  slopeStrength = atrVals[last] > 0 ? Math.abs(slope[last]) / atrVals[last] : 0;
+  const slopeStrength = atrVals[last] > 0 ? Math.abs(slope[last]) / atrVals[last] : 0;
 
 
 
@@ -408,6 +408,17 @@ export function evaluateSignal(ohlcSeries: NumericOHLC[], horizonCtx: HorizonCon
   bearJ3 = Math.min(3, bearJ3);
 
 
+  // --- New Feature: Candlestick Pattern Evidence ---
+  if (featureFlags.enableCandlestickRepoPatterns && confirmedPatterns) {
+    confirmedPatterns.forEach(ev => {
+      if (ev.direction === 'BULL') bullJ1 += patternWeights.BULLISH;
+      if (ev.direction === 'BEAR') bearJ1 += patternWeights.BEARISH;
+    });
+    // Ensure we don't bypass caps after applying the modifier
+    bullJ1 = Math.min(4, bullJ1);
+    bearJ1 = Math.min(4, bearJ1);
+  }
+
   // --- R5: Hurst Balancer ---
   const H_exp = rescaledRangeHurst(closes.slice(-32));
   if (!isNaN(H_exp)) {
@@ -432,6 +443,7 @@ export function evaluateSignal(ohlcSeries: NumericOHLC[], horizonCtx: HorizonCon
   const candlesForMathEngine = ohlcSeries.map((c, i) => ({ ...c, prevClose: i > 0 ? ohlcSeries[i-1].close : c.open }));
   
 
+  const vol = calculateVolatilityRegimeLegacy(atrVals);
   if (vol.status === 'EXPLOSIVE_SKIP') skepticMultiplier *= 0.5;
 
   const zScoreData = calculateZScoreSignificance(candlesForMathEngine.slice(-21));
@@ -445,6 +457,7 @@ export function evaluateSignal(ohlcSeries: NumericOHLC[], horizonCtx: HorizonCon
   if (rqa.laminarity < 0.1 && rqa.determinism < 0.15) skepticMultiplier *= 0.5;
 
 
+  const expectedMoveVar = atrVals[last] * Math.sqrt(horizonCtx.H);
   if (expectedMoveVar < microRange * 0.2) {
      skepticMultiplier *= 0.1; // Extinguish confidence
   }

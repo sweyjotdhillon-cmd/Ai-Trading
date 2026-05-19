@@ -6,6 +6,19 @@ import path from 'path';
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
+  worker: {
+    rollupOptions: {
+      external: ['candlestick'],
+    }
+  },
+  build: {
+    rollupOptions: {
+      external: ['candlestick'],
+    },
+    commonjsOptions: {
+      include: [/candlestick/, /node_modules/]
+    }
+  },
   resolve: {
     alias: {
       'react-native/Libraries/Utilities/codegenNativeComponent': path.resolve(__dirname, 'src/shims/codegenNativeComponent.ts'),

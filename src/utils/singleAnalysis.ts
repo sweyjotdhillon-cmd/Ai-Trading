@@ -199,10 +199,6 @@ export async function runSingleAnalysis(params: {
         rightCanvas.height = 0;
 
         const leftImgData = await dataUrlToImageData(finalImageForAnalysis);
-        
-
-
-        const leftImgData = await dataUrlToImageData(finalImageForAnalysis);
         const payloadPromise2 = new Promise<any>((resolve, reject) => {
           messageResolvers.set(msgId2, { resolve, reject });
           try {
