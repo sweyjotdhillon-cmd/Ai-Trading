@@ -73,8 +73,6 @@ import {   View,
   ScrollView, 
   ActivityIndicator, 
 
-} from 'react-native';
-
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { 
   CheckCircle, 
@@ -632,7 +630,7 @@ export function LiveAnalysis() {
 
     setTimeout(() => {
       (async () => {
-        // // let controller: AbortController | undefined; // TSFix: remove unused
+        let controller: AbortController | undefined;
         let timeoutId: any;
         try {
           setLoading(true);
@@ -684,7 +682,7 @@ export function LiveAnalysis() {
           }
 
 
-          if (result.direction !== 'NO_TRADE') {
+
             setTradingDirection(result.direction);
             setTradingPhase('WAITING_FOR_ENTRY');
           } else {
