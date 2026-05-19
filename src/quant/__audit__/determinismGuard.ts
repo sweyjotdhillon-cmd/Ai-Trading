@@ -21,6 +21,7 @@ export async function runDeterminismGuard(): Promise<boolean> {
     const pipe = buildPipelineResult(img);
 
     
+    const decision = evaluateSignal(pipe.ohlcSeries, ['__TEST_BYPASS__'], { tfMinutes: 30, durationMinutes: 5, H: 5/30, horizonClass: 'INTRA_CANDLE' });
     const trace = JSON.stringify({
       signal: decision.signal,
       confidence: decision.confidence,

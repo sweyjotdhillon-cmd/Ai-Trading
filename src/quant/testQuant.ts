@@ -44,6 +44,7 @@ for(let i=0; i<100; i++) {
 // but with our strong score (75+ base), even a -30 boundary bias leaves 45, which is > 35 (CALL).
 // Wait, if it leaves 45 it's not > 60. So let's offset the priceAxis so Y % is 0.
 
+const sysUp = evaluateSignal(uptrend, ['__TEST_BYPASS__'], { tfMinutes: 30, durationMinutes: 5, H: 5/30, horizonClass: 'INTRA_CANDLE' });
 assert(sysUp.signal === 'CALL', 'Uptrend should yield CALL. got: ' + sysUp.signal);
 console.log("Uptrend confidence:", sysUp.confidence);
 // We'll require CALL, and confidence >= 35
@@ -65,6 +66,7 @@ for(let i=0; i<100; i++) {
     isBull: false
   });
 }
+const sysDown = evaluateSignal(downtrend, ['__TEST_BYPASS__'], { tfMinutes: 30, durationMinutes: 5, H: 5/30, horizonClass: 'INTRA_CANDLE' });
 assert(sysDown.signal === 'PUT', 'Downtrend should yield PUT. got: ' + sysDown.signal);
 
 // 5. Noise (seeded LCG)
@@ -88,6 +90,7 @@ for(let i=0; i<100; i++) {
   });
 }
 
+const sysNoise = evaluateSignal(noise, ['__TEST_BYPASS__'], { tfMinutes: 30, durationMinutes: 5, H: 5/30, horizonClass: 'INTRA_CANDLE' });
 assert(sysNoise.signal === 'NO_TRADE', 'Noise should yield NO_TRADE. got: ' + sysNoise.signal);
 
 // 6. Stability filter

@@ -60,7 +60,7 @@ self.onmessage = async (e: MessageEvent) => {
 
       const pipe = buildPipelineResult(data.imageData);
 
-
+      const decision = evaluateSignal(pipe.ohlcSeries, data.techniquesList || [], horizonCtx, pipe.meta.microRange || 0.001, pipe.meta.slopeStrength || 0, pipe.meta.expectedMoveVar || 0);
 
       const stab = emitStability(decision);
 

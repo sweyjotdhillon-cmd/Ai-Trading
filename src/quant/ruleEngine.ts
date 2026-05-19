@@ -7,6 +7,16 @@
  */
 import { rsi, macd, bollinger, atr, stochastic } from './indicators';
 import { emaSlope, emaCurvature } from './calculus';
+import {
+  calculateVolatilityRegime,
+  calculateZScoreSignificance,
+  calculateRQA,
+  calculateHurst,
+  calculateZScore,
+  calculateEMADerivatives,
+  calculateMicroMomentumScore,
+  detectRSIDivergence
+} from './mathEngine';
 
 
 import { NumericOHLC } from '../vision/pipeline';
@@ -41,6 +51,16 @@ export interface DecisionResult extends JudgeVerdict {
   techUsedCount?: number;
 }
 
+export function evaluateSignal(
+  ohlcSeries: NumericOHLC[],
+  techniquesList: string[],
+  horizonCtx: HorizonContext,
+  microRange: number = 0.001,
+  slopeStrength: number = 0,
+  expectedMoveVar: number = 0
+): DecisionResult {
+  let bullJ1 = 0, bearJ1 = 0, bullJ2 = 0, bearJ2 = 0, bullJ3 = 0, bearJ3 = 0;
+  let skepticMultiplier = 1.0;
 
   const defaultCases = { bull: { j1: 0, j2: 0, j3: 0, total: 0 }, bear: { j1: 0, j2: 0, j3: 0, total: 0 } };
   const defaultNoTrade: DecisionResult = {
@@ -59,7 +79,7 @@ export interface DecisionResult extends JudgeVerdict {
 
   // Constants
   const last = closes.length - 1;
-  const prev = Math.max(0, last - 1);
+
 
 
   // Compute indicators
@@ -73,22 +93,21 @@ export interface DecisionResult extends JudgeVerdict {
 
   // --- R3: Expected Move ---
   // Brownian scaling (see Macroption)
-  let expectedMoveVar = atrVals[last] * Math.sqrt(horizonCtx.H);
+  expectedMoveVar = atrVals[last] * Math.sqrt(horizonCtx.H);
 
   let microRangeSum = 0;
   const recentCount = Math.min(5, closes.length - 1);
   for (let i = closes.length - 1; i > closes.length - 1 - recentCount; i--) {
     microRangeSum += Math.abs(closes[i] - closes[i-1]);
   }
-  const microRange = recentCount > 0 ? microRangeSum / recentCount : 0;
+  microRange = recentCount > 0 ? microRangeSum / recentCount : 0;
 
 
   // --- R6: Slope Strength ---
-  const slopeStrength = atrVals[last] > 0 ? Math.abs(slope[last]) / atrVals[last] : 0;
+  slopeStrength = atrVals[last] > 0 ? Math.abs(slope[last]) / atrVals[last] : 0;
 
 
-  let bullJ1 = 0, bullJ2 = 0, bullJ3 = 0;
-  let bearJ1 = 0, bearJ2 = 0, bearJ3 = 0;
+
 
   // --- 3-5 MINUTE BINARY MATH ENGINE ---
   // 1. Hurst Exponent (Mean Reversion)
@@ -115,7 +134,6 @@ export interface DecisionResult extends JudgeVerdict {
   if (microMom === -3) bearJ1 += 2.0;
 
   // 5. Volatility Regime
-  let skepticMultiplier = 1.0;
   // Removed redeclared skeptic multiplier
   const regime = calculateVolatilityRegime(atrVals);
   if (regime === 'HIGH') {
@@ -418,7 +436,7 @@ export interface DecisionResult extends JudgeVerdict {
   // Removed redeclared skeptic multiplier
   const candlesForMathEngine = ohlcSeries.map((c, i) => ({ ...c, prevClose: i > 0 ? ohlcSeries[i-1].close : c.open }));
   
-  const vol = calculateVolatilityRegimeLegacy(candlesForMathEngine.slice(-20));
+  const vol = calculateVolatilityRegime(candlesForMathEngine.slice(-20));
   if (vol.status === 'EXPLOSIVE_SKIP') skepticMultiplier *= 0.5;
 
   const zScoreData = calculateZScoreSignificance(candlesForMathEngine.slice(-21));

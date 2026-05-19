@@ -116,7 +116,16 @@ export async function runSingleAnalysis(params: {
     const payloadPromise = new Promise<any>((resolve, reject) => {
     messageResolvers.set(msgId, { resolve, reject });
     try {
-
+      w.postMessage({
+        type: 'ANALYZE',
+        msgId,
+        imageData: imgData,
+        graphTimeframeMinutes: tfM,
+        investmentDurationMinutes: durM,
+        techniquesList: params.techniquesList
+      });
+    } catch (err) {
+      reject(err);
     }
 
     // Handle abort
@@ -203,7 +212,7 @@ export async function runSingleAnalysis(params: {
 
         // const leftImgData = await dataUrlToImageData(finalImageForAnalysis); // TSFix: remove unused
         
-        const msgId2 = generateId();
+
 
         const payload2 = await payloadPromise2;
         
