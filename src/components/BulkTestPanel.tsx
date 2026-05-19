@@ -482,11 +482,13 @@ export function BulkTestPanel({
           <View style={tw`gap-6`}>
              {queue.length === 0 ? (
                <View style={tw`gap-4`}>
-                 <View style={tw`bg-black bg-opacity-30 border border-white border-opacity-10 rounded-xl p-6`}>
-                   <Text style={tw`text-white font-black text-[10px] uppercase tracking-widest mb-4`}>1. Load Manifest JSON</Text>
-                   <input type="file" accept=".json" onChange={loadManifest} className="text-white text-xs opacity-70" />
+                 <View style={tw`bg-black bg-opacity-30 border-2 border-dashed border-white border-opacity-20 rounded-xl p-8 items-center justify-center relative overflow-hidden`}>
+                   <UploadCloud size={32} color="#D9B382" className="mb-3 opacity-80" />
+                   <Text style={tw`text-[#D9B382] font-black text-[12px] uppercase tracking-widest mb-1`}>1. Load Manifest JSON</Text>
+                   <Text style={tw`text-white text-opacity-50 text-[10px]`}>Tap to select manifest file</Text>
+                   <input type="file" accept=".json" onChange={loadManifest} className="opacity-0 absolute inset-0 w-full h-full cursor-pointer z-10" />
                    {manifestErrors.map((err, i) => (
-                     <Text key={i} style={tw`text-red-400 text-xs mt-2`}>• {err}</Text>
+                     <Text key={i} style={tw`text-red-400 text-xs mt-4`}>• {err}</Text>
                    ))}
                  </View>
                </View>
