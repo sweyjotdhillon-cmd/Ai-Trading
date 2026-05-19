@@ -72,7 +72,7 @@ import {   View,
   Pressable, 
   ScrollView, 
   ActivityIndicator, 
-  TextInput
+
 } from 'react-native';
 
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';

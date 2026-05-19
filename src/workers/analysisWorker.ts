@@ -68,12 +68,7 @@ self.onmessage = async (e: MessageEvent) => {
       self.postMessage({ ok: true, stage: 'PROGRESS', payload: { type: 'PROGRESS', msgId: data.msgId, stage: 'INDICATORS', pct: 40 } });
       console.log(`[PERF] Pipeline build: ${(performance.now() - t0).toFixed(1)}ms`);
 
-      const t1 = performance.now();
-      self.postMessage({ ok: true, stage: 'PROGRESS', payload: { type: 'PROGRESS', msgId: data.msgId, stage: 'RULES_EVAL', pct: 75 } });
-      const decision = evaluateSignal(pipe.ohlcSeries, data.techniquesList || [], horizonCtx, data.stock || 'UNKNOWN');
-      self.postMessage({ ok: true, stage: 'PROGRESS', payload: { type: 'PROGRESS', msgId: data.msgId, stage: 'SIGNAL_DONE', pct: 100 } });
-      console.log(`[PERF] Signal eval: ${(performance.now() - t1).toFixed(1)}ms`);
-      console.log(`[PERF] TOTAL: ${(performance.now() - t0).toFixed(1)}ms`);
+
 
       const stab = emitStability(decision);
 

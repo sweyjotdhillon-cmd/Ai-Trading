@@ -115,6 +115,7 @@ export async function runSingleAnalysis(params: {
 
     const payloadPromise = new Promise<any>((resolve, reject) => {
 
+
     // Handle abort
     params.signal.addEventListener('abort', () => {
       messageResolvers.delete(msgId);
@@ -199,6 +200,7 @@ export async function runSingleAnalysis(params: {
 
         const leftImgData = await dataUrlToImageData(finalImageForAnalysis);
         
+
 
         const payload2 = await payloadPromise2;
         
