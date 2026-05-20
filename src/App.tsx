@@ -28,6 +28,14 @@ class TerminalErrorBoundary extends React.Component<{ children: React.ReactNode 
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     console.error('[TerminalErrorBoundary] LiveAnalysis crashed:', error, errorInfo);
+    if (typeof window !== 'undefined') {
+      (window as any).__liveAnalysisLastError = {
+        message: error?.message ?? 'Unknown error',
+        stack: error?.stack ?? null,
+        componentStack: errorInfo?.componentStack ?? null,
+        at: new Date().toISOString(),
+      };
+    }
   }
 
   render() {
@@ -384,4 +392,3 @@ const styles = StyleSheet.create({
 });
 
 export default App;
-
