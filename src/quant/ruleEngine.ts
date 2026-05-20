@@ -7,7 +7,7 @@
  * Preserved legacy keys (signal, confidence, bullScore, bearScore, etc.) for backward compatibility.
  */
 import { rsi, macd, bollinger, atr, stochastic } from './indicators';
-import { calculateHurst, calculateZScore, calculateEMADerivatives, calculateMicroMomentumScore, calculateVolatilityRegime, detectRSIDivergence, calculateVolatilityRegimeLegacy, calculateZScoreSignificance, calculateRQA } from './mathEngine';
+import { calculateHurst, calculateZScore, calculateEMADerivatives, calculateMicroMomentumScore, calculateVolatilityRegime, detectRSIDivergence, calculateZScoreSignificance, calculateRQA } from './mathEngine';
 import { emaSlope, emaCurvature } from './calculus';
 import {
   calculateHurst,
@@ -16,7 +16,7 @@ import {
   calculateEMADerivatives,
   calculateMicroMomentumScore,
   calculateVolatilityRegime,
-  calculateVolatilityRegimeLegacy,
+
   detectRSIDivergence,
   calculateRQA
 } from './mathEngine';
@@ -27,7 +27,7 @@ import {
   calculateEMADerivatives,
   calculateMicroMomentumScore,
   calculateVolatilityRegime,
-  calculateVolatilityRegimeLegacy,
+
   detectRSIDivergence,
   calculateRQA
 } from './mathEngine';
@@ -123,12 +123,6 @@ export function evaluateSignal(ohlcSeries: NumericOHLC[], horizonCtx: HorizonCon
   // Brownian scaling (see Macroption)
 
 
-  let microRangeSum = 0;
-  const recentCount = Math.min(5, closes.length - 1);
-  for (let i = closes.length - 1; i > closes.length - 1 - recentCount; i--) {
-    microRangeSum += Math.abs(closes[i] - closes[i-1]);
-  }
-  const microRange = recentCount > 0 ? microRangeSum / recentCount : 0;
 
 
   // --- R6: Slope Strength ---
