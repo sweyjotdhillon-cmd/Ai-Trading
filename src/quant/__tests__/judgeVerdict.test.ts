@@ -112,10 +112,10 @@ afterEach(() => {
   it('6. finalConfidence is integer between 0 and 100', async () => {
     for (const type of ['uptrend', 'downtrend', 'sideways', 'explosive'] as const) {
       const series = generateSeries(type);
+      const res = evaluateSignal(series, { tfMinutes: 5, durationMinutes: 5, H: 1.0, horizonClass: 'INTRA_CANDLE' }, ["__TEST_BYPASS__"]);
 
-
-      expect(result.finalConfidence).toBeLessThanOrEqual(100);
-      expect(Number.isInteger(result.finalConfidence)).toBe(true);
+      expect(res.finalConfidence).toBeLessThanOrEqual(100);
+      expect(Number.isInteger(res.finalConfidence)).toBe(true);
     }
   });
 });
