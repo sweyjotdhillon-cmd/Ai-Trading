@@ -100,6 +100,7 @@ export function LiveAnalysis() {
   const [isBusy, setIsBusy] = useState(false);
   const [analysisStep, setAnalysisStep] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<any | null>(null);
+  const [showAutopsy, setShowAutopsy] = useState(false);
   const [mode, setMode] = useState<'live' | 'test' | 'bulk'>('live');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [calibrationFrame, setCalibrationFrame] = useState<ImageData | null>(null);
@@ -190,9 +191,12 @@ export function LiveAnalysis() {
 
   const [autoGradeStatus, setAutoGradeStatus] = useState<'idle' | 'grading' | 'done' | 'failed'>('idle');
   const [testModeLeftSlice, setTestModeLeftSlice] = useState<string | null>(null);
+  const [testModeRightSlice, setTestModeRightSlice] = useState<string | null>(null);
   const [autoGradeReason, setAutoGradeReason] = useState<string>('');
   const [autoGradeConfidence, setAutoGradeConfidence] = useState<number>(0);
   const [autoGradeRawOutcome, setAutoGradeRawOutcome] = useState<string>('');
+  const actualDirection: 'UP' | 'DOWN' | null =
+    confirmedOutcome === 'WIN' ? 'UP' : confirmedOutcome === 'LOSS' ? 'DOWN' : null;
   const [statsData, setStatsData] = useState<any[]>(() => {
     if (typeof window !== 'undefined') {
       try {
