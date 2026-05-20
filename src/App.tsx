@@ -54,6 +54,7 @@ class TerminalErrorBoundary extends React.Component<{ children: React.ReactNode 
 }
 function App() {
   console.log("[App] Mounting...");
+  const buildStamp = (import.meta as any).env?.VITE_BUILD_STAMP || 'dev';
   const [showSystemSettings, setShowSystemSettings] = useState(false);
   const [heroDismissed, setHeroDismissed] = useState(false);
   
@@ -99,7 +100,7 @@ function App() {
             </View>
             <View>
               <Text style={styles.headerTitle}>CHARTLENS</Text>
-              <Text style={styles.headerSubtitle}>PRO TERMINAL</Text>
+              <Text style={styles.headerSubtitle}>PRO TERMINAL · {buildStamp}</Text>
             </View>
           </View>
           <View style={styles.headerRight}>
