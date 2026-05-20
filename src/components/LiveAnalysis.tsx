@@ -493,7 +493,7 @@ export function LiveAnalysis() {
         worker.terminate();
       }
     };
-  }, [scoutActive, analysis, isCameraActive, tradingPhase, encryptedSystemTokens]);
+  }, [scoutActive, analysis, isCameraActive, tradingPhase, encryptedSystemTokens, graphTimeframe, investmentAmount, investmentDuration, profitabilityPercent, stockName, techniquesList, tradingDirection]);
 
   const closePickers = () => {
     setShowTfPicker(false);
