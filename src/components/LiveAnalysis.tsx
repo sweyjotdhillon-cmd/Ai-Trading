@@ -7,7 +7,7 @@ function pseudoRandom() {
 import { runSingleAnalysis, onStableSignal } from '../utils/singleAnalysis';
 import { BulkTestPanel } from './BulkTestPanel';
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { View, Text, Pressable, ScrollView, TextInput, Image, Switch, ActivityIndicator, Platform } from 'react-native';
+
 export function useWakeLock() {
   const wakeLockRef = useRef<any>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
