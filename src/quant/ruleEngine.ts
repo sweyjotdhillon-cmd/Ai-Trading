@@ -70,6 +70,7 @@ export interface DecisionResult extends JudgeVerdict {
 
 
 
+export function evaluateSignal(ohlcSeries: NumericOHLC[], horizonCtx: HorizonContext, techniquesList: string[] = [], confirmedPatterns?: any[]): DecisionResult {
   const defaultCases = { bull: { j1: 0, j2: 0, j3: 0, total: 0 }, bear: { j1: 0, j2: 0, j3: 0, total: 0 } };
   const defaultNoTrade: DecisionResult = {
     cases: defaultCases,
@@ -489,12 +490,11 @@ export interface DecisionResult extends JudgeVerdict {
 
 
 
-  if (expectedMoveVar < microRange * 0.2) {
-     skepticMultiplier *= 0.1; // Extinguish confidence
-  }
+  // Broken block removed
+  // if (expectedMoveVar < microRange * 0.2) { skepticMultiplier *= 0.1; }
 
   const slopeSeries = emaSlope(Array.from(closes), 9);
-  slopeStrength = slopeSeries.length > 0 ? Math.abs(slopeSeries[slopeSeries.length - 1]) : 0;
+  const slopeStrength = slopeSeries.length > 0 ? Math.abs(slopeSeries[slopeSeries.length - 1]) : 0;
 
   // R6: Slope strength gate
   if (slopeStrength < 0.15) {
@@ -544,3 +544,5 @@ export interface DecisionResult extends JudgeVerdict {
   };
 
 
+
+}
