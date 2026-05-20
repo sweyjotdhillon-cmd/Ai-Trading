@@ -98,6 +98,8 @@ function App() {
             <Pressable 
               style={({ pressed }) => [styles.headerAction, { opacity: pressed ? 0.7 : 1 }]}
               onPress={() => setTimeout(() => setShowSystemSettings(true), 10)}
+              accessibilityRole="button"
+              accessibilityLabel="Open settings"
             >
               <motion.div
                 whileHover={prefersReducedMotion ? {} : { scale: 1.04 }}
