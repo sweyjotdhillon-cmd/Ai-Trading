@@ -103,6 +103,6 @@ Always use `pnpm` in this repository. Never use `npm` or `yarn`.
 *   **Preview Production Build**: `npx vite preview &` (Serves on http://localhost:4173)
 *   **Execute Standalone Scripts**: Use `npx tsx <filename>.ts` for rapid execution during testing or debugging.
 
-### C. Deployment (Vercel)
-*   The project uses Vercel for deployment instead of Netlify.
-*   SPA routing is explicitly configured for Vite via a `vercel.json` file. It contains a rewrite rule pointing `/(.*)` to `/index.html` to ensure direct links and refreshes on sub-routes do not 404.
+### C. Deployment (Cloudflare)
+*   The project uses Cloudflare for deployment.
+*   SPA routing is supported via the `wrangler.jsonc` file and Cloudflare Pages configuration.
