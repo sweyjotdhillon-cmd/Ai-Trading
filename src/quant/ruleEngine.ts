@@ -9,6 +9,28 @@
 import { rsi, macd, bollinger, atr, stochastic } from './indicators';
 import { calculateHurst, calculateZScore, calculateEMADerivatives, calculateMicroMomentumScore, calculateVolatilityRegime, detectRSIDivergence, calculateZScoreSignificance, calculateRQA } from './mathEngine';
 import { emaSlope, emaCurvature } from './calculus';
+import {
+  calculateHurst,
+  calculateZScore,
+  calculateZScoreSignificance,
+  calculateEMADerivatives,
+  calculateMicroMomentumScore,
+  calculateVolatilityRegime,
+
+  detectRSIDivergence,
+  calculateRQA
+} from './mathEngine';
+import {
+  calculateHurst,
+  calculateZScore,
+  calculateZScoreSignificance,
+  calculateEMADerivatives,
+  calculateMicroMomentumScore,
+  calculateVolatilityRegime,
+
+  detectRSIDivergence,
+  calculateRQA
+} from './mathEngine';
 
 
 
@@ -46,7 +68,7 @@ export interface DecisionResult extends JudgeVerdict {
   techUsedCount?: number;
 }
 
-export function evaluateSignal(ohlcSeries: NumericOHLC[], techniquesList: any[], _context?: HorizonContext, _confirmedPatterns?: any[]): DecisionResult {
+
   const defaultCases = { bull: { j1: 0, j2: 0, j3: 0, total: 0 }, bear: { j1: 0, j2: 0, j3: 0, total: 0 } };
   const defaultNoTrade: DecisionResult = {
     cases: defaultCases,
@@ -99,12 +121,6 @@ export function evaluateSignal(ohlcSeries: NumericOHLC[], techniquesList: any[],
   // Brownian scaling (see Macroption)
 
 
-  let microRangeSum = 0;
-  const recentCount = Math.min(5, closes.length - 1);
-  for (let i = closes.length - 1; i > closes.length - 1 - recentCount; i--) {
-    microRangeSum += Math.abs(closes[i] - closes[i-1]);
-  }
-  const microRange = recentCount > 0 ? microRangeSum / recentCount : 0;
 
 
   // --- R6: Slope Strength ---
@@ -466,10 +482,7 @@ export function evaluateSignal(ohlcSeries: NumericOHLC[], techniquesList: any[],
 
 
 
-  const expectedMoveVar = atrVals[last] || 0;
-  if (expectedMoveVar < microRange * 0.2) {
-     skepticMultiplier *= 0.1; // Extinguish confidence
-  }
+
 
   const slopeSeries = emaSlope(Array.from(closes), 9);
   const slopeStrength = slopeSeries.length > 0 ? Math.abs(slopeSeries[slopeSeries.length - 1]) : 0;
@@ -516,7 +529,11 @@ export function evaluateSignal(ohlcSeries: NumericOHLC[], techniquesList: any[],
       rsi: rsiVals[last],
       macd: macdVals.macd[last],
       macdHist: macdVals.hist[last],
-      bollMiddle: bollVals.middle[last]
+      bollMiddle: bollVals.middle[last],
+      lastClose: closes[last]
     }
   };
+
+
+
 }

@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, Pressable, ScrollView, Platform } from 'react-native';
 import tw from 'twrnc';
@@ -243,7 +244,7 @@ export function BulkTestPanel({
     });
   };
 
-  const startRun = async () => {
+
     if (queue.length === 0 || manifestErrors.length > 0) return;
     
     const missing = queue.filter(q => !q.file && !q.entry.imageData && q.status === 'Pending');
@@ -343,7 +344,6 @@ export function BulkTestPanel({
        return currentQueue;
     });
   };
-
 
 
   const [autopsyingBatch, setAutopsyingBatch] = useState(false);
@@ -589,9 +589,21 @@ export function BulkTestPanel({
                             )}
                           </View>
                           <View style={tw`px-3`}>
-                            <Text style={[tw`text-[10px] font-black uppercase tracking-widest text-right`, tw`${getStatusColor(item.status)}`]}>
-                              {item.status === 'WIN' ? 'PROFIT' : item.status === 'NEUTRAL' ? 'NO TRADE' : item.status}
-                            </Text>
+                            <View style={tw`flex-row items-center justify-end`}>
+                              <Text style={tw`text-[10px] font-black uppercase tracking-widest ${
+                                item.result?.direction === 'UP' ? 'text-green-400'
+                                : item.result?.direction === 'DOWN' ? 'text-red-400'
+                                : 'text-white text-opacity-30'
+                              }`}>
+                                {item.result?.direction === 'UP' ? 'UP'
+                                 : item.result?.direction === 'DOWN' ? 'DOWN'
+                                 : '—'}
+                              </Text>
+                              <Text style={tw`text-white text-opacity-30 text-[10px] mx-1`}>/</Text>
+                              <Text style={[tw`text-[10px] font-black uppercase tracking-widest`, tw`${getStatusColor(item.status)}`]}>
+                                {item.status === 'WIN' ? 'PROFIT' : item.status === 'NEUTRAL' ? 'NO TRADE' : item.status}
+                              </Text>
+                            </View>
                             {item.error && <Text style={tw`text-orange-400 text-[8px]`} numberOfLines={1}>{item.error.substring(0, 20)}</Text>}
                             {!item.error && item.result && (
                               <Text style={tw`text-white text-opacity-40 text-[8px] text-right uppercase tracking-widest mt-0.5`}>
@@ -633,7 +645,7 @@ export function BulkTestPanel({
                   <View style={tw`flex-row gap-3 pt-2`}>
                     {!isQueueRunning ? (
                       <Pressable 
-                        onPress={startRun}
+                        onPress={runBatch}
                         disabled={queue.some(q => !q.file && !q.entry.imageData && q.status === 'Pending') || manifestErrors.length > 0}
                         style={({ pressed }) => [
                            tw`flex-1 bg-[#D9B382] h-12 rounded-xl flex-row items-center justify-center p-3`, 
@@ -678,4 +690,5 @@ export function BulkTestPanel({
       </View>
     </View>
   );
+
 }

@@ -28,6 +28,14 @@ class TerminalErrorBoundary extends React.Component<{ children: React.ReactNode 
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     console.error('[TerminalErrorBoundary] LiveAnalysis crashed:', error, errorInfo);
+    if (typeof window !== 'undefined') {
+      (window as any).__liveAnalysisLastError = {
+        message: error?.message ?? 'Unknown error',
+        stack: error?.stack ?? null,
+        componentStack: errorInfo?.componentStack ?? null,
+        at: new Date().toISOString(),
+      };
+    }
   }
 
   render() {
@@ -46,6 +54,7 @@ class TerminalErrorBoundary extends React.Component<{ children: React.ReactNode 
 }
 function App() {
   console.log("[App] Mounting...");
+  const buildStamp = (import.meta as any).env?.VITE_BUILD_STAMP || 'dev';
   const [showSystemSettings, setShowSystemSettings] = useState(false);
   const [heroDismissed, setHeroDismissed] = useState(false);
   
@@ -91,13 +100,15 @@ function App() {
             </View>
             <View>
               <Text style={styles.headerTitle}>CHARTLENS</Text>
-              <Text style={styles.headerSubtitle}>PRO TERMINAL</Text>
+              <Text style={styles.headerSubtitle}>PRO TERMINAL · {buildStamp}</Text>
             </View>
           </View>
           <View style={styles.headerRight}>
             <Pressable 
               style={({ pressed }) => [styles.headerAction, { opacity: pressed ? 0.7 : 1 }]}
               onPress={() => setTimeout(() => setShowSystemSettings(true), 10)}
+              accessibilityRole="button"
+              accessibilityLabel="Open settings"
             >
               <motion.div
                 whileHover={prefersReducedMotion ? {} : { scale: 1.04 }}
@@ -382,4 +393,3 @@ const styles = StyleSheet.create({
 });
 
 export default App;
-

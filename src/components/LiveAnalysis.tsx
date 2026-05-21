@@ -1,13 +1,15 @@
+import { runSingleAnalysis, onStableSignal } from '../utils/singleAnalysis';
+import { BulkTestPanel } from './BulkTestPanel';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { View, Text, Pressable, ScrollView, TextInput, Image, Platform } from 'react-native';
 import { TIMEOUTS } from '../config/timeouts';
+
 let _seed = 0xC0FFEE;
 function pseudoRandom() {
   _seed = (_seed * 1664525 + 1013904223) % 4294967296;
   return _seed / 4294967296;
 };
-import { runSingleAnalysis, onStableSignal } from '../utils/singleAnalysis';
-import { BulkTestPanel } from './BulkTestPanel';
-import { useState, useRef, useEffect, useCallback } from 'react';
-import { Platform, Pressable, View, Text, ScrollView, TextInput, Image, ActivityIndicator } from 'react-native';
+
 export function useWakeLock() {
   const wakeLockRef = useRef<any>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -68,6 +70,7 @@ export function useWakeLock() {
 }
 
 
+
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { 
   CheckCircle, 
@@ -99,6 +102,7 @@ export function LiveAnalysis() {
   const [isBusy, setIsBusy] = useState(false);
   const [analysisStep, setAnalysisStep] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<any | null>(null);
+  const [showAutopsy, setShowAutopsy] = useState(false);
   const [mode, setMode] = useState<'live' | 'test' | 'bulk'>('live');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [calibrationFrame, setCalibrationFrame] = useState<ImageData | null>(null);
@@ -193,6 +197,8 @@ export function LiveAnalysis() {
   const [autoGradeReason, setAutoGradeReason] = useState<string>('');
   const [autoGradeConfidence, setAutoGradeConfidence] = useState<number>(0);
   const [autoGradeRawOutcome, setAutoGradeRawOutcome] = useState<string>('');
+  const actualDirection: 'UP' | 'DOWN' | null =
+    confirmedOutcome === 'WIN' ? 'UP' : confirmedOutcome === 'LOSS' ? 'DOWN' : null;
   const [statsData, setStatsData] = useState<any[]>(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -493,7 +499,7 @@ export function LiveAnalysis() {
         worker.terminate();
       }
     };
-  }, [scoutActive, analysis, isCameraActive, tradingPhase, encryptedSystemTokens]);
+  }, [scoutActive, analysis, isCameraActive, tradingPhase, encryptedSystemTokens, graphTimeframe, investmentAmount, investmentDuration, profitabilityPercent, stockName, techniquesList, tradingDirection]);
 
   const closePickers = () => {
     setShowTfPicker(false);
@@ -1483,6 +1489,25 @@ export function LiveAnalysis() {
                 <Text style={tw`text-[#D9B382] font-black uppercase tracking-[2px] text-xs mb-4 text-center`}>
                   AUTO-TEST RESULT
                 </Text>
+
+                {/* DUAL VERDICT: Predicted vs Actual */}
+                {analysis && (
+                  <View style={tw`flex-row items-center justify-center mb-4 gap-2`}>
+                    <View style={tw`bg-black bg-opacity-30 border border-white border-opacity-10 rounded-lg px-4 py-2`}>
+                      <Text style={tw`text-white text-opacity-40 text-[9px] uppercase tracking-widest`}>Predicted</Text>
+                      <Text style={tw`font-black text-lg ${tradingDirection === 'UP' ? 'text-green-400' : tradingDirection === 'DOWN' ? 'text-red-400' : 'text-white text-opacity-50'}`}>
+                        {tradingDirection === 'UP' ? '▲ UP' : tradingDirection === 'DOWN' ? '▼ DOWN' : '— NO TRADE'}
+                      </Text>
+                    </View>
+                    <Text style={tw`text-white text-opacity-30 text-xl`}>/</Text>
+                    <View style={tw`bg-black bg-opacity-30 border border-white border-opacity-10 rounded-lg px-4 py-2`}>
+                      <Text style={tw`text-white text-opacity-40 text-[9px] uppercase tracking-widest`}>Actual</Text>
+                      <Text style={tw`font-black text-lg ${actualDirection === 'UP' ? 'text-green-400' : actualDirection === 'DOWN' ? 'text-red-400' : 'text-white text-opacity-50'}`}>
+                        {actualDirection === 'UP' ? '▲ PROFIT' : actualDirection === 'DOWN' ? '▼ LOSS' : '— FLAT'}
+                      </Text>
+                    </View>
+                  </View>
+                )}
 
                 {/* Slice preview — visual confirmation that the crop did what user expected */}
                 {(testModeLeftSlice || testModeRightSlice) && (

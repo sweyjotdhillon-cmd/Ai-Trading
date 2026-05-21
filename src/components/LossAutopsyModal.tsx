@@ -329,7 +329,7 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, p
               <Text style={tw`text-red-500 font-black text-2xl tracking-[2px] uppercase`}>LOSS AUTOPSY</Text>
               <Text style={tw`text-white text-opacity-60 text-sm`}>Signal was {tradeSignal}. Running CONTRARIAN review against original Judge.</Text>
             </View>
-            <Pressable onPress={onClose} style={tw`p-2 bg-white bg-opacity-10 rounded-full hover:bg-white bg-opacity-10`}>
+            <Pressable onPress={onClose} style={tw`p-2 bg-white bg-opacity-10 rounded-full hover:bg-white bg-opacity-10`} accessibilityRole="button" accessibilityLabel="Close">
               <motion.div whileHover={buttonHoverProps} whileTap={buttonTapProps} transition={springProps} style={{ display: 'contents' }}>
                 <X size={24} color="#8B95B0" />
               </motion.div>
