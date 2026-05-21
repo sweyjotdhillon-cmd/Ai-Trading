@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, Pressable, ScrollView, Platform } from 'react-native';
 import tw from 'twrnc';
 import { motion } from 'motion/react';
-import { FileJson, UploadCloud, Play, AlertTriangle, Activity,  } from 'lucide-react';
+import { FileJson, UploadCloud, Play, AlertTriangle, Activity } from 'lucide-react';
 import { BatchManifest, BatchManifestEntry, validateBatchManifest } from '../types/batchManifest';
 
 import { BatchAutopsyReport } from './BatchAutopsyReport';
@@ -244,7 +244,7 @@ export function BulkTestPanel({
     });
   };
 
-  const startQueue = async () => {
+
 
     if (queue.length === 0 || manifestErrors.length > 0) return;
     
