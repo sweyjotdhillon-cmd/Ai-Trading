@@ -6,6 +6,10 @@ import path from 'path';
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
+  optimizeDeps: {
+    include: ['react-native-web'],
+    esbuildOptions: { mainFields: ['module', 'main'] },
+  },
   worker: {
     rollupOptions: {
       external: ['candlestick'],
@@ -16,7 +20,8 @@ export default defineConfig({
       external: ['candlestick'],
     },
     commonjsOptions: {
-      include: [/candlestick/, /node_modules/]
+      include: [/candlestick/, /node_modules/],
+      transformMixedEsModules: true,
     }
   },
   resolve: {

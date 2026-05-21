@@ -16,14 +16,14 @@ import { SystemSettingsModal } from './components/SystemSettingsModal';
 import { HeroIntro } from './components/HeroIntro';
 
 
-class TerminalErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; errorMessage: string | null }> {
+class TerminalErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; errorMessage: string | null; errorStack: string | null }> {
   constructor(props: { children: React.ReactNode }) {
     super(props);
-    this.state = { hasError: false, errorMessage: null };
+    this.state = { hasError: false, errorMessage: null, errorStack: null };
   }
 
   static getDerivedStateFromError(error: Error) {
-    return { hasError: true, errorMessage: error?.message ?? 'Unknown error' };
+    return { hasError: true, errorMessage: error?.message ?? 'Unknown error', errorStack: error?.stack ?? null };
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
@@ -45,6 +45,7 @@ class TerminalErrorBoundary extends React.Component<{ children: React.ReactNode 
           <Text style={styles.loadingText}>Unable to load terminal.</Text>
           <Text style={styles.errorHint}>Please refresh and try again.</Text>
           {this.state.errorMessage ? <Text style={styles.errorDetails}>{this.state.errorMessage}</Text> : null}
+          {this.state.errorStack ? <Text style={styles.errorDetails}>{this.state.errorStack.slice(0, 400)}</Text> : null}
         </View>
       );
     }

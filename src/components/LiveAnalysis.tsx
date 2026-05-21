@@ -1,8 +1,85 @@
 import { runSingleAnalysis, onStableSignal } from '../utils/singleAnalysis';
 import { BulkTestPanel } from './BulkTestPanel';
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { View, Text, Pressable, ScrollView, TextInput, Image, ActivityIndicator, Platform } from 'react-native';
+import * as RN from 'react-native';
+import { View, Text, Pressable, ScrollView, TextInput, Image, Platform } from 'react-native';
 import { TIMEOUTS } from '../config/timeouts';
+
+import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
+import { 
+  CheckCircle, 
+  Camera, 
+  Upload, 
+  Sparkles, 
+  Brain,
+  AlertTriangle,
+  FileText,
+  Terminal,
+  Activity,
+  Layers,
+  XCircle,
+  ChevronDown,
+  Check,
+  Zap,
+} from 'lucide-react';
+import tw from 'twrnc';
+import { isCalibrated } from '../vision/colorCalibration';
+import { CalibrationOverlay } from './CalibrationOverlay';
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 let _seed = 0xC0FFEE;
 function pseudoRandom() {
@@ -71,30 +148,9 @@ export function useWakeLock() {
 
 
 
-import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
-import { 
-  CheckCircle, 
-  Camera, 
-  Upload, 
-  Sparkles, 
-  Brain,
-  AlertTriangle,
-  FileText,
-  Terminal,
-  Activity,
-  Layers,
-  XCircle,
-  ChevronDown,
-  Check,
-  Zap,
-} from 'lucide-react';
-import tw from 'twrnc';
-import { isCalibrated } from '../vision/colorCalibration';
-import { CalibrationOverlay } from './CalibrationOverlay';
-
-
-
 // Utility to downscale images on the web before sending to server
+const ActivityIndicator = RN.ActivityIndicator;
+
 export function LiveAnalysis() {
   const [stockName, setStockName] = useState('Bitcoin');
   const [graphTimeframe, setGraphTimeframe] = useState('30 minutes');
