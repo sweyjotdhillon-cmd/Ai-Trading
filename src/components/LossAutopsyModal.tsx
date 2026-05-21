@@ -1,11 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
 import * as RN from 'react-native';
-import { View, Text, Pressable, ScrollView, Platform } from 'react-native';
+import { View, Text, Pressable, ScrollView, Platform, ActivityIndicator } from 'react-native';
 import { X, Upload, Activity, AlertTriangle, CheckCircle, Search, Download } from 'lucide-react';
 import tw from 'twrnc';
 import { motion, useReducedMotion } from 'motion/react';
 
-const ActivityIndicator = RN.ActivityIndicator;
+
 
 interface Props {
   isOpen: boolean;

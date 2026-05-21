@@ -2,7 +2,7 @@ import { runSingleAnalysis, onStableSignal } from '../utils/singleAnalysis';
 import { BulkTestPanel } from './BulkTestPanel';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import * as RN from 'react-native';
-import { View, Text, Pressable, ScrollView, TextInput, Image, Platform } from 'react-native';
+import { View, Text, Pressable, ScrollView, TextInput, Image, Platform, ActivityIndicator } from 'react-native';
 import { TIMEOUTS } from '../config/timeouts';
 
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
@@ -149,7 +149,7 @@ export function useWakeLock() {
 
 
 // Utility to downscale images on the web before sending to server
-const ActivityIndicator = RN.ActivityIndicator;
+
 
 export function LiveAnalysis() {
   const [stockName, setStockName] = useState('Bitcoin');

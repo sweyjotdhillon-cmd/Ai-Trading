@@ -69,6 +69,7 @@ export interface DecisionResult extends JudgeVerdict {
   techniquesUsed?: string;
   techUsedCount?: number;
 }
+export function evaluateSignal(ohlcSeries: NumericOHLC[], techniquesList: any[], _context?: HorizonContext): DecisionResult {
 
 
   const defaultCases = { bull: { j1: 0, j2: 0, j3: 0, total: 0 }, bear: { j1: 0, j2: 0, j3: 0, total: 0 } };
@@ -377,8 +378,8 @@ export interface DecisionResult extends JudgeVerdict {
      if (upperWick > currBody * 2 && lowerWick < currBody) bearReversal = true;
   }
 
-  const wCont = PATTERN_WEIGHTS_BY_HORIZON.CONTINUATION[((_context?.horizonClass || "INTRA_CANDLE") as keyof typeof PATTERN_WEIGHTS_BY_HORIZON.CONTINUATION)];
-  const wRev = PATTERN_WEIGHTS_BY_HORIZON.REVERSAL[((_context?.horizonClass || "INTRA_CANDLE") as keyof typeof PATTERN_WEIGHTS_BY_HORIZON.CONTINUATION)];
+  const wCont = PATTERN_WEIGHTS_BY_HORIZON.CONTINUATION[(((_context ? _context.horizonClass : "INTRA_CANDLE") || "INTRA_CANDLE") as keyof typeof PATTERN_WEIGHTS_BY_HORIZON.CONTINUATION)];
+  const wRev = PATTERN_WEIGHTS_BY_HORIZON.REVERSAL[(((_context ? _context.horizonClass : "INTRA_CANDLE") || "INTRA_CANDLE") as keyof typeof PATTERN_WEIGHTS_BY_HORIZON.CONTINUATION)];
 
   if (bullContinuation) bullJ1 += wCont;
   if (bearContinuation) bearJ1 += wCont;

@@ -246,6 +246,7 @@ export function BulkTestPanel({
 
 
 
+  const runQueue = async () => {
     if (queue.length === 0 || manifestErrors.length > 0) return;
     
     const missing = queue.filter(q => !q.file && !q.entry.imageData && q.status === 'Pending');
