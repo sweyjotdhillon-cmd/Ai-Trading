@@ -333,18 +333,19 @@ export function BulkTestPanel({
       }
     };
 
-    await Promise.all(Array.from({ length: CONCURRENCY_LIMIT }, () => workerLoop()));
+    return Promise.all(Array.from({ length: CONCURRENCY_LIMIT }, () => workerLoop()))
+      .finally(() => {
+        setIsQueueRunning(false);
 
-    setIsQueueRunning(false);
-
-    // After running, fetch the latest queue state logically
-    setQueue(currentQueue => {
-       const losses = currentQueue.filter(q => q.status === 'LOSS' && q.result);
-       if (losses.length > 0 && !abortControllerRef.current?.signal.aborted && !isPaused) {
-          setTimeout(() => runMasterAutopsyChain(losses).catch(e => console.error("master autopsy error:", e)), 0);
-       }
-       return currentQueue;
-    });
+        // After running, fetch the latest queue state logically
+        setQueue(currentQueue => {
+          const losses = currentQueue.filter(q => q.status === 'LOSS' && q.result);
+          if (losses.length > 0 && !abortControllerRef.current?.signal.aborted && !isPaused) {
+            setTimeout(() => runMasterAutopsyChain(losses).catch(e => console.error("master autopsy error:", e)), 0);
+          }
+          return currentQueue;
+        });
+      });
   };
 
 
