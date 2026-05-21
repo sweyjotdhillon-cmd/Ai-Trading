@@ -132,30 +132,6 @@ export function calculateRQA(series: number[], epsilon = 0.1) {
   return { recurrenceRate, determinism, laminarity };
 }
 
-/**
- * Persistent Entropy (TDA-Lite)
- * Captures "shape" invariants using simplified persistence of price peaks.
- */
-export function calculatePersistentEntropy(series: number[]) {
-  const n = series.length;
-  const persistence = [];
-  
-  // Find local extrema (birth/death of features)
-  for (let i = 1; i < n - 1; i++) {
-    if ((series[i] > series[i-1] && series[i] > series[i+1]) || 
-        (series[i] < series[i-1] && series[i] < series[i+1])) {
-      persistence.push(Math.abs(series[i] - series[i-1]));
-    }
-  }
-
-  const sum = persistence.reduce((a, b) => a + b, 0);
-  if (sum === 0) return 0;
-  
-  const normalized = persistence.map(p => p / sum);
-  const entropy = -normalized.reduce((acc, p) => acc + (p > 0 ? p * Math.log2(p) : 0), 0);
-  
-  return { entropy, featureCount: persistence.length };
-}
 
 /**
  * Symplectic Hamiltonian Flow
