@@ -572,6 +572,9 @@ export function calculateCEF(priceSeries: number[], liquidityMap: Record<number,
   }
   const vol = ss.standardDeviation(returns);
 
+  const liquidityKeys = Object.keys(liquidityMap).map(Number);
+  const hasLiquidityZones = liquidityKeys.length > 0;
+
   const directions = { UP: 1, DOWN: -1 };
   const futureEntropy: Record<string, number> = {};
 
@@ -590,13 +593,12 @@ export function calculateCEF(priceSeries: number[], liquidityMap: Record<number,
       }
 
       const zonesVisited = new Set<number>();
-      for (const p of futurePrices) {
-        // Find nearest liquidity zone
-        const keys = Object.keys(liquidityMap).map(Number);
-        if (keys.length === 0) continue; // Skip if no liquidity zones exist
-        
-        const nearestZone = keys.reduce((prev, curr) => Math.abs(curr - p) < Math.abs(prev - p) ? curr : prev);
-        zonesVisited.add(nearestZone);
+      if (hasLiquidityZones) {
+        for (const p of futurePrices) {
+          // Find nearest liquidity zone
+          const nearestZone = liquidityKeys.reduce((prev, curr) => Math.abs(curr - p) < Math.abs(prev - p) ? curr : prev);
+          zonesVisited.add(nearestZone);
+        }
       }
 
       const weights = Array.from(zonesVisited).map(z => liquidityMap[z]);
