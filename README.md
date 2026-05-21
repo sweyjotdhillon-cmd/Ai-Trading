@@ -10,10 +10,10 @@ The core mission of ChartLens is to democratize quantitative analysis by bringin
 
 The application is built to be a robust, high-performance offline Single Page Application (SPA).
 
-*   **100% Offline Execution**: Designed to operate without external dependencies, API keys (no Google/Firebase), or network requests during core analysis. Ensures deterministic, point-in-time verifiable privacy and outcomes.
+*   **100% Offline Execution**: Designed to operate without external dependencies, API keys (no Google/Firebase/Firestore), or network requests during core analysis. Ensures deterministic, point-in-time verifiable privacy and outcomes.
 *   **Core Frameworks**: React 18, React Native Web, and Vite for fast builds and optimized bundling.
 *   **Styling**: Tailwind CSS via `twrnc` to maintain cross-platform styling compatibility with React Native conventions.
-*   **Visualization & UI**: Three.js / React Three Fiber (`@react-three/fiber`, `@react-three/drei`) for 3D visual components, and Lucide (`lucide-react`) for iconography.
+*   **Visualization & UI**: Three.js / React Three Fiber (`@react-three/fiber`, `@react-three/drei`) for 3D visual components, and Lucide (`lucide-react`) for iconography. UI components use `accessibilityLabel` and `accessibilityRole` instead of standard web ARIA attributes.
 *   **Web Worker Concurrency**: The CPU-bound Vision and Quantitative pipelines execute inside dedicated Web Workers (`src/workers/analysisWorker.ts`), preventing the primary UI thread from freezing and maintaining buttery-smooth application responsiveness.
 *   **Event Loop Stabilization**: To combat aggressive modern browser throttling of inactive background tabs (specifically impacting background bulk testing), a silent base64 looping audio element (`useWakeLock` equivalent mechanism) forces the JavaScript event loop to remain high-priority.
 *   **Memory Management**: Performance-sensitive quantitative math functions (e.g., inside `src/quant/`) strictly allocate and utilize `Float64Array` buffers rather than standard dynamic Javascript `number[]` arrays. This provides deterministic memory layout and enhances iteration performance for deeply recursive or math-heavy indicator logic.
@@ -25,23 +25,23 @@ The application is built to be a robust, high-performance offline Single Page Ap
 The repository is modularized strictly into logical domains:
 
 *   **`src/components/`**: React UI components (e.g., `LiveAnalysis.tsx`, modals, layout pieces). Handles user interaction, camera access, and rendering results.
-*   **`src/config/`**: Global configuration files and feature flags (e.g., `featureFlags.ts`).
-*   **`src/constants/`**: Immutable application constants and predefined rule thresholds.
+*   **`src/config/`**: Global configuration files and feature flags (e.g., `featureFlags.ts`, `patternWeights.ts`).
+*   **`src/constants/`**: Immutable application constants and predefined rule thresholds (e.g., `indicators.ts`).
 *   **`src/quant/`**: The core quantitative math and trading signal logic. Contains indicators, rule engine, stability filters, and pattern matchers.
-*   **`src/vision/`**: Image processing logic. Handles DOM Canvas manipulation, OCR extraction, edge detection, and converting pixels to OHLC data.
-*   **`src/workers/`**: Contains the critical Web Worker files (`analysisWorker.ts`) which act as the asynchronous bridge between the UI thread and the heavy `quant`/`vision` pipelines.
+*   **`src/shims/`**: Polyfills or compatibility layers (e.g., `codegenNativeComponent.ts`) to ensure smooth operation across different browser environments for React Native.
+*   **`src/types/`**: Global TypeScript definitions and interfaces (e.g., `batchManifest.ts`, `types.ts`).
 *   **`src/utils/`**: General helper functions, file parsing (`singleAnalysis.ts`), and mathematical utilities.
-*   **`src/types/`**: Global TypeScript definitions and interfaces.
-*   **`src/shims/`**: Polyfills or compatibility layers to ensure smooth operation across different browser environments.
+*   **`src/vision/`**: Image processing logic, OCR, and chart axis extraction. Handles DOM Canvas manipulation, edge detection, and converting pixels to OHLC data.
+*   **`src/workers/`**: Contains the critical Web Worker files (`analysisWorker.ts`) which act as the asynchronous bridge between the UI thread and the heavy `quant`/`vision` pipelines.
 
 ---
 
 ## 3. Deep Dive: Quantitative Pipeline (`src/quant/`)
 
-Operates entirely deterministically on the output of the vision pipeline. The engine evaluates multiple conditions concurrently, outputting a scored prediction.
+Operates entirely deterministically on the output of the vision pipeline. The engine evaluates multiple conditions concurrently, outputting a scored prediction based strictly on point-based mathematical models (e.g., Hurst Exponent, Z-Score breakouts, EMA higher-order derivatives).
 
-*   **The Rule Engine (`evaluateSignal`)**: The heart of the decision matrix. It requires a parsed OHLC series, horizon context, user-selected techniques, and confirmed patterns.
-*   **Strict 10-Technique Rule**: Implemented within `evaluateSignal`, a strict guardrail mandates that `techniquesList` contains *at least 10 valid techniques*, and at least 10 must mathematically match the current parsed slice. Failure defaults the system to `'NO_TRADE'`. (Exception: Unit tests passing `__TEST_BYPASS__`).
+*   **The Rule Engine (`evaluateSignal` in `src/quant/ruleEngine.ts`)**: The heart of the decision matrix. It requires a parsed OHLC series, horizon context, user-selected techniques, and confirmed patterns.
+*   **Strict 10-Technique Rule**: A minimum of 10 techniques (candlestick patterns/indicators) must be provided in `techniquesList` AND at least 10 must mathematically match the chart data to return a valid prediction. Failure defaults the system to `'NO_TRADE'`. (Exception: Unit tests passing `"__TEST_BYPASS__"` in the techniques list).
 *   **Scoring Rubric (4-Judge Matrix)**:
     *   **Judge 1 (Trend/Momentum)**: Correlates parsed user techniques (e.g., Engulfing, Marubozu) with the underlying trend via `PATTERN_WEIGHTS_BY_HORIZON`.
     *   **Judge 2 (Oscillator Consensus)**: Aggregates RSI divergence, MACD histogram velocity, and Stochastic boundaries for confirmation logic.
@@ -51,7 +51,7 @@ Operates entirely deterministically on the output of the vision pipeline. The en
 *   **Pattern Recognition & Stability**:
     *   **`patternAdapter.ts`**: Extracts raw candlestick geometries using the `candlestick` library against the synthesized OHLC data.
     *   **`patternStability.ts`**: Filters raw patterns across sequential frames to ensure a pattern isn't just a brief flash of noise, upgrading them to 'confirmed' evidence only if they persist.
-*   **Stability Gating (`emitStability`)**: Emits `STABLE_SIGNAL` events dynamically only after rapid successive frames match identical or close point configurations, blocking noisy, singular 'flash' signals from rendering in the UI.
+*   **Stability Gating (`emitStability` in `stabilityFilter.ts`)**: Emits `STABLE_SIGNAL` events dynamically only after rapid successive frames match identical or close point configurations, blocking noisy, singular 'flash' signals from rendering in the UI.
 
 ---
 
@@ -59,47 +59,50 @@ Operates entirely deterministically on the output of the vision pipeline. The en
 
 The core extraction process relies on transforming raw pixels from an image or live webcam feed into structured temporal data (OHLC series) that the Quant pipeline can read.
 
-1.  **Rectification & Centering (`rectifyOrCenterCrop`)**: Handles image transformations, including Sobel/Canny edge detection and Homography transforms, to flatten and align skewed source images (e.g., from camera feeds) prior to parsing.
-2.  **Color Space Calibration (`EPSILON`)**: Establishes strict dynamic ranges for distinguishing background noise from bullish/bearish candle structures. Because screen monitors and ambient lighting alter colors drastically, this manual calibration defines the RGB tolerances.
-3.  **Pixel Scanning (`extractOHLCFromPixels`)**: Identifies candlestick boundary boxes within the rectified image, isolating open, high, low, and close (OHLC) coordinates dynamically.
-4.  **Axis Reader (Y-Axis OCR mapping)**: Maps the raw vertical pixel distances to real-world monetary values via `PriceAxisTransform`. If OCR validation fails, the system safely falls back to a normalized proportional scale (`NORMALIZED_FALLBACK`), keeping indicator arithmetic valid based on relative percentage movements rather than absolute dollars.
+*   **Image Processing**: Handles image transformations including edge detection (Sobel/Canny) and Homography transforms to flatten and align skewed source images (e.g., from camera feeds) prior to parsing. Establishes strict dynamic ranges for distinguishing background noise from bullish/bearish candle structures.
+*   **Pixel Scanning & OCR**: Identifies candlestick boundary boxes within the rectified image, isolating open, high, low, and close (OHLC) coordinates dynamically.
+*   **Chart Axis Extraction**: Maps the raw vertical pixel distances to real-world monetary values via OCR mapping. If OCR validation fails, the system safely falls back to a normalized proportional scale, keeping indicator arithmetic valid based on relative percentage movements rather than absolute dollars.
 
 ---
 
 ## 5. Web Workers & Performance Guardrails
 
-*   **Concurrency Model**: Communication between the UI (`LiveAnalysis.tsx` / `runSingleAnalysis.ts`) and the background pipeline relies on asynchronous messaging. The `techniquesList` and image data are passed dynamically in payloads to `src/workers/analysisWorker.ts`.
-*   **Determinism Guards (`runEpsilonGuard`, `runDeterminismGuard`)**: Implemented immediately inside the Web Worker initialization context to fail securely if floating point math is inaccurate or environment instability is present. Guarantees consistency across mathematical operations before processing any user data.
+*   **Concurrency Model**: Communication between the UI (`LiveAnalysis.tsx` / `runSingleAnalysis.ts`) and the background pipeline relies on asynchronous messaging. The `techniquesList` and image data are passed dynamically in payloads to `src/workers/analysisWorker.ts`. The `techniquesList` is parsed as an array of objects extracting both `name` and `description` properties.
+*   **Determinism Guards (`runEpsilonGuard`, `runDeterminismGuard`)**: Implemented immediately inside the Web Worker initialization context (e.g., in `analysisWorker.ts`) to fail securely if floating point math is inaccurate or environment instability is present. Guarantees consistency across mathematical operations before processing any user data.
 
 ---
 
 ## 6. Execution Modes
 
 ### A. Live Analysis
-Triggered via `runSingleAnalysis`, it translates a live canvas capture into an active prediction payload (`BULL`, `BEAR`, or `NO_TRADE`) based on a point threshold. Ties (margins < 3 or raw wins < 7) enforce an explicit neutral outcome.
+Triggered via `runSingleAnalysis`, it translates a live canvas capture into an active prediction payload (`BULL`, `BEAR`, or `NO_TRADE`) based on a point threshold. The frontend flow begins in `LiveAnalysis.tsx` where the image is converted to Base64 via `FileReader`, then passed to `runSingleAnalysis.ts`, which dispatches the data to the background `analysisWorker.ts`. Ties (margins < 3 or raw wins < 7) enforce an explicit neutral outcome.
 
 ### B. Bulk Test Mode
-When `isTestMode` is asserted:
-1.  **Image Slicing**: The pipeline structurally divides full historical images into sequential sub-slices using canvas methods (`cropRatio`, `toDataURL`) to simulate real-time forward-testing ingestion.
-2.  **Left Slice (History)**: Fed into the main quantitative pipeline.
-3.  **Right Slice (Future)**: Used exclusively to resolve the predicted closing position against the expected outcome duration, grading the model implicitly (`WIN`, `LOSS`, `NEUTRAL`).
+When `isTestMode` is asserted, the application simulates real-time chart data ingestion for forward-testing by dividing full historical images into sequential sub-slices using canvas methods (`cropRatio`, `toDataURL`).
+1.  **Left Slice (History)**: Fed into the main quantitative pipeline.
+2.  **Right Slice (Future)**: Used exclusively to resolve the predicted closing position against the expected outcome duration, grading the model implicitly (`WIN`, `LOSS`, `NEUTRAL`).
+
+*Note: The inputs `investmentAmount` and `profitabilityPercent` are strictly UI-level variables used for calculating simulated profit margins and displaying history/autopsy reports; they are explicitly excluded from the core mathematical analysis engine running in the web worker.*
 
 ---
 
 ## 7. Development, Deployment, & Test Infrastructure
 
 ### A. Testing Setup (Vitest)
-*   Vitest handles execution alongside ESLint for linting.
-*   **Deterministic Randomness**: Tests frequently deal with synthetic series generation. The mock frameworks specifically inject Linear Congruential Generators (LCG) via `vi.spyOn(Math, 'random')` to guarantee synthetic series mock generators evaluate deterministically, rather than weakening test assertions to account for random values.
+*   Vitest handles execution alongside ESLint for linting. Tests are typically located in `__tests__` subdirectories.
+*   **Deterministic Randomness**: Tests frequently deal with synthetic series generation. When tests fail due to unpredictable random values generated by synthetic series mock generators (e.g., `Math.random()` in `judgeVerdict.test.ts`), stabilize them by properly mocking `Math.random()` with a deterministic Linear Congruential Generator (LCG) via `vi.spyOn`, rather than weakening the test assertions.
 
 ### B. Standard Commands
-*   **Start Dev Server**: `npm run dev` (Serves on http://localhost:5173 by default)
+Always use `pnpm` in this repository. Never use `npm` or `yarn`.
+
+*   **Start Dev Server**: `pnpm dev`
 *   **Type Checking**: `npx tsc --noEmit`
-*   **Linting**: `npm run lint` *(Note: Avoid running `--fix` globally to prevent unintentional formatting changes. Use scoped paths like `npm run lint -- --fix path/to/file`)*
+*   **Linting**: `pnpm lint` *(Note: Avoid running `--fix` globally to prevent unintentional formatting changes. Scope lint fixes only to modified files)*
 *   **Run Tests**: `npx vitest run`
-*   **Build Production**: `npm run build`
+*   **Build Production**: `pnpm build`
 *   **Preview Production Build**: `npx vite preview &` (Serves on http://localhost:4173)
+*   **Execute Standalone Scripts**: Use `npx tsx <filename>.ts` for rapid execution during testing or debugging.
 
 ### C. Deployment (Vercel)
-*   The project uses Vercel for deployment.
+*   The project uses Vercel for deployment instead of Netlify.
 *   SPA routing is explicitly configured for Vite via a `vercel.json` file. It contains a rewrite rule pointing `/(.*)` to `/index.html` to ensure direct links and refreshes on sub-routes do not 404.
