@@ -7,7 +7,7 @@ function pseudoRandom() {
 import { runSingleAnalysis, onStableSignal } from '../utils/singleAnalysis';
 import { BulkTestPanel } from './BulkTestPanel';
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Platform } from 'react-native';
+import { Platform, Pressable, View, Text, ScrollView, TextInput, Image, ActivityIndicator } from 'react-native';
 export function useWakeLock() {
   const wakeLockRef = useRef<any>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -189,6 +189,7 @@ export function LiveAnalysis() {
 
   const [autoGradeStatus, setAutoGradeStatus] = useState<'idle' | 'grading' | 'done' | 'failed'>('idle');
   const [testModeLeftSlice, setTestModeLeftSlice] = useState<string | null>(null);
+  const [testModeRightSlice, setTestModeRightSlice] = useState<string | null>(null);
   const [autoGradeReason, setAutoGradeReason] = useState<string>('');
   const [autoGradeConfidence, setAutoGradeConfidence] = useState<number>(0);
   const [autoGradeRawOutcome, setAutoGradeRawOutcome] = useState<string>('');
@@ -302,7 +303,7 @@ export function LiveAnalysis() {
     setAutoGradeReason('');
     setAutoGradeConfidence(0);
     setAutoGradeRawOutcome('');
-    setShowAutopsy(false);
+    setMode('live');
     setMode('live');
     setStockName('Bitcoin');
     setGraphTimeframe('30 minutes');
@@ -1201,7 +1202,7 @@ export function LiveAnalysis() {
               </View>
               {analysisError.includes('Trade Aborted') && analysis && (
                  <Pressable
-                   onPress={() => setShowAutopsy(true)}
+                   onPress={() => setMode('bulk')}
                    style={({ pressed }) => [tw`bg-red-600 px-3 py-2 rounded-lg`, { opacity: pressed ? 0.7 : 1 }]}
                  >
                    <Text style={tw`text-white font-bold text-[9px] uppercase`}>Run Loss Autopsy</Text>
@@ -1464,7 +1465,7 @@ export function LiveAnalysis() {
                         <Pressable 
                           onPress={() => {
                             console.log('RUN LOSS AUTOPSY manual button clicked!');
-                            setShowAutopsy(true);
+                            setMode('bulk');
                           }}
                           style={({ pressed }) => [tw`bg-red-600 h-10 px-6 rounded-xl flex-row items-center justify-center shadow-xl mb-4`, { opacity: pressed ? 0.7 : 1 }]}
                         >
@@ -1578,7 +1579,7 @@ export function LiveAnalysis() {
                       <Pressable
                         onPress={() => {
                           console.log('RUN LOSS AUTOPSY button clicked!');
-                          setShowAutopsy(true);
+                          setMode('bulk');
                         }}
                         style={({ pressed }) => [tw`bg-red-600 h-10 px-6 rounded-xl flex-row items-center justify-center shadow-xl mb-2`, { opacity: pressed ? 0.7 : 1 }]}
                       >

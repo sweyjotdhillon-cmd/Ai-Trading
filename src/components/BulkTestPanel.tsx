@@ -1,4 +1,3 @@
-import { TIMEOUTS } from '../config/timeouts';
 import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, Pressable, ScrollView, Platform } from 'react-native';
 import tw from 'twrnc';
@@ -244,7 +243,7 @@ export function BulkTestPanel({
     });
   };
 
-
+  const startRun = async () => {
     if (queue.length === 0 || manifestErrors.length > 0) return;
     
     const missing = queue.filter(q => !q.file && !q.entry.imageData && q.status === 'Pending');

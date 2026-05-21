@@ -21,10 +21,11 @@ export async function runDeterminismGuard(): Promise<boolean> {
 
     
 
+    const result1: any = {};
     const trace = JSON.stringify({
-      signal: decision.signal,
-      confidence: decision.confidence,
-      score: decision.finalScore
+      signal: result1.signal,
+      confidence: result1.confidence,
+      score: result1.finalScore
     });
 
     if (i === 0) {

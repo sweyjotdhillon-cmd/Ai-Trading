@@ -7,7 +7,7 @@
  * Preserved legacy keys (signal, confidence, bullScore, bearScore, etc.) for backward compatibility.
  */
 import { rsi, macd, bollinger, atr, stochastic } from './indicators';
-import { calculateHurst, calculateZScore, calculateEMADerivatives, calculateMicroMomentumScore, calculateVolatilityRegime, detectRSIDivergence, calculateVolatilityRegimeLegacy, calculateZScoreSignificance, calculateRQA } from './mathEngine';
+import { calculateHurst, calculateZScore, calculateEMADerivatives, calculateMicroMomentumScore, calculateVolatilityRegime, detectRSIDivergence, calculateZScoreSignificance, calculateRQA } from './mathEngine';
 import { emaSlope, emaCurvature } from './calculus';
 
 
@@ -46,7 +46,7 @@ export interface DecisionResult extends JudgeVerdict {
   techUsedCount?: number;
 }
 
-
+export function evaluateSignal(ohlcSeries: NumericOHLC[], techniquesList: any[], _context?: HorizonContext, _confirmedPatterns?: any[]): DecisionResult {
   const defaultCases = { bull: { j1: 0, j2: 0, j3: 0, total: 0 }, bear: { j1: 0, j2: 0, j3: 0, total: 0 } };
   const defaultNoTrade: DecisionResult = {
     cases: defaultCases,
@@ -359,8 +359,8 @@ export interface DecisionResult extends JudgeVerdict {
      if (upperWick > currBody * 2 && lowerWick < currBody) bearReversal = true;
   }
 
-  const wCont = PATTERN_WEIGHTS_BY_HORIZON.CONTINUATION[horizonCtx.horizonClass];
-  const wRev = PATTERN_WEIGHTS_BY_HORIZON.REVERSAL[horizonCtx.horizonClass];
+  const wCont = PATTERN_WEIGHTS_BY_HORIZON.CONTINUATION[((_context?.horizonClass || "INTRA_CANDLE") as keyof typeof PATTERN_WEIGHTS_BY_HORIZON.CONTINUATION)];
+  const wRev = PATTERN_WEIGHTS_BY_HORIZON.REVERSAL[((_context?.horizonClass || "INTRA_CANDLE") as keyof typeof PATTERN_WEIGHTS_BY_HORIZON.CONTINUATION)];
 
   if (bullContinuation) bullJ1 += wCont;
   if (bearContinuation) bearJ1 += wCont;
@@ -418,8 +418,8 @@ export interface DecisionResult extends JudgeVerdict {
 
 
   // --- New Feature: Candlestick Pattern Evidence ---
-  if (featureFlags.enableCandlestickRepoPatterns && confirmedPatterns) {
-    confirmedPatterns.forEach(ev => {
+  if (featureFlags.enableCandlestickRepoPatterns && _confirmedPatterns && _confirmedPatterns.length > 0) {
+    _confirmedPatterns.forEach(ev => {
       if (ev.direction === 'BULL') bullJ1 += patternWeights.BULLISH;
       if (ev.direction === 'BEAR') bearJ1 += patternWeights.BEARISH;
     });
@@ -466,12 +466,13 @@ export interface DecisionResult extends JudgeVerdict {
 
 
 
+  const expectedMoveVar = atrVals[last] || 0;
   if (expectedMoveVar < microRange * 0.2) {
      skepticMultiplier *= 0.1; // Extinguish confidence
   }
 
   const slopeSeries = emaSlope(Array.from(closes), 9);
-  slopeStrength = slopeSeries.length > 0 ? Math.abs(slopeSeries[slopeSeries.length - 1]) : 0;
+  const slopeStrength = slopeSeries.length > 0 ? Math.abs(slopeSeries[slopeSeries.length - 1]) : 0;
 
   // R6: Slope strength gate
   if (slopeStrength < 0.15) {

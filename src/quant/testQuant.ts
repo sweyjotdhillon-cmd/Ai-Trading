@@ -1,3 +1,4 @@
+import { evaluateSignal } from './ruleEngine';
 import { rsi, ema } from './indicators';
 
 import { resetStability, emitStability } from './stabilityFilter';
