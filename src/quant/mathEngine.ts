@@ -467,28 +467,6 @@ export function calculateBoundaryReversal(
 }
 
 /**
- * Volatility Regime Gate
- * Measures market energy to filter out dead or explosive markets.
- */
-export function calculateVolatilityRegimeLegacy(candles: { high: number; low: number; close: number; prevClose: number }[], lookback = 20) {
-  if (candles.length < lookback) return { status: 'INSUFFICIENT_DATA', zScore: 0 };
-
-  const trueRanges = candles.slice(-lookback).map(c => 
-    Math.max(c.high - c.low, Math.abs(c.high - c.prevClose), Math.abs(c.low - c.prevClose))
-  );
-
-  const atr = ss.mean(trueRanges);
-  const atrStd = ss.standardDeviation(trueRanges);
-  const currentTr = trueRanges[trueRanges.length - 1];
-
-  const volZ = (currentTr - atr) / (atrStd || 0.0001);
-
-  if (volZ >= -0.5 && volZ <= 1.2) return { status: 'TRADEABLE', zScore: volZ };
-  if (volZ > 2.0) return { status: 'EXPLOSIVE_SKIP', zScore: volZ };
-  return { status: 'DEAD_SKIP', zScore: volZ };
-}
-
-/**
  * Kolmogorov Predictability Certificate
  * Measures algorithmic structure using compression ratios.
  */
