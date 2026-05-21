@@ -43,7 +43,25 @@ class TerminalErrorBoundary extends React.Component<{ children: React.ReactNode 
       return (
         <View style={styles.loadingContainer}>
           <Text style={styles.loadingText}>Unable to load terminal.</Text>
-          <Text style={styles.errorHint}>Please refresh and try again.</Text>
+          <Text style={styles.errorHint}>Please try again.</Text>
+          <Pressable
+             style={({ pressed }) => [
+                {
+                  marginTop: 20,
+                  backgroundColor: "#D9B382",
+                  paddingVertical: 10,
+                  paddingHorizontal: 16,
+                  borderRadius: 8,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  opacity: pressed ? 0.7 : 1
+                }
+             ]}
+             onPress={() => this.setState({ hasError: false, errorMessage: null, errorStack: null })}
+          >
+             <RefreshCw color="#1A1308" size={16} />
+             <Text style={{ color: "#1A1308", fontWeight: "bold", marginLeft: 8 }}>Retry</Text>
+          </Pressable>
           {this.state.errorMessage ? <Text style={styles.errorDetails}>{this.state.errorMessage}</Text> : null}
           {this.state.errorStack ? <Text style={styles.errorDetails}>{this.state.errorStack.slice(0, 400)}</Text> : null}
         </View>
