@@ -10,7 +10,6 @@ function pseudoRandom() {
   return _seed / 4294967296;
 };
 
-
 export function useWakeLock() {
   const wakeLockRef = useRef<any>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -310,7 +309,7 @@ export function LiveAnalysis() {
     setAutoGradeReason('');
     setAutoGradeConfidence(0);
     setAutoGradeRawOutcome('');
-    setShowAutopsy(false);
+    setMode('live');
     setMode('live');
     setStockName('Bitcoin');
     setGraphTimeframe('30 minutes');
@@ -1209,7 +1208,7 @@ export function LiveAnalysis() {
               </View>
               {analysisError.includes('Trade Aborted') && analysis && (
                  <Pressable
-                   onPress={() => setShowAutopsy(true)}
+                   onPress={() => setMode('bulk')}
                    style={({ pressed }) => [tw`bg-red-600 px-3 py-2 rounded-lg`, { opacity: pressed ? 0.7 : 1 }]}
                  >
                    <Text style={tw`text-white font-bold text-[9px] uppercase`}>Run Loss Autopsy</Text>
@@ -1472,7 +1471,7 @@ export function LiveAnalysis() {
                         <Pressable 
                           onPress={() => {
                             console.log('RUN LOSS AUTOPSY manual button clicked!');
-                            setShowAutopsy(true);
+                            setMode('bulk');
                           }}
                           style={({ pressed }) => [tw`bg-red-600 h-10 px-6 rounded-xl flex-row items-center justify-center shadow-xl mb-4`, { opacity: pressed ? 0.7 : 1 }]}
                         >
@@ -1605,7 +1604,7 @@ export function LiveAnalysis() {
                       <Pressable
                         onPress={() => {
                           console.log('RUN LOSS AUTOPSY button clicked!');
-                          setShowAutopsy(true);
+                          setMode('bulk');
                         }}
                         style={({ pressed }) => [tw`bg-red-600 h-10 px-6 rounded-xl flex-row items-center justify-center shadow-xl mb-2`, { opacity: pressed ? 0.7 : 1 }]}
                       >

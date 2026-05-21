@@ -1,5 +1,6 @@
 
 import { evaluateSignal } from '../quant/ruleEngine';
+import { buildPipelineResult } from '../vision/pipeline';
 import { HorizonContext } from '../quant/horizon';
 import { emitStability, resetStability } from '../quant/stabilityFilter';
 import { getCalibrationBands, setCalibrationBands } from '../vision/colorCalibration';
@@ -67,10 +68,7 @@ self.onmessage = async (e: MessageEvent) => {
       };
 
       const t0Worker = performance.now();
-      const pipe = await buildPipelineResult(data.imageData, {
-        expectedSymbol: data.stock,
-        timeframeMinutes: tfMinutes
-      });
+      const pipe = await buildPipelineResult(data.imageData) as any;
 
       let confirmedPatterns: PatternEvidence[] = [];
       if (featureFlags.enableCandlestickRepoPatterns) {
@@ -81,8 +79,8 @@ self.onmessage = async (e: MessageEvent) => {
       const t1Worker = performance.now();
       const decision = evaluateSignal(
         pipe.ohlcSeries,
-        horizonCtx,
         data.techniquesList,
+        horizonCtx,
         confirmedPatterns
       );
       console.log(`[PERF] evaluateSignal: ${(performance.now()-t1Worker).toFixed(1)}ms`);

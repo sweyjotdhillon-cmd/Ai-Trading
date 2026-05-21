@@ -88,7 +88,7 @@ afterEach(() => {
 
   it('4. Trending but EXPLOSIVE_SKIP volatility', async () => {
     const series = generateSeries('explosive', 150);
-    const result = evaluateSignal(series, {tfMinutes: 30, durationMinutes: 5, H: 0.5, horizonClass: 'INTRA_CANDLE'}, ['__TEST_BYPASS__']);
+    const result = evaluateSignal(series, ['__TEST_BYPASS__'], {tfMinutes: 30, durationMinutes: 5, H: 0.5, horizonClass: 'INTRA_CANDLE'} as any);
 
 
     if (result.cases.bull.total > 0 || result.cases.bear.total > 0) {
