@@ -10,6 +10,7 @@ function pseudoRandom() {
   return _seed / 4294967296;
 };
 
+
 export function useWakeLock() {
   const wakeLockRef = useRef<any>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
