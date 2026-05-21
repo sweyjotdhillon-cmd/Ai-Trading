@@ -1,65 +1,146 @@
-# Image Analysis Flow
+# 🌊 ChartLens Image Analysis Architecture: A Deep Dive Pipeline
 
-This document provides a highly detailed, comprehensive breakdown of the step-by-step image analysis pipeline within ChartLens. The flow describes how raw image data (either from a camera feed or test mode) is transformed into a deterministic quantitative trading prediction.
+> **Abstract**: This document provides a *highly detailed*, *highly precise*, and *comprehensive* breakdown of the complete image analysis pipeline within ChartLens. It traces the lifecycle of raw pixel data—from the moment of frontend capture through deterministic machine vision transformations, culminating in the complex algorithmic 4-Judge Matrix scoring model and frontend resolution.
 
-## 1. Frontend Capture (`LiveAnalysis.tsx`)
+---
 
-The analysis process begins in the frontend user interface. The user provides an image either via a live camera feed snapshot or by uploading a file.
+## 📸 Phase 1: Frontend Capture & Serialization (`LiveAnalysis.tsx`)
 
-*   **Image Acquisition:** The source frame is acquired. In Test Mode, this might be a historical chart image.
-*   **Base64 Conversion:** The raw image data is read using the `FileReader` API and converted into a Base64 string payload. This stringified format ensures easy transport across the application boundary.
-*   **Analysis Invocation:** The frontend calls the asynchronous utility `runSingleAnalysis(params)` from `src/utils/singleAnalysis.ts`. The payload includes the image data URL, stock ticker, timeframe, duration, and the user's selected trading techniques list (`techniquesList`).
+The initial sequence involves capturing user input (live feed or static file) and preparing it for deep processing without blocking the React render thread.
 
-## 2. Dispatching to the Web Worker (`runSingleAnalysis.ts`)
+### 1.1 Image Acquisition
+The user initiates the sequence by providing an image source.
+- **Live Mode:** Captures a frame directly from the device's camera stream via an HTML5 `<canvas>` snapshot.
+- **Test Mode:** Reads an uploaded historical chart image.
 
-To prevent the main JavaScript thread from blocking (which would freeze the React UI), the heavy lifting is offloaded to a dedicated Web Worker.
+### 1.2 Serialization & Payload Construction
+Raw pixel data is voluminous. To efficiently cross the boundary from UI to Web Worker, it is serialized.
+- Using the `FileReader` API (for uploads) or `.toDataURL()` (for live streams), the image is encoded into a **Base64 string payload**.
+- The `LiveAnalysis` component gathers the required context:
+  - `stockTicker`
+  - `timeframe` (e.g., 1m, 5m, 15m)
+  - `duration`
+  - `techniquesList` (An array of user-selected techniques, e.g., `[{name: 'Doji', description: '...'}]`)
 
-*   **Decoding:** The Base64 `imageDataUrl` is parsed back into raw pixel `ImageData` (via `dataUrlToImageData`).
-*   **Worker Communication:** `runSingleAnalysis` posts a message (`type: 'ANALYZE'`) containing the `ImageData` and user parameters (like timeframes and techniques) to `src/workers/analysisWorker.ts`.
-*   **Test Mode Slicing:** If Bulk Test Mode is active, the image is programmatically divided into two sub-slices (Left for historical context, Right for future outcome verification) using canvas cropping techniques (`cropRatio`).
+### 1.3 Asynchronous Invocation
+The frontend dispatches the serialized payload by calling the asynchronous utility `runSingleAnalysis(params)` located in `src/utils/singleAnalysis.ts`.
 
-## 3. Worker Initialization & Safety Guards (`analysisWorker.ts`)
+---
 
-When the web worker receives the payload, it initializes the core deterministic processing routines.
+## 🚀 Phase 2: Web Worker Dispatch (`runSingleAnalysis.ts`)
 
-*   **Audit Guards:** The system executes `runEpsilonGuard()` and `runDeterminismGuard()`. These ensure the mathematical environment is stable and that floating-point operations behave deterministically.
-*   **Horizon Context:** The worker calculates a `HorizonContext` using the `graphTimeframeMinutes` and `investmentDurationMinutes`, resolving a timeframe ratio `H`.
+To maintain buttery-smooth UI performance (specifically for the React Three Fiber animations), ChartLens strictly isolates heavy computation inside a dedicated Web Worker.
 
-## 4. The Vision Pipeline (`src/vision/pipeline.ts`)
+### 2.1 Payload Decoding
+Before dispatching to the worker, the Base64 `imageDataUrl` must be parsed back into an intermediate representation, `ImageData`, using `dataUrlToImageData()`.
 
-The worker delegates the raw image data to `buildPipelineResult()`, which acts as the orchestrator for the machine vision algorithms. This pipeline transforms pixels into temporal market data (OHLC).
+### 2.2 Thread Communication Protocol
+`runSingleAnalysis` interfaces with the background thread via the `Worker.postMessage` API.
+- It posts a strongly-typed message: `{ type: 'ANALYZE', payload: { ... } }`.
+- Crucially, the `techniquesList` is dynamically included in this payload, allowing the backend to process only user-selected trading patterns.
 
-*   **Rectification & Centering:** `rectifyOrCenterCrop(imageData)` performs Sobel/Canny edge detection and homography transforms. This flattens, aligns, and un-skews the image to ensure vertical and horizontal lines are orthogonal.
-*   **Color Space & Pixel Scanning:** `extractOHLCFromPixels(rectifiedFrame)` identifies the candlestick structures. Using calibrated color thresholds (`EPSILON`), it differentiates between bullish (green/white) and bearish (red/black) candles, isolating Open, High, Low, and Close (OHLC) pixel coordinates.
-*   **Y-Axis OCR Translation:** `readYAxis(rectifiedFrame)` scans the right boundary of the image for price labels. If OCR successfully identifies text, it maps vertical pixel locations to real-world monetary values via a `PriceAxisTransform` slope/intercept model. If it fails, the pipeline uses a `NORMALIZED_FALLBACK`, analyzing the data purely on relative proportional changes.
-*   **Data Structuring:** The output is a structured array of `NumericOHLC` objects representing the mathematical history of the chart.
+### 2.3 Bulk Test Mode Slicing (Forward-Testing Simulation)
+If **Bulk Test Mode** is active, the image is programmatically bifurcated:
+- **Left Slice (Historical Context):** Processed by the pipeline to generate a prediction.
+- **Right Slice (Future Outcome):** Withheld from the pipeline. Kept exclusively for post-analysis grading against the predicted direction. This slicing is achieved via precise canvas `cropRatio()` calculations.
 
-## 5. The Quantitative AI Pipeline (`src/quant/ruleEngine.ts`)
+---
 
-With the structured `ohlcSeries`, the worker invokes the core quantitative rule engine via `evaluateSignal()`. This engine runs a strictly deterministic, point-based matrix.
+## 🛡️ Phase 3: Worker Initialization & Determinism Guards (`analysisWorker.ts`)
 
-*   **Strict Rule 10:** The engine verifies that at least 10 valid techniques are provided in `techniquesList`. At least 10 must mathematically match the dataset, otherwise, it immediately returns `NO_TRADE`. (Unit tests can bypass this via `__TEST_BYPASS__`).
-*   **Indicator Generation:** Standard mathematical indicators (RSI, MACD, Bollinger Bands, ATR, Stochastic) and advanced derivatives (Z-Scores, EMA slope/curvature, RQA Determinism) are calculated over the OHLC array using typed `Float64Array` buffers for memory efficiency.
-*   **The 4-Judge Matrix:**
-    *   **Judge 1 (Trend & Momentum):** Evaluates prevailing slope, curvature, and matched candlestick patterns (e.g., Engulfing, Marubozu). Matched user-selected patterns boost this score.
-    *   **Judge 2 (Oscillator Consensus):** Analyzes RSI divergence, Stochastic boundaries, and MACD histogram velocity.
-    *   **Judge 3 (Boundary/Reversal):** Looks at wick-to-body ratios and the `yPercent` (percentile placement of the close relative to local highs/lows).
-    *   **Judge 4 (The Skeptic Multiplier):** A gating mechanism that evaluates Z-Scores, ATR spikes, and RQA laminarity. If erratic chop or extreme volatility is detected, it acts as a penalty multiplier, severely dropping overall confidence.
-*   **Hurst Balancer:** The Hurst Exponent (`rescaledRangeHurst`) modifies the weights dynamically. High Hurst (> 0.55) amplifies momentum scoring, while low Hurst (< 0.45) amplifies mean-reversion scoring.
-*   **Decision Rendering:** The engine totals the Bull and Bear points. The highest score wins (`BULL` or `BEAR`). If the margin is too close (< 3) or raw points are too low (< 7), it falls back to `NO_TRADE`.
+Upon receiving the `ANALYZE` message, the worker thread (`src/workers/analysisWorker.ts`) boots up and enforces strict environment stability rules.
 
-## 6. Stability Filtering & Dispatch
+### 3.1 The Determinism Guards
+Because mathematical operations can vary slightly across different CPU architectures or browser engines, ChartLens enforces rigorous consistency checks before analyzing any user data.
+- **`runEpsilonGuard()`**: Verifies that floating-point operations do not deviate beyond an acceptable micro-threshold.
+- **`runDeterminismGuard()`**: Ensures baseline mathematical functions yield exact, expected outcomes. Failure here aborts the analysis entirely.
 
-Before sending the result back, the application attempts to eliminate noise from temporary camera glitches.
+### 3.2 Horizon Context Initialization
+The worker calculates the `HorizonContext`, a critical parameter for weighting momentum vs. mean-reversion.
+- It evaluates the `graphTimeframeMinutes` against the `investmentDurationMinutes` to determine a structural timeframe ratio `H`.
 
-*   **Stability Filter:** `emitStability(decision)` compares the new decision against previous rapid frames. It only emits a `STABLE_SIGNAL` if multiple sequential frames agree on the point configurations.
-*   **Worker Response:** The worker wraps the final signal, confidence percentage, margin, and detailed debug trace into a `FRAME_RESULT` payload.
-*   **PostMessage:** The payload is sent back to the main thread via `self.postMessage`.
+---
 
-## 7. Frontend Resolution & Verdict Reporting
+## 👁️ Phase 4: The Vision Extraction Pipeline (`src/vision/pipeline.ts`)
 
-The `runSingleAnalysis` promise resolves, mapping the web worker output to the UI format.
+This phase converts raw color pixels into a structured, chronological array of mathematical OHLC points.
 
-*   **Test Mode Validation:** If running in Test Mode, the right-side (future) slice is evaluated against the predicted direction to automatically grade the result as a `WIN` or `LOSS`.
-*   **Log Rendering:** The raw scoring details (Bull Score, Bear Score, Margin, Skeptic Veto percentage) are fed into the UI log streams (`onJudgeLogs`).
-*   **Final Output:** The final unified payload, including the mapped direction (`UP`, `DOWN`, `NO_TRADE`) and final image references, is returned to `LiveAnalysis.tsx` to update the application state, rendering the verdict to the user.
+### 4.1 Rectification & Centering
+Source images, particularly from live cameras, are often skewed or unaligned.
+- `rectifyOrCenterCrop(imageData)` performs advanced transformations, including Sobel/Canny edge detection and Homography transforms.
+- This ensures the chart grid is flattened and orthogonal (vertical and horizontal lines are true to axis).
+
+### 4.2 Pixel Coordinate Extraction & Color Calibration
+- **`extractOHLCFromPixels(rectifiedFrame)`** scans the grid for candlestick geometries.
+- **Color Calibration (`EPSILON`):** Uses calibrated RGB tolerances to reliably differentiate bullish bodies (green/white) from bearish bodies (red/black) regardless of ambient monitor glare.
+- It precisely maps pixel boundaries to determine the Open, High, Low, and Close for every identified candle.
+
+### 4.3 OCR Y-Axis Translation
+- **`readYAxis(rectifiedFrame)`** attempts to run Optical Character Recognition on the right-hand boundary.
+- **Success:** Maps vertical pixel distances to real-world monetary values using a `PriceAxisTransform` slope/intercept model.
+- **Failure (`NORMALIZED_FALLBACK`):** If text is unreadable, it falls back to a normalized proportional scale, allowing relative percentage calculations to proceed flawlessly.
+
+### 4.4 The Output: `NumericOHLC` Array
+The culmination of the vision pipeline is an ordered array of `NumericOHLC` objects:
+```typescript
+export interface NumericOHLC {
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+}
+```
+
+---
+
+## 🧠 Phase 5: The Quantitative Rule Engine (`src/quant/ruleEngine.ts`)
+
+This is the cognitive core of ChartLens. The `evaluateSignal` function ingests the `NumericOHLC[]` and executes a deterministic, matrix-based analysis.
+
+### 5.1 The Strict 10-Technique Rule
+A non-negotiable safety guard:
+- The `techniquesList` must contain **at least 10 valid techniques**.
+- **At least 10 techniques must mathematically match** the chart data.
+- If these conditions are unmet, the engine immediately yields a `'NO_TRADE'` default. *(Note: Unit tests can bypass this via `__TEST_BYPASS__`)*.
+
+### 5.2 Mathematical Indicator Generation
+The engine leverages Typed Arrays (`Float64Array`) exclusively for deep recursive math (RSI, MACD, Bollinger Bands, ATR, Z-Scores). This avoids standard `number[]` array memory allocation overhead, ensuring blazing-fast, deterministic execution.
+
+### 5.3 The 4-Judge Matrix Scoring System
+The algorithm evaluates market conditions through four independent, specialized "Judges", tallying Bull and Bear points:
+
+1. **🧑‍⚖️ Judge 1 (Trend & Momentum):** Analyzes prevailing slope and matched candlestick configurations (e.g., Engulfing, Marubozu). Weights are adjusted based on `PATTERN_WEIGHTS_BY_HORIZON`.
+2. **🧑‍⚖️ Judge 2 (Oscillator Consensus):** Evaluates momentum oscillators. Looks for RSI divergence, MACD histogram velocity spikes, and Stochastic boundary crossings.
+3. **🧑‍⚖️ Judge 3 (Boundary & Reversal):** Focuses on structural geometry. Uses `yPercent` to determine the close's percentile placement relative to local highs/lows, and assesses wick-to-body ratios to identify exhaustion.
+4. **🧑‍⚖️ Judge 4 (The Skeptic Multiplier):** The crucial gating mechanism. It analyzes advanced derivatives like Volatility Regimes, ATR, and Recurrence Quantification Analysis (RQA) Laminarity. If it detects extreme erratic chop, it severely penalizes overall confidence.
+
+### 5.4 The Hurst Exponent Balancer
+During matrix execution, the **Hurst Exponent (`rescaledRangeHurst`)** dynamically modulates scoring weights:
+- **`H > 0.55` (Trending):** Amplifies Judge 1 (Momentum).
+- **`H < 0.45` (Mean-Reverting):** Amplifies Judge 3 (Reversals).
+
+### 5.5 Verdict Rendering
+Points are aggregated. The side with the most points wins (`BULL` or `BEAR`). However, if the point difference is marginal (< 3) or total conviction is low (< 7 points), it explicitly renders a `NO_TRADE` verdict.
+
+---
+
+## ⚖️ Phase 6: Stability Filtering & UI Resolution
+
+Before the verdict reaches the user, it undergoes temporal stabilization.
+
+### 6.1 The Stability Filter
+To prevent rapid UI flickering due to camera noise or transient glitches, the signal passes through `emitStability(decision)` (in `patternStability.ts`).
+- A `STABLE_SIGNAL` is only emitted if multiple sequential frames report the exact same mathematical configuration.
+
+### 6.2 Worker Response Payload
+The worker packages the final `FRAME_RESULT`:
+- `signal` (`UP`, `DOWN`, `NO_TRADE`)
+- `confidence` percentage
+- The point `margin`
+- A detailed debug `trace` of Judge scores.
+
+### 6.3 Frontend Verdict & Grading (Test Mode)
+The `runSingleAnalysis` Promise resolves, returning data to `LiveAnalysis.tsx`:
+- Raw Judge logs are piped into the UI debugger streams (`onJudgeLogs`).
+- If in **Bulk Test Mode**, the withheld Right Slice is now compared against the predicted signal. The system automatically grades the run as a `WIN` or `LOSS`.
+- The final state updates React, visually rendering the prediction, confidence gauge, and 3D UI overlays to the user.
