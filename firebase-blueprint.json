@@ -17,8 +17,6 @@
       "type": "object",
       "properties": {
         "uid": { "type": "string" },
-        "subUserId": { "type": "string" },
-        "subUserName": { "type": "string" },
         "timestamp": { "type": "string", "format": "date-time" },
         "stock": { "type": "string" },
         "signal": { "type": "string", "enum": ["CALL", "PUT", "NO TRADE"] },
@@ -40,8 +38,6 @@
       },
       "required": ["uid", "timestamp", "stock", "signal", "market", "entry", "probability", "analysisText"]
     },
-    "SubUser": {
-  },
   "firestore": {
     "users/{userId}": {
       "schema": {
@@ -74,10 +70,6 @@
         "required": ["name", "createdAt"]
       },
       "description": "Custom stock list for the user."
-    },
-    "subUsers/{subUserId}": {
-      "schema": { "$ref": "#/entities/SubUser" },
-      "description": "Sub-user profiles."
     },
     "settings/{settingId}": {
       "schema": {

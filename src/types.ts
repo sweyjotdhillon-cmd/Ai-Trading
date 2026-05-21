@@ -109,8 +109,8 @@ export interface TradeAnalysis {
   actualDirection?: 'UP' | 'DOWN' | 'FLAT';
   id: string;
   uid: string;
-  subUserId?: string;
-  subUserName?: string;
+
+
   timestamp: string;
   stock: string;
   signal: 'CALL' | 'PUT' | 'NO TRADE';

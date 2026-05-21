@@ -82,11 +82,9 @@ service cloud.firestore {
     }
 
     function isValidTradeAnalysis(data) {
-      return hasOnlyAllowedFields(data, ['id', 'uid', 'subUserId', 'subUserName', 'timestamp', 'stock', 'signal', 'market', 'strength', 'entry', 'probability', 'result', 'followedRules', 'mistakeType', 'notes', 'lz:notes', 'analysisText', 'lz:analysisText', 'graphTimeframe', 'investmentDuration', 'bigInsight', 'lz:bigInsight', 'techniquesUsed', 'lz:techniquesUsed', 'notesUsed', 'lz:notesUsed', 'improvementsUsed', 'lz:improvementsUsed', 'investmentAmount', 'profitAmount', 'accountType', 'structuredInsight', 'lz:structuredInsight', 'expiresAt', 'embedding', 'reason', 'createdAt', 'updatedAt']) &&
+      return hasOnlyAllowedFields(data, ['id', 'uid', 'timestamp', 'stock', 'signal', 'market', 'strength', 'entry', 'probability', 'result', 'followedRules', 'mistakeType', 'notes', 'lz:notes', 'analysisText', 'lz:analysisText', 'graphTimeframe', 'investmentDuration', 'bigInsight', 'lz:bigInsight', 'techniquesUsed', 'lz:techniquesUsed', 'notesUsed', 'lz:notesUsed', 'improvementsUsed', 'lz:improvementsUsed', 'investmentAmount', 'profitAmount', 'accountType', 'structuredInsight', 'lz:structuredInsight', 'expiresAt', 'embedding', 'reason', 'createdAt', 'updatedAt']) &&
              (!('uid' in data) || data.uid == null || (data.uid is string && data.uid.size() > 0 && data.uid.size() < 100)) &&
              (!('id' in data) || data.id == null || (data.id is string)) &&
-             (!('subUserId' in data) || data.subUserId == null || (data.subUserId is string)) &&
-             (!('subUserName' in data) || data.subUserName == null || (data.subUserName is string)) &&
              (!('timestamp' in data) || data.timestamp == null || (data.timestamp is string || data.timestamp is number)) &&
              (!('stock' in data) || data.stock == null || (data.stock is string && data.stock.size() > 0 && data.stock.size() < 100)) &&
              (!('signal' in data) || data.signal == null || (data.signal in ['CALL', 'PUT', 'NO TRADE'])) &&
@@ -132,15 +130,6 @@ service cloud.firestore {
              (!('lz:commonMistakes' in data) || data['lz:commonMistakes'] is string);
     }
 
-    function isValidSubUser(data) {
-      return hasOnlyAllowedFields(data, ['masterUid', 'name', 'passwordPin', 'createdAt', 'id', 'updatedAt', 'timestamp']) &&
-             (!('masterUid' in data) || data.masterUid == null || (data.masterUid is string && (data.masterUid == request.auth.uid || isAdmin()))) &&
-             (!('name' in data) || data.name == null || (data.name is string && data.name.size() > 0 && data.name.size() < 100)) &&
-             (!('passwordPin' in data) || data.passwordPin == null || (data.passwordPin is string && data.passwordPin.size() > 0 && data.passwordPin.size() < 100)) &&
-             (!('createdAt' in data) || data.createdAt == null || (data.createdAt is number || data.createdAt is string)) &&
-             (!('id' in data) || data.id == null || (data.id is string));
-    }
-
     match /users/{userId}/techniques/{techniqueId} {
       allow list: if isOwner(userId) || isAdmin();
       allow get: if isOwner(userId) || isAdmin();
@@ -179,14 +168,6 @@ service cloud.firestore {
         allow read: if isOwner(userId) || isAdmin();
         allow write: if (isOwner(userId) && isValidBehaviorProfile(request.resource.data)) || isAdmin();
       }
-    }
-
-    match /subUsers/{subUserId} {
-      allow list: if isAuthenticated();
-      allow get: if isAuthenticated() && (isAdmin() || resource.data.masterUid == request.auth.uid);
-      allow create: if isAuthenticated() && (isAdmin() || request.resource.data.masterUid == request.auth.uid) && isValidSubUser(request.resource.data);
-      allow update: if isAuthenticated() && (isAdmin() || (resource != null && resource.data.masterUid == request.auth.uid)) && isValidSubUser(request.resource.data);
-      allow delete: if isAuthenticated() && (isAdmin() || (resource != null && resource.data.masterUid == request.auth.uid));
     }
 
     match /tradeAnalyses/{analysisId} {

@@ -128,6 +128,8 @@ export function BulkTestPanel({
 
   // Tab 2 State
   const [queue, setQueue] = useState<BatchRun[]>([]);
+  const [autopsyingBatch, setAutopsyingBatch] = useState(false);
+  const [masterSummary, setMasterSummary] = useState<MasterAutopsySummary | null>(null);
   const [manifestErrors, setManifestErrors] = useState<string[]>([]);
   const [isQueueRunning, setIsQueueRunning] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
@@ -246,6 +248,7 @@ export function BulkTestPanel({
 
 
 
+  const startQueue = async () => {
     if (queue.length === 0 || manifestErrors.length > 0) return;
     
     const missing = queue.filter(q => !q.file && !q.entry.imageData && q.status === 'Pending');
@@ -346,9 +349,6 @@ export function BulkTestPanel({
     });
   };
 
-
-  const [autopsyingBatch, setAutopsyingBatch] = useState(false);
-  const [masterSummary, setMasterSummary] = useState<MasterAutopsySummary | null>(null);
 
   const runMasterAutopsyChain = async (losses: BatchRun[]) => {
      setAutopsyingBatch(true);
