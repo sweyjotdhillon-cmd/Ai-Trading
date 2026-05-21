@@ -9,8 +9,11 @@ import { runEpsilonGuard } from '../vision/__audit__/epsilonGuard';
 import { featureFlags } from '../config/featureFlags';
 import { extractCandlestickPatterns, PatternEvidence } from '../quant/patternAdapter';
 import { PatternStabilityManager } from '../quant/patternStability';
+import { detectLatestGap, GapEvidence } from '../quant/gapDetector';
+import { GapStabilityManager } from '../quant/gapStability';
 
 const patternStabilityManager = new PatternStabilityManager();
+const gapStabilityManager = new GapStabilityManager();
 
 let engineFault = false;
 let faultStack = '';
@@ -76,12 +79,19 @@ self.onmessage = async (e: MessageEvent) => {
         confirmedPatterns = patternStabilityManager.processFrame(rawPatterns);
       }
 
+      let confirmedGaps: GapEvidence[] = [];
+      if (featureFlags.enableGapDetection) {
+        const latestGap = detectLatestGap(pipe.ohlcSeries);
+        confirmedGaps = gapStabilityManager.processFrame(latestGap);
+      }
+
       const t1Worker = performance.now();
       const decision = evaluateSignal(
         pipe.ohlcSeries,
         data.techniquesList,
         horizonCtx,
-        confirmedPatterns
+        confirmedPatterns,
+        confirmedGaps
       );
       console.log(`[PERF] evaluateSignal: ${(performance.now()-t1Worker).toFixed(1)}ms`);
       console.log(`[PERF] TOTAL worker: ${(performance.now()-t0Worker).toFixed(1)}ms`);
@@ -112,6 +122,7 @@ self.onmessage = async (e: MessageEvent) => {
     }
     else if (data.type === 'RESET') {
       patternStabilityManager.reset();
+      gapStabilityManager.reset();
       resetStability();
       sendOk('RESET', { type: 'RESET_OK' });
     }
