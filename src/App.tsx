@@ -128,6 +128,8 @@ function App() {
                     window.location.reload();
                   }
                 }}
+                accessibilityRole="button"
+                accessibilityLabel="Reload application"
               >
                 <motion.div
                   whileHover={prefersReducedMotion ? {} : { scale: 1.04 }}
