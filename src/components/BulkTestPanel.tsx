@@ -244,7 +244,7 @@ export function BulkTestPanel({
     });
   };
 
-  const runBatch = async () => {
+
 
     if (queue.length === 0 || manifestErrors.length > 0) return;
     
@@ -646,7 +646,7 @@ export function BulkTestPanel({
                   <View style={tw`flex-row gap-3 pt-2`}>
                     {!isQueueRunning ? (
                       <Pressable 
-                        onPress={runBatch}
+                        onPress={startQueue}
                         disabled={queue.some(q => !q.file && !q.entry.imageData && q.status === 'Pending') || manifestErrors.length > 0}
                         style={({ pressed }) => [
                            tw`flex-1 bg-[#D9B382] h-12 rounded-xl flex-row items-center justify-center p-3`, 
