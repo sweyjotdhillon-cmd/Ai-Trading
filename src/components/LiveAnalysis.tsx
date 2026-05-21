@@ -1,12 +1,14 @@
+import { runSingleAnalysis, onStableSignal } from '../utils/singleAnalysis';
+import { BulkTestPanel } from './BulkTestPanel';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { View, Text, Pressable, ScrollView, TextInput, Image, Platform } from 'react-native';
 import { TIMEOUTS } from '../config/timeouts';
+
 let _seed = 0xC0FFEE;
 function pseudoRandom() {
   _seed = (_seed * 1664525 + 1013904223) % 4294967296;
   return _seed / 4294967296;
 };
-import { runSingleAnalysis, onStableSignal } from '../utils/singleAnalysis';
-import { BulkTestPanel } from './BulkTestPanel';
-import { useState, useRef, useEffect, useCallback } from 'react';
 
 export function useWakeLock() {
   const wakeLockRef = useRef<any>(null);
