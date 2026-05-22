@@ -9,7 +9,7 @@ export interface BatchManifestEntry {
   investmentDuration?: string;    // e.g. "5m" — must match existing durations[]
   investmentAmount?: number;      // default 100
   profitabilityPercent?: number;  // default 85
-  expectedOutcome?: 'WIN' | 'LOSS' | 'UNKNOWN';   // for backtest accuracy scoring
+  expectedOutcome?: 'UP' | 'DOWN' | 'UNKNOWN';   // for backtest accuracy scoring
   notes?: string;                 // freeform user note
   techniqueOverrides?: string[];  // override the global techniquesList for this entry
 }
