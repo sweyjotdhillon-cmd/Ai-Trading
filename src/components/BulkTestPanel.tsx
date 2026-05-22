@@ -247,8 +247,7 @@ export function BulkTestPanel({
     });
   };
 
-
-
+  const runQueue = async () => {
     if (queue.length === 0 || manifestErrors.length > 0) return;
     
     const missing = queue.filter(q => !q.file && !q.entry.imageData && q.status === 'Pending');
@@ -383,7 +382,7 @@ export function BulkTestPanel({
           const avgConfidence = failuresData.length
             ? failuresData.reduce((sum, f) => sum + f.confidence, 0) / failuresData.length
             : 0;
-          const timeframeCounts: Record<string, number> = failuresData.reduce((acc, f) => {
+          const timeframeCounts: Record<string, number> = failuresData.reduce((acc: any, f) => {
             const tf = f.timeframe || 'unknown';
             acc[tf] = (acc[tf] || 0) + 1;
             return acc;
