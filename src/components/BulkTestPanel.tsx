@@ -247,6 +247,7 @@ export function BulkTestPanel({
   };
 
 
+  const runQueue = async () => {
 
     if (queue.length === 0 || manifestErrors.length > 0) return;
     
