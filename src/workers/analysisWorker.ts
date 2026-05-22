@@ -11,6 +11,7 @@ import { extractCandlestickPatterns, PatternEvidence } from '../quant/patternAda
 import { PatternStabilityManager } from '../quant/patternStability';
 import { detectLatestGap, GapEvidence } from '../quant/gapDetector';
 import { GapStabilityManager } from '../quant/gapStability';
+import { applyTemporalFilter, resetTemporalFilter } from '../quant/temporalFilter';
 
 const patternStabilityManager = new PatternStabilityManager();
 const gapStabilityManager = new GapStabilityManager();
@@ -97,25 +98,47 @@ self.onmessage = async (e: MessageEvent) => {
       console.log(`[PERF] TOTAL worker: ${(performance.now()-t0Worker).toFixed(1)}ms`);
       const stab = emitStability(decision);
 
+      let finalSignal = decision.signal;
+      let finalConfidence = decision.confidence;
+      let finalScore = decision.finalScore;
+      let finalStable = stab.stable;
+
+      if (featureFlags.enableTemporalFiltering) {
+        const tfResult = applyTemporalFilter(
+          decision.signal,
+          decision.confidence,
+          decision.finalScore,
+          stab.stable
+        );
+        finalSignal = tfResult.signal;
+        finalConfidence = tfResult.confidence;
+        finalScore = tfResult.finalScore;
+        finalStable = tfResult.stable;
+      }
+
       const debugTrace = {
         meta: pipe.meta,
-        decision
+        decision,
+        temporalFiltering: featureFlags.enableTemporalFiltering ? {
+          smoothedConfidence: finalConfidence,
+          smoothedScore: finalScore
+        } : undefined
       };
       
       sendOk('ANALYZE', {
         type: 'FRAME_RESULT',
         msgId: data.msgId,
-        signal: decision.signal,
-        confidence: decision.confidence,
-        frameStable: stab.stable,
+        signal: finalSignal,
+        confidence: finalConfidence,
+        frameStable: finalStable,
         debugTrace
       });
       
-      if (stab.stable) {
+      if (finalStable) {
         sendOk('ANALYZE_STABLE', {
           type: 'STABLE_SIGNAL',
-          signal: decision.signal,
-          confidence: decision.confidence,
+          signal: finalSignal,
+          confidence: finalConfidence,
           debugTrace
         });
       }
@@ -124,6 +147,7 @@ self.onmessage = async (e: MessageEvent) => {
       patternStabilityManager.reset();
       gapStabilityManager.reset();
       resetStability();
+      if (featureFlags.enableTemporalFiltering) resetTemporalFilter();
       sendOk('RESET', { type: 'RESET_OK' });
     }
   } catch (err: any) {
