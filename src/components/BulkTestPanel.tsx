@@ -94,7 +94,7 @@ export function BulkTestPanel({
         });
         return {
           imageFilename: file.name,
-          expectedOutcome: 'UNKNOWN' as const,
+          expectedOutcome: (file.name.toLowerCase().includes('up') || file.name.toLowerCase().includes('call') ? 'UP' : file.name.toLowerCase().includes('down') || file.name.toLowerCase().includes('put') ? 'DOWN' : 'UNKNOWN') as any,
           imageData,
           stock: stockName,
           graphTimeframe: graphTimeframe,
@@ -260,7 +260,7 @@ export function BulkTestPanel({
     setIsPaused(false);
     abortControllerRef.current = new AbortController();
 
-    const CONCURRENCY_LIMIT = 1;
+    const CONCURRENCY_LIMIT = queue.length > 0 ? queue.length : 1;
     let currentIndex = 0;
     const workerLoop = async () => {
       while (currentIndex < queue.length) {
@@ -720,3 +720,4 @@ export function BulkTestPanel({
       </View>
     </View>
   );
+}
