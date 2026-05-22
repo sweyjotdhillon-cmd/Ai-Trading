@@ -55,9 +55,38 @@ Because mathematical operations can vary slightly across different CPU architect
 - **`runEpsilonGuard()`**: Verifies that floating-point operations do not deviate beyond an acceptable micro-threshold.
 - **`runDeterminismGuard()`**: Ensures baseline mathematical functions yield exact, expected outcomes. Failure here aborts the analysis entirely.
 
+
 ### 3.2 Horizon Context Initialization
 The worker calculates the `HorizonContext`, a critical parameter for weighting momentum vs. mean-reversion.
 - It evaluates the `graphTimeframeMinutes` against the `investmentDurationMinutes` to determine a structural timeframe ratio `H`.
+
+### 3.3 Advanced Feature Instantiation & Stability Managers
+Prior to processing image payloads, the worker thread spins up highly specialized stateful managers to filter noise from raw mathematical structures:
+- **`PatternStabilityManager`**: Initializes a rolling temporal buffer. It exists to track candlestick formations (e.g., Doji, Hammer) over sequential frames.
+- **`GapStabilityManager`**: Initializes state to monitor structural price gaps between adjacent candlesticks.
+
+Both managers ensure that transient visual artifacts or brief camera glitches do not prematurely trigger signals; an anomaly must persist across multiple ticks to be upgraded to "confirmed evidence."
+
+---
+
+## 🔬 Phase 3.5: Pre-Quantitative Feature Extraction
+
+Between the raw vision output and the final quantitative matrix, the pipeline performs deep structural analysis on the NumericOHLC array if feature flags permit.
+
+### 3.5.1 Candlestick Pattern Extraction
+If `featureFlags.enableCandlestickRepoPatterns` is true:
+- **`extractCandlestickPatterns(ohlcSeries)`**: Scans the numerical series against known geometric definitions (e.g., Engulfing, Marubozu).
+- The raw output is immediately piped into the `patternStabilityManager.processFrame(rawPatterns)`.
+- The output is an array of PatternEvidence, representing only the geometrically sound and temporally stable structures.
+
+### 3.5.2 Gap Detection
+If `featureFlags.enableGapDetection` is true:
+- **`detectLatestGap(ohlcSeries)`**: Scans the most recent temporal blocks for significant disconnections between closing and opening prices (Fair Value Gaps, Runaway Gaps).
+- Raw gaps are similarly filtered through `gapStabilityManager.processFrame(latestGap)`.
+- The output is an array of GapEvidence.
+
+These strictly confirmed PatternEvidence and GapEvidence arrays are then injected directly into the quantitative `evaluateSignal` payload as fundamental contexts for the 4-Judge Matrix.
+
 
 ---
 
