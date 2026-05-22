@@ -359,27 +359,44 @@ export function BulkTestPanel({
   const runMasterAutopsyChain = async (losses: BatchRun[]) => {
      setAutopsyingBatch(true);
      try {
-       // Simulate stub response
-       await new Promise(r => setTimeout(r, 1000));
        if (losses.length > 0) {
           const failuresData = losses.map(l => {
              const analysisCopy = l.result?.analysis ? JSON.parse(JSON.stringify(l.result.analysis)) : null;
+             const confidence = Number(l.result?.confidence ?? analysisCopy?.confidence ?? 0);
+             const expected = String(l.entry.expectedOutcome ?? '').toUpperCase();
+             const predicted = String(analysisCopy?.decision ?? l.result?.direction ?? '').toUpperCase();
              return {
                 fileName: l.file?.name || (l.entry as any).fileName || "unknown",
                 stock: l.entry.stock,
                 timeframe: l.entry.graphTimeframe,
                 expectedOutcome: l.entry.expectedOutcome,
                 actualResult: l.status,
+                predictedDecision: predicted || 'UNKNOWN',
+                confidence: Number.isFinite(confidence) ? confidence : 0,
+                contradictedExpectation: expected !== 'UNKNOWN' && expected && predicted && expected !== predicted,
                 analysis: analysisCopy,
                 error: l.error,
              };
           });
 
+          const contradictionCount = failuresData.filter(f => f.contradictedExpectation).length;
+          const avgConfidence = failuresData.length
+            ? failuresData.reduce((sum, f) => sum + f.confidence, 0) / failuresData.length
+            : 0;
+          const timeframeCounts: Record<string, number> = failuresData.reduce((acc, f) => {
+            const tf = f.timeframe || 'unknown';
+            acc[tf] = (acc[tf] || 0) + 1;
+            return acc;
+          }, {});
+          const worstTimeframe = Object.entries(timeframeCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'unknown';
+
           setMasterSummary({
              title: `Batch Autopsy: ${losses.length} Loss(es) Analyzed`,
-             narrative: "An automated math-engine autopsy was executed over the loss instances across the batch. Deep LLM reasoning is offline, but full scoring logs for all losses are included in the JSON download.",
-             coreWeakness: "Check the 'rawLosses' array in the exported JSON file to inspect the scoring logic and points distribution that led to each loss.",
-             recommendedAction: "Review math signal scores vs expected outcomes, and consider adjusting timeframe or standard bounds.",
+             narrative: `Detected ${contradictionCount} contradiction(s) versus expected outcomes. Average confidence on losing trades was ${avgConfidence.toFixed(1)}%.`,
+             coreWeakness: `Most losses cluster on ${worstTimeframe} timeframe with ${timeframeCounts[worstTimeframe] || 0} failed run(s).`,
+             recommendedAction: contradictionCount > 0
+               ? 'Re-check label quality in manifest and tighten direction filters before entering trades.'
+               : 'Tighten entry thresholds (confidence + pattern stability) for this timeframe and rerun the batch.',
              rawLosses: failuresData
           });
        }
