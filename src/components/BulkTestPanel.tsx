@@ -387,7 +387,7 @@ export function BulkTestPanel({
             acc[tf] = (acc[tf] || 0) + 1;
             return acc;
           }, {});
-          const worstTimeframe = Object.entries(timeframeCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'unknown';
+          const worstTimeframe = Object.entries(timeframeCounts as any).sort((a: any, b: any) => b[1] - a[1])[0]?.[0] || 'unknown';
 
           setMasterSummary({
              title: `Batch Autopsy: ${losses.length} Loss(es) Analyzed`,
