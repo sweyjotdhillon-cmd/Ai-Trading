@@ -72,6 +72,7 @@ export interface DecisionResult extends JudgeVerdict {
 export function evaluateSignal(ohlcSeries: NumericOHLC[], techniquesList: any[], _context?: HorizonContext): DecisionResult {
 
 
+export function evaluateSignal(ohlcSeries: NumericOHLC[], techniquesList: string[] = [], _context?: HorizonContext, _confirmedPatterns?: any[]): DecisionResult {
   const defaultCases = { bull: { j1: 0, j2: 0, j3: 0, total: 0 }, bear: { j1: 0, j2: 0, j3: 0, total: 0 } };
   const defaultNoTrade: DecisionResult = {
     cases: defaultCases,
