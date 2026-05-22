@@ -8,7 +8,7 @@ import {
   StatusBar,
   Platform
 } from 'react-native';
-import { Settings, LogIn, Activity } from 'lucide-react';
+import { Settings, LogIn, Activity, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence, LayoutGroup, useReducedMotion } from 'motion/react';
 
 import { LiveAnalysis } from './components/LiveAnalysis';
