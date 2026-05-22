@@ -39,6 +39,7 @@ export interface BatchRun {
   status: BatchRunStatus;
   result?: any;
   error?: string;
+  earlyDirection?: 'UP' | 'DOWN' | 'NO_TRADE';
 }
 
 export function BulkTestPanel({
@@ -273,7 +274,7 @@ export function BulkTestPanel({
           continue; // skip completed
         }
 
-        setQueue(q => q.map((r, idx) => idx === i ? { ...r, status: 'Running' } : r));
+        setQueue(q => q.map((r, idx) => idx === i ? { ...r, status: 'Running', earlyDirection: undefined } : r));
 
         // Let UI update
         await new Promise(resolve => setTimeout(resolve, 10));
@@ -304,7 +305,12 @@ export function BulkTestPanel({
             techniquesList: item.entry.techniqueOverrides || techniquesList,
             encryptedSystemTokens,
             signal: abortControllerRef.current!.signal,
-            isTestMode: true
+            isTestMode: true,
+            onDirectionFound: (dir) => {
+              setQueue(q => q.map((r, idx2) => 
+                idx2 === i ? { ...r, earlyDirection: dir } : r
+              ));
+            }
           });
           
           if (isObjectUrl) {
@@ -591,15 +597,22 @@ export function BulkTestPanel({
                           </View>
                           <View style={tw`px-3`}>
                             <View style={tw`flex-row items-center justify-end`}>
-                              <Text style={tw`text-[10px] font-black uppercase tracking-widest ${
-                                item.result?.direction === 'UP' ? 'text-green-400'
-                                : item.result?.direction === 'DOWN' ? 'text-red-400'
-                                : 'text-white text-opacity-30'
-                              }`}>
-                                {item.result?.direction === 'UP' ? 'UP'
-                                 : item.result?.direction === 'DOWN' ? 'DOWN'
-                                 : '—'}
-                              </Text>
+                              {(() => {
+                                const displayDir = item.result?.direction ?? item.earlyDirection;
+                                const dirColorClass = item.status === 'Running' && !item.earlyDirection
+                                  ? 'text-yellow-400 animate-pulse'
+                                  : displayDir === 'UP' ? 'text-green-400'
+                                  : displayDir === 'DOWN' ? 'text-red-400'
+                                  : 'text-white text-opacity-30';
+                                return (
+                                  <Text style={tw`text-[10px] font-black uppercase tracking-widest ${dirColorClass}`}>
+                                    {displayDir === 'UP' ? 'UP'
+                                      : displayDir === 'DOWN' ? 'DOWN'
+                                      : item.status === 'Running' ? '···'
+                                      : '—'}
+                                  </Text>
+                                );
+                              })()}
                               <Text style={tw`text-white text-opacity-30 text-[10px] mx-1`}>/</Text>
                               <Text style={[tw`text-[10px] font-black uppercase tracking-widest`, tw`${getStatusColor(item.status)}`]}>
                                 {item.status === 'WIN' ? 'PROFIT' : item.status === 'NEUTRAL' ? 'NO TRADE' : item.status}

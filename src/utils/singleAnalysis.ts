@@ -71,6 +71,7 @@ export async function runSingleAnalysis(params: {
   onProgress?: (step: string) => void;
   onJudgeLogs?: (logs: any) => void;
   isTestMode?: boolean;
+  onDirectionFound?: (direction: 'UP' | 'DOWN' | 'NO_TRADE') => void;
 }): Promise<{
   analysis: any;
   direction: 'UP' | 'DOWN' | 'NO_TRADE';
@@ -88,7 +89,7 @@ export async function runSingleAnalysis(params: {
   candlesCut?: number;
 }> {
   const t0 = performance.now();
-  const { imageDataUrl, onJudgeLogs, isTestMode } = params;
+  const { imageDataUrl, onJudgeLogs, isTestMode, onDirectionFound } = params;
 
   if (onJudgeLogs) {
     onJudgeLogs({
@@ -165,6 +166,10 @@ export async function runSingleAnalysis(params: {
   const { frameStable, debugTrace } = payload;
   const decision = debugTrace.decision;
   const meta = debugTrace.meta;
+  const initialMappedDirection = decision.winner === 'BULL' ? 'UP' : (decision.winner === 'BEAR' ? 'DOWN' : 'NO_TRADE');
+  if (onDirectionFound) {
+    onDirectionFound(initialMappedDirection);
+  }
   
   if (meta.reason === 'NO_CALIBRATION' || meta.candlesLength === 0) {
     if (onJudgeLogs) {
