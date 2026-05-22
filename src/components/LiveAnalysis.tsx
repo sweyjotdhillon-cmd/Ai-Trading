@@ -912,6 +912,8 @@ export function LiveAnalysis() {
           <View style={tw`flex-row gap-2`}>
             <Pressable 
               onPress={handlePickTechnique}
+              accessibilityRole="button"
+              accessibilityLabel="Upload technique JSON file"
               style={({ pressed }) => [tw`w-9 h-9 rounded-lg items-center justify-center`, techFileName ? tw`bg-[#D9B382]` : tw`bg-white bg-opacity-20 border border-white border-opacity-10`, { opacity: pressed ? 0.7 : 1 }]}
             >
               <motion.div whileHover={buttonHoverProps} whileTap={buttonTapProps} transition={springProps} style={{ display: 'contents' }}>
