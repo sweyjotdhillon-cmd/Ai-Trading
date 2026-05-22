@@ -103,6 +103,17 @@ Always use `pnpm` in this repository. Never use `npm` or `yarn`.
 *   **Preview Production Build**: `npx vite preview &` (Serves on http://localhost:4173)
 *   **Execute Standalone Scripts**: Use `npx tsx <filename>.ts` for rapid execution during testing or debugging.
 
-### C. Deployment (Vercel)
-*   The project uses Vercel for deployment instead of Netlify.
-*   SPA routing is explicitly configured for Vite via a `vercel.json` file. It contains a rewrite rule pointing `/(.*)` to `/index.html` to ensure direct links and refreshes on sub-routes do not 404.
+### C. Deployment (Cloudflare)
+*   The project uses Cloudflare for deployment.
+*   SPA routing is supported via the `wrangler.jsonc` file and Cloudflare Pages configuration.
+
+---
+
+## 8. Known Flaws, Limitations, and Inactive Features
+
+While ChartLens is highly optimized, there are architectural limitations, inactive features, and technical debt that future iterations should address:
+
+*   **Inactive Code Paths (Feature Flags)**: Several advanced analysis engines are fully written but disabled by default in `src/config/featureFlags.ts` (e.g., `enableCandlestickRepoPatterns` and `enableGapDetection`). They execute and pass tests but do not actively contribute to production quantitative signals unless explicitly enabled.
+*   **OCR Extraction Fallbacks**: When the Vision Pipeline's Optical Character Recognition (OCR) fails to read the precise Y-axis values from a camera feed, it safely degrades to a `NORMALIZED_FALLBACK`. While proportional percentage changes remain accurate, absolute price point targets cannot be computed when this fallback is active.
+*   **Test Mode Cropping Assumptions**: The Bulk Test Mode's automatic slicing mechanic (`cropRatio`) uses heuristics that assume a 1-minute chart timeframe. Forward-testing a 30-minute chart or other custom timeframes may require manual `candlesInView` overrides to prevent inaccurate temporal cropping.
+*   **Production Engine / Test Coupling**: The core quantitative rule engine tightly couples testing logic with production via a `"__TEST_BYPASS__"` string embedded within the techniques list. This internally bypasses the strict 'minimum 10 technique' rule in the rule engine purely to facilitate unit test creation.

@@ -2,7 +2,7 @@ import { runSingleAnalysis, onStableSignal } from '../utils/singleAnalysis';
 import { BulkTestPanel } from './BulkTestPanel';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import * as RN from 'react-native';
-import { View, Text, Pressable, ScrollView, TextInput, Image, Platform } from 'react-native';
+import { View, Text, Pressable, ScrollView, TextInput, Image, Platform, ActivityIndicator } from 'react-native';
 import { TIMEOUTS } from '../config/timeouts';
 
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
@@ -81,75 +81,16 @@ import { CalibrationOverlay } from './CalibrationOverlay';
 
 
 
+import { useWakeLock } from '../hooks/useWakeLock';
+
 let _seed = 0xC0FFEE;
 function pseudoRandom() {
   _seed = (_seed * 1664525 + 1013904223) % 4294967296;
   return _seed / 4294967296;
 };
 
-export function useWakeLock() {
-  const wakeLockRef = useRef<any>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const isRequestedRef = useRef(false);
-
-  useEffect(() => {
-    // Create a silent audio element to play in the background to prevent the browser from throttling/killing the page.
-    const audio = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA');
-    audio.loop = true;
-    audioRef.current = audio;
-  }, []);
-
-  const requestLock = useCallback(async () => {
-    isRequestedRef.current = true;
-    audioRef.current?.play().catch((err: any) => console.log('Audio playback failed:', err.message));
-    if ('wakeLock' in navigator && document.visibilityState === 'visible') {
-      try {
-        if (wakeLockRef.current) return;
-        const lock = await (navigator as any).wakeLock.request('screen');
-        wakeLockRef.current = lock;
-        console.log('Screen Wake Lock active');
-        
-        lock.addEventListener('release', () => {
-          console.log('Screen Wake Lock was released');
-          wakeLockRef.current = null;
-        });
-      } catch (err: any) {
-        console.log(`Wake Lock request failed: ${err.message}`);
-      }
-    }
-  }, []);
-
-  const releaseLock = useCallback(async () => {
-    isRequestedRef.current = false;
-    audioRef.current?.pause();
-    if (wakeLockRef.current !== null) {
-      try {
-        await wakeLockRef.current.release();
-        wakeLockRef.current = null;
-        console.log('Screen Wake Lock intentionally released');
-      } catch (err: any) {
-        console.log(`Wake Lock release failed: ${err.message}`);
-      }
-    }
-  }, []);
-
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && isRequestedRef.current) {
-        requestLock();
-      }
-    };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [requestLock]);
-
-  return { requestLock, releaseLock };
-}
-
-
-
 // Utility to downscale images on the web before sending to server
-const ActivityIndicator = RN.ActivityIndicator;
+
 
 export function LiveAnalysis() {
   const [stockName, setStockName] = useState('Bitcoin');
@@ -912,6 +853,8 @@ export function LiveAnalysis() {
           <View style={tw`flex-row gap-2`}>
             <Pressable 
               onPress={handlePickTechnique}
+              accessibilityRole="button"
+              accessibilityLabel="Upload technique JSON file"
               style={({ pressed }) => [tw`w-9 h-9 rounded-lg items-center justify-center`, techFileName ? tw`bg-[#D9B382]` : tw`bg-white bg-opacity-20 border border-white border-opacity-10`, { opacity: pressed ? 0.7 : 1 }]}
             >
               <motion.div whileHover={buttonHoverProps} whileTap={buttonTapProps} transition={springProps} style={{ display: 'contents' }}>

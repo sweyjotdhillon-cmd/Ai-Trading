@@ -132,30 +132,6 @@ export function calculateRQA(series: number[], epsilon = 0.1) {
   return { recurrenceRate, determinism, laminarity };
 }
 
-/**
- * Persistent Entropy (TDA-Lite)
- * Captures "shape" invariants using simplified persistence of price peaks.
- */
-export function calculatePersistentEntropy(series: number[]) {
-  const n = series.length;
-  const persistence = [];
-  
-  // Find local extrema (birth/death of features)
-  for (let i = 1; i < n - 1; i++) {
-    if ((series[i] > series[i-1] && series[i] > series[i+1]) || 
-        (series[i] < series[i-1] && series[i] < series[i+1])) {
-      persistence.push(Math.abs(series[i] - series[i-1]));
-    }
-  }
-
-  const sum = persistence.reduce((a, b) => a + b, 0);
-  if (sum === 0) return 0;
-  
-  const normalized = persistence.map(p => p / sum);
-  const entropy = -normalized.reduce((acc, p) => acc + (p > 0 ? p * Math.log2(p) : 0), 0);
-  
-  return { entropy, featureCount: persistence.length };
-}
 
 /**
  * Symplectic Hamiltonian Flow
@@ -467,28 +443,6 @@ export function calculateBoundaryReversal(
 }
 
 /**
- * Volatility Regime Gate
- * Measures market energy to filter out dead or explosive markets.
- */
-export function calculateVolatilityRegimeLegacy(candles: { high: number; low: number; close: number; prevClose: number }[], lookback = 20) {
-  if (candles.length < lookback) return { status: 'INSUFFICIENT_DATA', zScore: 0 };
-
-  const trueRanges = candles.slice(-lookback).map(c => 
-    Math.max(c.high - c.low, Math.abs(c.high - c.prevClose), Math.abs(c.low - c.prevClose))
-  );
-
-  const atr = ss.mean(trueRanges);
-  const atrStd = ss.standardDeviation(trueRanges);
-  const currentTr = trueRanges[trueRanges.length - 1];
-
-  const volZ = (currentTr - atr) / (atrStd || 0.0001);
-
-  if (volZ >= -0.5 && volZ <= 1.2) return { status: 'TRADEABLE', zScore: volZ };
-  if (volZ > 2.0) return { status: 'EXPLOSIVE_SKIP', zScore: volZ };
-  return { status: 'DEAD_SKIP', zScore: volZ };
-}
-
-/**
  * Kolmogorov Predictability Certificate
  * Measures algorithmic structure using compression ratios.
  */
@@ -572,6 +526,9 @@ export function calculateCEF(priceSeries: number[], liquidityMap: Record<number,
   }
   const vol = ss.standardDeviation(returns);
 
+  const liquidityKeys = Object.keys(liquidityMap).map(Number);
+  const hasLiquidityZones = liquidityKeys.length > 0;
+
   const directions = { UP: 1, DOWN: -1 };
   const futureEntropy: Record<string, number> = {};
 
@@ -590,13 +547,12 @@ export function calculateCEF(priceSeries: number[], liquidityMap: Record<number,
       }
 
       const zonesVisited = new Set<number>();
-      for (const p of futurePrices) {
-        // Find nearest liquidity zone
-        const keys = Object.keys(liquidityMap).map(Number);
-        if (keys.length === 0) continue; // Skip if no liquidity zones exist
-        
-        const nearestZone = keys.reduce((prev, curr) => Math.abs(curr - p) < Math.abs(prev - p) ? curr : prev);
-        zonesVisited.add(nearestZone);
+      if (hasLiquidityZones) {
+        for (const p of futurePrices) {
+          // Find nearest liquidity zone
+          const nearestZone = liquidityKeys.reduce((prev, curr) => Math.abs(curr - p) < Math.abs(prev - p) ? curr : prev);
+          zonesVisited.add(nearestZone);
+        }
       }
 
       const weights = Array.from(zonesVisited).map(z => liquidityMap[z]);

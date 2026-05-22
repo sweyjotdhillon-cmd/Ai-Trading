@@ -434,32 +434,42 @@ export async function evaluateAllShards(
   bearVotes: number;
   neutralVotes: number;
   totalEvaluated: number;
+  earlyExit: boolean;
 }> {
-  const shards = shardTechniques(techniquesList, 15);
+  const shards = shardTechniques(techniquesList, 5);
 
   const cache: IndicatorCache = {};
-  const shardPromises = shards.map((shard, i) => {
-    // In a real multi-threading setup, this would dispatch to a Worker
-    // For now, we simulate async evaluation wrapping synchronous math
-    return new Promise<TechniqueVote[]>((resolve) => {
-      resolve(evaluateShard(shard, ohlcSeries, i * 15, cache));
-    });
-  });
-
-  const results = await Promise.all(shardPromises);
-  const votes = results.flat();
 
   let bullVotes = 0;
   let bearVotes = 0;
   let neutralVotes = 0;
   const proofTokensArr: string[] = [];
+  const votes: TechniqueVote[] = [];
+  let earlyExit = false;
 
-  for (const v of votes) {
-    if (v.vote === 'BULL' && v.score > 0) bullVotes++;
-    else if (v.vote === 'BEAR' && v.score > 0) bearVotes++;
-    else neutralVotes++;
+  for (let i = 0; i < shards.length; i++) {
+    const shard = shards[i];
+    const shardVotes = await new Promise<TechniqueVote[]>((resolve) => {
+      resolve(evaluateShard(shard, ohlcSeries, i * 5, cache));
+    });
 
-    proofTokensArr.push(`${v.id}:${v.vote}:${v.score.toFixed(2)}`);
+    votes.push(...shardVotes);
+
+    for (const v of shardVotes) {
+      if (v.vote === 'BULL' && v.score > 0) bullVotes++;
+      else if (v.vote === 'BEAR' && v.score > 0) bearVotes++;
+      else neutralVotes++;
+
+      proofTokensArr.push(`${v.id}:${v.vote}:${v.score.toFixed(2)}`);
+    }
+
+    const totalEvaluated = bullVotes + bearVotes + neutralVotes;
+    const runningConfidence = (bullVotes - bearVotes) / Math.max(1, totalEvaluated);
+
+    if (Math.abs(runningConfidence) >= 0.75 && totalEvaluated >= 10) {
+      earlyExit = true;
+      break;
+    }
   }
 
   return {
@@ -468,7 +478,8 @@ export async function evaluateAllShards(
     bullVotes,
     bearVotes,
     neutralVotes,
-    totalEvaluated: votes.length
+    totalEvaluated: votes.length,
+    earlyExit
   };
 }
 

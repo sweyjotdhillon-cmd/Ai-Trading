@@ -8,7 +8,8 @@
     "build": "vite build",
     "start": "vite preview",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "pnpm run build && wrangler dev",
+    "deploy": "pnpm run build && wrangler deploy"
   },
   "dependencies": {
     "@react-three/drei": "^9.114.0",
@@ -39,7 +40,9 @@
     "twrnc": "^2.1.0"
   },
   "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.37.3",
     "@eslint/js": "^9.21.0",
+    "@playwright/test": "^1.60.0",
     "@types/cors": "^2.8.19",
     "@types/d3": "^7.4.3",
     "@types/express": "^5.0.6",
@@ -56,11 +59,14 @@
     "eslint-plugin-react-hooks": "^5.1.0",
     "eslint-plugin-react-refresh": "^0.4.19",
     "globals": "^15.15.0",
+    "playwright": "^1.60.0",
     "postcss": "^8.5.14",
     "tailwindcss": "^3.4.17",
     "typescript": "~5.7.2",
     "typescript-eslint": "^8.24.1",
     "vite": "^6.4.2",
-    "vitest": "^4.1.6"
-  }
+    "vitest": "^4.1.6",
+    "wrangler": "^4.93.1"
+  },
+  "packageManager": "pnpm@10.28.1"
 }

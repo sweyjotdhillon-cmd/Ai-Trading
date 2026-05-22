@@ -38,6 +38,8 @@ import { NumericOHLC } from '../vision/pipeline';
 import { HorizonContext, rescaledRangeHurst, PATTERN_WEIGHTS_BY_HORIZON } from './horizon';
 import { featureFlags } from '../config/featureFlags';
 import { patternWeights } from '../config/patternWeights';
+import { gapWeights } from '../config/gapWeights';
+import { GapEvidence } from './gapDetector';
 
 export interface CaseScore {
   j1: number;
@@ -67,6 +69,7 @@ export interface DecisionResult extends JudgeVerdict {
   techniquesUsed?: string;
   techUsedCount?: number;
 }
+export function evaluateSignal(ohlcSeries: NumericOHLC[], techniquesList: any[], _context?: HorizonContext): DecisionResult {
 
 
 export function evaluateSignal(ohlcSeries: NumericOHLC[], techniquesList: string[] = [], _context?: HorizonContext, _confirmedPatterns?: any[]): DecisionResult {
@@ -376,8 +379,8 @@ export function evaluateSignal(ohlcSeries: NumericOHLC[], techniquesList: string
      if (upperWick > currBody * 2 && lowerWick < currBody) bearReversal = true;
   }
 
-  const wCont = PATTERN_WEIGHTS_BY_HORIZON.CONTINUATION[((_context?.horizonClass || "INTRA_CANDLE") as keyof typeof PATTERN_WEIGHTS_BY_HORIZON.CONTINUATION)];
-  const wRev = PATTERN_WEIGHTS_BY_HORIZON.REVERSAL[((_context?.horizonClass || "INTRA_CANDLE") as keyof typeof PATTERN_WEIGHTS_BY_HORIZON.CONTINUATION)];
+  const wCont = PATTERN_WEIGHTS_BY_HORIZON.CONTINUATION[(((_context ? _context.horizonClass : "INTRA_CANDLE") || "INTRA_CANDLE") as keyof typeof PATTERN_WEIGHTS_BY_HORIZON.CONTINUATION)];
+  const wRev = PATTERN_WEIGHTS_BY_HORIZON.REVERSAL[(((_context ? _context.horizonClass : "INTRA_CANDLE") || "INTRA_CANDLE") as keyof typeof PATTERN_WEIGHTS_BY_HORIZON.CONTINUATION)];
 
   if (bullContinuation) bullJ1 += wCont;
   if (bearContinuation) bearJ1 += wCont;
@@ -443,6 +446,28 @@ export function evaluateSignal(ohlcSeries: NumericOHLC[], techniquesList: string
     // Ensure we don't bypass caps after applying the modifier
     bullJ1 = Math.min(4, bullJ1);
     bearJ1 = Math.min(4, bearJ1);
+  }
+
+
+
+  if (featureFlags.enableGapDetection && _confirmedGaps && _confirmedGaps.length > 0) {
+    let bullGap = 0;
+    let bearGap = 0;
+    for (const gap of _confirmedGaps) {
+      const base = gap.type === 'GAP_UP' || gap.type === 'GAP_DOWN' ? gapWeights.FULL_GAP : gapWeights.PARTIAL_GAP;
+      const weighted = Math.min(base * gap.strength, gapWeights.MAX_CONTRIBUTION_PER_SIDE);
+      if (gap.direction === 'BULL') bullGap += weighted;
+      else bearGap += weighted;
+    }
+
+    // Correlated confidence inflation compression.
+    if (bullJ1 > bearJ1 && bullGap > 0) bullGap *= gapWeights.OVERLAP_COMPRESSION;
+    if (bearJ1 > bullJ1 && bearGap > 0) bearGap *= gapWeights.OVERLAP_COMPRESSION;
+
+    bullJ2 += Math.min(bullGap, gapWeights.MAX_CONTRIBUTION_PER_SIDE);
+    bearJ2 += Math.min(bearGap, gapWeights.MAX_CONTRIBUTION_PER_SIDE);
+    bullJ2 = Math.min(4, bullJ2);
+    bearJ2 = Math.min(4, bearJ2);
   }
 
   // --- R5: Hurst Balancer ---

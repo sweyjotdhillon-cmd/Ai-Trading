@@ -7,7 +7,7 @@ import { FileJson, UploadCloud, Play, AlertTriangle, Activity } from 'lucide-rea
 import { BatchManifest, BatchManifestEntry, validateBatchManifest } from '../types/batchManifest';
 
 import { BatchAutopsyReport } from './BatchAutopsyReport';
-import { useWakeLock } from './LiveAnalysis';
+import { useWakeLock } from '../hooks/useWakeLock';
 
 export type MasterAutopsySummary = {
   title: string;
@@ -248,7 +248,6 @@ export function BulkTestPanel({
 
 
 
-  const startQueue = async () => {
     if (queue.length === 0 || manifestErrors.length > 0) return;
     
     const missing = queue.filter(q => !q.file && !q.entry.imageData && q.status === 'Pending');
@@ -335,18 +334,19 @@ export function BulkTestPanel({
       }
     };
 
-    await Promise.all(Array.from({ length: CONCURRENCY_LIMIT }, () => workerLoop()));
+    return Promise.all(Array.from({ length: CONCURRENCY_LIMIT }, () => workerLoop()))
+      .finally(() => {
+        setIsQueueRunning(false);
 
-    setIsQueueRunning(false);
-
-    // After running, fetch the latest queue state logically
-    setQueue(currentQueue => {
-       const losses = currentQueue.filter(q => q.status === 'LOSS' && q.result);
-       if (losses.length > 0 && !abortControllerRef.current?.signal.aborted && !isPaused) {
-          setTimeout(() => runMasterAutopsyChain(losses).catch(e => console.error("master autopsy error:", e)), 0);
-       }
-       return currentQueue;
-    });
+        // After running, fetch the latest queue state logically
+        setQueue(currentQueue => {
+          const losses = currentQueue.filter(q => q.status === 'LOSS' && q.result);
+          if (losses.length > 0 && !abortControllerRef.current?.signal.aborted && !isPaused) {
+            setTimeout(() => runMasterAutopsyChain(losses).catch(e => console.error("master autopsy error:", e)), 0);
+          }
+          return currentQueue;
+        });
+      });
   };
 
 
@@ -646,7 +646,7 @@ export function BulkTestPanel({
                   <View style={tw`flex-row gap-3 pt-2`}>
                     {!isQueueRunning ? (
                       <Pressable 
-                        onPress={startQueue}
+                        onPress={runQueue}
                         disabled={queue.some(q => !q.file && !q.entry.imageData && q.status === 'Pending') || manifestErrors.length > 0}
                         style={({ pressed }) => [
                            tw`flex-1 bg-[#D9B382] h-12 rounded-xl flex-row items-center justify-center p-3`, 
