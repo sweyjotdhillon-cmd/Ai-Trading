@@ -1099,7 +1099,7 @@ export function LiveAnalysis() {
                  <ActivityIndicator color="#D9B382" size="small" />
                  <motion.div animate={prefersReducedMotion ? {} : { scale: [1, 1.15, 1], opacity: [0.7, 1, 0.7] }} transition={{ duration: 1.6, repeat: Infinity, ease: "easeInOut" }} style={{ display: 'contents' }}>
                  <Text style={[tw`font-black uppercase tracking-widest`, { fontSize: 10, color: '#D9B382' }]}>
-                   {analysisStep || 'Live Neural Debate Active'}
+                   {analysisStep || ''}
                  </Text>
                  </motion.div>
               </div>
@@ -1127,14 +1127,16 @@ export function LiveAnalysis() {
                       <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: item.color }} />
                       <Text style={[tw`font-black uppercase tracking-widest`, { fontSize: 10, color: item.color }]}>{item.label}</Text>
                     </div>
+                    {judgeLogs[item.key as keyof typeof judgeLogs].text && (
                     <motion.p
-                      key={judgeLogs[item.key as keyof typeof judgeLogs].text || "..."}
+                      key={judgeLogs[item.key as keyof typeof judgeLogs].text}
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       className="text-white font-bold text-sm"
                     >
-                      {judgeLogs[item.key as keyof typeof judgeLogs].text || "..."}
+                      {judgeLogs[item.key as keyof typeof judgeLogs].text}
                     </motion.p>
+                  )}
                   </div>
                   {judgeLogs[item.key as keyof typeof judgeLogs].status === 'done' ? (
                     <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} className="ml-2">

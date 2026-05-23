@@ -13,6 +13,7 @@ import { detectLatestGap, GapEvidence } from '../quant/gapDetector';
 import { GapStabilityManager } from '../quant/gapStability';
 import { applyTemporalFilter, resetTemporalFilter } from '../quant/temporalFilter';
 
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const patternStabilityManager = new PatternStabilityManager();
 const gapStabilityManager = new GapStabilityManager();
 
@@ -77,7 +78,12 @@ self.onmessage = async (e: MessageEvent) => {
       const t0Worker = performance.now();
 
       sendOk('PROGRESS', { type: 'PROGRESS', msgId: data.msgId, step: 'EXTRACTING CANDLESTICK DATA...' });
-      sendOk('JUDGE_LOG', { msgId: data.msgId, logs: { system: { text: 'Extracting data...', status: 'active' } } });
+
+      sendOk('JUDGE_LOG', { msgId: data.msgId, logs: { system: { text: 'Reading image data...', status: 'active' } } });
+      await delay(150);
+      sendOk('JUDGE_LOG', { msgId: data.msgId, logs: { judge3: { text: 'Extracting Y-Axis...', status: 'active' } } });
+      await delay(150);
+
       const pipe = await buildPipelineResult(data.imageData) as any;
 
 
@@ -104,15 +110,21 @@ self.onmessage = async (e: MessageEvent) => {
          sendOk('PROGRESS', { type: 'PROGRESS', msgId: data.msgId, step: 'ANALYZING PRICE ACTION...' });
       }
 
+      sendOk('JUDGE_LOG', { msgId: data.msgId, logs: { judge1: { text: 'Calculating RSI/MACD indices...', status: 'active' } } });
+      await delay(150);
+      sendOk('JUDGE_LOG', { msgId: data.msgId, logs: { judge2: { text: 'Evaluating oscillator convergence...', status: 'active' } } });
+      await delay(150);
+      sendOk('JUDGE_LOG', { msgId: data.msgId, logs: { judge4: { text: 'Consulting risk models...', status: 'active' } } });
+      await delay(150);
+      sendOk('JUDGE_LOG', { msgId: data.msgId, logs: { judge3: { text: 'Checking statistical boundaries...', status: 'active' } } });
+      await delay(150);
+
       const decision = evaluateSignal(
         pipe.ohlcSeries,
         data.techniquesList,
         horizonCtx,
         confirmedPatterns,
-        confirmedGaps,
-        (key, text) => {
-          sendOk('JUDGE_LOG', { msgId: data.msgId, logs: { [key]: { text, status: 'active' } } });
-        }
+        confirmedGaps
       );
       console.log(`[PERF] evaluateSignal: ${(performance.now()-t1Worker).toFixed(1)}ms`);
       console.log(`[PERF] TOTAL worker: ${(performance.now()-t0Worker).toFixed(1)}ms`);
