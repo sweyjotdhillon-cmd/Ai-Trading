@@ -1,3 +1,5 @@
+import { HorizonContext } from './horizon';
+import { GapEvidence } from './gapDetector';
 
 /**
  * CHANGELOG
