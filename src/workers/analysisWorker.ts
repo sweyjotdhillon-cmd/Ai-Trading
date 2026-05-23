@@ -95,7 +95,8 @@ self.onmessage = async (e: MessageEvent) => {
       const t1Worker = performance.now();
 
       if (data.techniquesList && data.techniquesList.length > 0) {
-        const firstFew = data.techniquesList.slice(0, 3).join(', ');
+        const mappedTechniques = data.techniquesList.map((t: any) => typeof t === 'string' ? t : t.name);
+        const firstFew = mappedTechniques.slice(0, 3).join(', ');
         const others = data.techniquesList.length > 3 ? ` and ${data.techniquesList.length - 3} more` : '';
         sendOk('PROGRESS', { type: 'PROGRESS', msgId: data.msgId, step: `APPLYING TECHNIQUES: ${firstFew}${others}...` });
       } else {
