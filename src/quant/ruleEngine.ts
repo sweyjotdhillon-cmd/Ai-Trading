@@ -49,6 +49,13 @@ export interface DecisionResult extends JudgeVerdict {
   techUsedCount?: number;
 }
 
+export function evaluateSignal(
+  ohlcSeries: NumericOHLC[],
+  techniquesList: string[],
+  _context?: HorizonContext,
+  _confirmedPatterns?: PatternEvidence[],
+  confirmedGaps?: GapEvidence[]
+): DecisionResult {
   const defaultCases = { bull: { j1: 0, j2: 0, j3: 0, total: 0 }, bear: { j1: 0, j2: 0, j3: 0, total: 0 } };
   const defaultNoTrade: DecisionResult = {
     cases: defaultCases,
@@ -68,7 +75,7 @@ export interface DecisionResult extends JudgeVerdict {
   };
 
   if (ohlcSeries.length < 30) return defaultNoTrade;
-  if (!techniquesList || (techniquesList.length < 10 && !techniquesList.includes("__TEST_BYPASS__"))) return defaultNoTrade;
+  if (!techniquesList) return defaultNoTrade;
 
   let bullJ1 = 0, bullJ2 = 0, bullJ3 = 0;
   let bearJ1 = 0, bearJ2 = 0, bearJ3 = 0;
@@ -202,7 +209,7 @@ export interface DecisionResult extends JudgeVerdict {
   // --- Pattern Techniques Processing ---
   const matchedTechniques: string[] = [];
 
-  if (techniquesList && techniquesList.length >= 10) {
+  if (techniquesList && techniquesList.length > 0) {
     // Look back at the last 3 candles for pattern matching
     const c1 = ohlcSeries[last - 2];
     const c2 = ohlcSeries[last - 1];

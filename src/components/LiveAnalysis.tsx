@@ -547,7 +547,8 @@ export function LiveAnalysis() {
         try {
           const json = JSON.parse(event.target?.result as string);
           // Expecting either { techniques: [] } or a direct array
-          const list = Array.isArray(json) ? json : (json.techniques || []);
+          const parsedList = Array.isArray(json) ? json : (json.techniques || []);
+          const list = parsedList.map((item: any) => typeof item === 'object' ? (item.name || item.technique || JSON.stringify(item)) : item);
           setTechniquesList(list);
           setTimeout(() => {
             alert(`Successfully loaded ${list.length} techniques from ${file.name}.`);
@@ -713,7 +714,7 @@ export function LiveAnalysis() {
           const lowerMsg = msg.toLowerCase();
           
           if (error.name === 'AbortError' || lowerMsg.includes('aborted') || lowerMsg.includes('abort')) {
-            msg = "Analysis timed out (120s limit). The models are deep in thought. Please try again.";
+            msg = "Analysis timed out (240s limit). The models are deep in thought. Please try again.";
           } else if (lowerMsg.includes('failed to fetch') || lowerMsg.includes('fetch failed') || lowerMsg.includes('network error') || lowerMsg.includes('load failed')) {
             msg = "Network connection dropped (took too long or backend reset). Please try again or use a smaller chart timeframe.";
           }
