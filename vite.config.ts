@@ -1,13 +1,16 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-
 import path from 'path';
+import { cloudflare } from '@cloudflare/vite-plugin';
 
-import { cloudflare } from "@cloudflare/vite-plugin";
+const useCloudflarePlugin =
+  process.env.CF_PAGES === '1' ||
+  process.env.WORKERS_CI === '1' ||
+  process.env.USE_CLOUDFLARE_VITE_PLUGIN === '1';
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [react(), cloudflare()],
+  plugins: useCloudflarePlugin ? [react(), cloudflare()] : [react()],
   optimizeDeps: {
     include: ['react-native-web'],
     esbuildOptions: { mainFields: ['module', 'main'] },
@@ -15,7 +18,7 @@ export default defineConfig({
   worker: {
     rollupOptions: {
       external: ['candlestick'],
-    }
+    },
   },
   build: {
     rollupOptions: {
@@ -24,12 +27,18 @@ export default defineConfig({
     commonjsOptions: {
       include: [/candlestick/, /node_modules/],
       transformMixedEsModules: true,
-    }
+    },
   },
   resolve: {
     alias: {
-      'react-native/Libraries/Utilities/codegenNativeComponent': path.resolve(__dirname, 'src/shims/codegenNativeComponent.ts'),
-      'react-native-web/Libraries/Utilities/codegenNativeComponent': path.resolve(__dirname, 'src/shims/codegenNativeComponent.ts'),
+      'react-native/Libraries/Utilities/codegenNativeComponent': path.resolve(
+        __dirname,
+        'src/shims/codegenNativeComponent.ts'
+      ),
+      'react-native-web/Libraries/Utilities/codegenNativeComponent': path.resolve(
+        __dirname,
+        'src/shims/codegenNativeComponent.ts'
+      ),
       'react-native': 'react-native-web',
     },
   },
@@ -38,6 +47,6 @@ export default defineConfig({
     port: 3000,
   },
   define: {
-    'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development')
-  }
+    'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development'),
+  },
 });

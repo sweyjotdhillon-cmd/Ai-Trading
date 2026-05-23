@@ -9,7 +9,9 @@
     "start": "vite preview",
     "lint": "eslint .",
     "preview": "pnpm run build && wrangler dev",
-    "deploy": "pnpm run build && wrangler deploy"
+    "deploy": "wrangler deploy",
+    "deploy:cf": "pnpm run build && wrangler deploy",
+    "deploy:vercel": "vercel --prod"
   },
   "dependencies": {
     "@react-three/drei": "^9.114.0",
