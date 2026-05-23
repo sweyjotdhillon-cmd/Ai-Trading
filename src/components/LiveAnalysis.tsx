@@ -878,10 +878,14 @@ export function LiveAnalysis() {
       />
 
         {/* Action Bar / Live Debate UI Overlay */}
+        <LiveAnalysisDebate
+          loading={loading}
+          analysisStep={analysisStep}
+          judgeLogs={judgeLogs}
+          prefersReducedMotion={prefersReducedMotion ?? false}
+        />
 
-
-        
-          
+        {!loading && (
           <div className="flex flex-col mt-4">
             {!isCalibrated() && (
               <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-2 mb-3 flex items-center justify-center">
