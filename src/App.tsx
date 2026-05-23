@@ -6,9 +6,10 @@ import {
   Pressable, 
   SafeAreaView, 
   StatusBar,
-  Platform
+  Platform,
+  ScrollView
 } from 'react-native';
-import { Settings, LogIn, Activity, RefreshCw } from 'lucide-react';
+import { Settings, LogIn, Activity, RefreshCw, XCircle } from 'lucide-react';
 import { motion, AnimatePresence, LayoutGroup, useReducedMotion } from 'motion/react';
 
 import { LiveAnalysis } from './components/LiveAnalysis';
@@ -63,7 +64,11 @@ class TerminalErrorBoundary extends React.Component<{ children: React.ReactNode 
              <Text style={{ color: "#1A1308", fontWeight: "bold", marginLeft: 8 }}>Retry</Text>
           </Pressable>
           {this.state.errorMessage ? <Text style={styles.errorDetails}>{this.state.errorMessage}</Text> : null}
-          {this.state.errorStack ? <Text style={styles.errorDetails}>{this.state.errorStack.slice(0, 400)}</Text> : null}
+          {this.state.errorStack ? (
+            <ScrollView style={{ marginTop: 10, maxHeight: 300, width: '90%', padding: 10, backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 8 }}>
+              <Text style={[styles.errorDetails, { textAlign: 'left', marginTop: 0 }]}>{this.state.errorStack}</Text>
+            </ScrollView>
+          ) : null}
         </View>
       );
     }
@@ -76,6 +81,7 @@ function App() {
   const buildStamp = (import.meta as any).env?.VITE_BUILD_STAMP || 'dev';
   const [showSystemSettings, setShowSystemSettings] = useState(false);
   const [heroDismissed, setHeroDismissed] = useState(false);
+  const [globalErrors, setGlobalErrors] = useState<{ message: string; stack?: string; time: string }[]>([]);
   
   const handleLaunch = () => {
     setHeroDismissed(true);
@@ -89,9 +95,19 @@ function App() {
   useEffect(() => {
     const handleError = (e: any) => {
       console.error("Global error caught:", e);
+      setGlobalErrors(prev => [...prev, {
+        message: e.message || 'Unknown Error',
+        stack: e.error?.stack || undefined,
+        time: new Date().toLocaleTimeString()
+      }]);
     };
     const handleRejection = (e: any) => {
       console.error("Unhandled promise rejection:", e.reason);
+      setGlobalErrors(prev => [...prev, {
+        message: e.reason?.message || (typeof e.reason === 'string' ? e.reason : 'Unhandled Promise Rejection'),
+        stack: e.reason?.stack || undefined,
+        time: new Date().toLocaleTimeString()
+      }]);
     };
     window.addEventListener('error', handleError);
     window.addEventListener('unhandledrejection', handleRejection);
@@ -203,6 +219,30 @@ function App() {
         show={showSystemSettings} 
         onClose={() => setShowSystemSettings(false)} 
       />
+
+      {globalErrors.length > 0 && (
+        <View style={styles.globalErrorOverlay}>
+          <View style={styles.globalErrorHeader}>
+            <Text style={styles.globalErrorTitle}>{globalErrors.length} Application Error(s)</Text>
+            <Pressable
+              style={({ pressed }) => [styles.clearErrorsButton, { opacity: pressed ? 0.7 : 1 }]}
+              onPress={() => setGlobalErrors([])}
+            >
+              <XCircle color="#ff4444" size={20} />
+              <Text style={styles.clearErrorsText}>Dismiss All</Text>
+            </Pressable>
+          </View>
+          <ScrollView style={styles.globalErrorScroll}>
+            {globalErrors.map((err, idx) => (
+              <View key={idx} style={styles.globalErrorItem}>
+                <Text style={styles.globalErrorTime}>{err.time}</Text>
+                <Text style={styles.globalErrorMessage}>{err.message}</Text>
+                {err.stack && <Text style={styles.globalErrorStack}>{err.stack}</Text>}
+              </View>
+            ))}
+          </ScrollView>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -410,6 +450,74 @@ const styles = StyleSheet.create({
     color: '#8E9299',
     fontSize: 12,
     marginTop: 10,
+  },
+  globalErrorOverlay: {
+    position: 'absolute',
+    top: 60,
+    left: 20,
+    right: 20,
+    bottom: 20,
+    backgroundColor: 'rgba(20, 22, 28, 0.95)',
+    borderWidth: 1,
+    borderColor: '#ff4444',
+    borderRadius: 12,
+    padding: 16,
+    zIndex: 1000,
+  },
+  globalErrorHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 68, 68, 0.3)',
+  },
+  globalErrorTitle: {
+    color: '#ff4444',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  clearErrorsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 68, 68, 0.1)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  clearErrorsText: {
+    color: '#ff4444',
+    marginLeft: 6,
+    fontWeight: 'bold',
+    fontSize: 14,
+  },
+  globalErrorScroll: {
+    flex: 1,
+  },
+  globalErrorItem: {
+    marginBottom: 16,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    padding: 12,
+    borderRadius: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: '#ff4444',
+  },
+  globalErrorTime: {
+    color: '#8E9299',
+    fontSize: 12,
+    marginBottom: 4,
+  },
+  globalErrorMessage: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
+  globalErrorStack: {
+    color: '#ff8888',
+    fontSize: 12,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   }
 });
 
