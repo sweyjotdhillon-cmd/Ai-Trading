@@ -13,6 +13,7 @@ import { detectLatestGap, GapEvidence } from '../quant/gapDetector';
 import { GapStabilityManager } from '../quant/gapStability';
 import { applyTemporalFilter, resetTemporalFilter } from '../quant/temporalFilter';
 
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const patternStabilityManager = new PatternStabilityManager();
 const gapStabilityManager = new GapStabilityManager();
 
@@ -60,6 +61,7 @@ self.onmessage = async (e: MessageEvent) => {
       sendOk('PROGRESS', { type: 'PROGRESS', msgId: data.msgId, step: 'READING MARKET OUTCOME...' });
       sendOk('JUDGE_LOG', { msgId: data.msgId, logs: { system: { text: 'Starting...', status: 'active' } } });
 
+
       const tfMinutes = data.graphTimeframeMinutes || 30;
       const durationMinutes = data.investmentDurationMinutes || 5;
       const hRatio = Math.max(0.001, Math.min(4.0, durationMinutes / tfMinutes));
@@ -77,7 +79,7 @@ self.onmessage = async (e: MessageEvent) => {
       const t0Worker = performance.now();
 
       sendOk('PROGRESS', { type: 'PROGRESS', msgId: data.msgId, step: 'EXTRACTING CANDLESTICK DATA...' });
-      sendOk('JUDGE_LOG', { msgId: data.msgId, logs: { system: { text: 'Extracting data...', status: 'active' } } });
+
       const pipe = await buildPipelineResult(data.imageData) as any;
 
 
@@ -104,6 +106,7 @@ self.onmessage = async (e: MessageEvent) => {
       } else {
          sendOk('PROGRESS', { type: 'PROGRESS', msgId: data.msgId, step: 'ANALYZING PRICE ACTION...' });
       }
+
 
       const decision = evaluateSignal(
         pipe.ohlcSeries,
