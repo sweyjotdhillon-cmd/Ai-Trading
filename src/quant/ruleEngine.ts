@@ -1,3 +1,4 @@
+import { GapEvidence } from './gapDetector';
 
 /**
  * CHANGELOG
@@ -14,7 +15,7 @@ import { emaSlope, emaCurvature } from './calculus';
 
 
 import { NumericOHLC } from '../vision/pipeline';
-import { rescaledRangeHurst, PATTERN_WEIGHTS_BY_HORIZON } from './horizon';
+import { rescaledRangeHurst, PATTERN_WEIGHTS_BY_HORIZON, HorizonContext } from './horizon';
 import { featureFlags } from '../config/featureFlags';
 import { patternWeights } from '../config/patternWeights';
 import { gapWeights } from '../config/gapWeights';
