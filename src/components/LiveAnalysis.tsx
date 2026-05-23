@@ -1,7 +1,6 @@
 import { runSingleAnalysis, onStableSignal } from '../utils/singleAnalysis';
 import { BulkTestPanel } from './BulkTestPanel';
-import { useState, useRef, useEffect, useCallback } from 'react';
-import * as RN from 'react-native';
+import { useState, useRef, useEffect } from 'react';
 import { View, Text, Pressable, ScrollView, TextInput, Image, Platform, ActivityIndicator } from 'react-native';
 import { TIMEOUTS } from '../config/timeouts';
 
@@ -99,7 +98,6 @@ export function LiveAnalysis() {
   const [isBusy, setIsBusy] = useState(false);
   const [analysisStep, setAnalysisStep] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<any | null>(null);
-  const [showAutopsy, setShowAutopsy] = useState(false);
   const [mode, setMode] = useState<'live' | 'test' | 'bulk'>('live');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [calibrationFrame, setCalibrationFrame] = useState<ImageData | null>(null);
