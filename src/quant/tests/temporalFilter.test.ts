@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { applyTemporalFilter, resetTemporalFilter } from '../temporalFilter';
-import { temporalFilterConfig } from '../../config/temporalFilterConfig';
+
 
 describe('Temporal Filter Integration', () => {
   beforeEach(() => {

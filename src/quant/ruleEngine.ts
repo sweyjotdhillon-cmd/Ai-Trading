@@ -51,10 +51,7 @@ export interface DecisionResult extends JudgeVerdict {
 
 export function evaluateSignal(
   ohlcSeries: NumericOHLC[],
-  techniquesList: string[],
-  _context?: HorizonContext,
-  _confirmedPatterns?: PatternEvidence[],
-  confirmedGaps?: GapEvidence[]
+
 ): DecisionResult {
   const defaultCases = { bull: { j1: 0, j2: 0, j3: 0, total: 0 }, bear: { j1: 0, j2: 0, j3: 0, total: 0 } };
   const defaultNoTrade: DecisionResult = {
@@ -433,10 +430,10 @@ export function evaluateSignal(
 
 
 
-  if (featureFlags.enableGapDetection && confirmedGaps && confirmedGaps.length > 0) {
+  if (featureFlags.enableGapDetection && _confirmedGaps && _confirmedGaps.length > 0) {
     let bullGap = 0;
     let bearGap = 0;
-    for (const gap of confirmedGaps) {
+    for (const gap of _confirmedGaps) {
       const base = gap.type === 'GAP_UP' || gap.type === 'GAP_DOWN' ? gapWeights.FULL_GAP : gapWeights.PARTIAL_GAP;
       const weighted = Math.min(base * gap.strength, gapWeights.MAX_CONTRIBUTION_PER_SIDE);
       if (gap.direction === 'BULL') bullGap += weighted;
