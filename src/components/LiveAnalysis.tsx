@@ -1128,12 +1128,12 @@ export function LiveAnalysis() {
                       <Text style={[tw`font-black uppercase tracking-widest`, { fontSize: 10, color: item.color }]}>{item.label}</Text>
                     </div>
                     <motion.p
-                      key={judgeLogs[item.key as keyof typeof judgeLogs].text}
+                      key={judgeLogs[item.key as keyof typeof judgeLogs].text || "..."}
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       className="text-white font-bold text-sm"
                     >
-                      {judgeLogs[item.key as keyof typeof judgeLogs].text}
+                      {judgeLogs[item.key as keyof typeof judgeLogs].text || "..."}
                     </motion.p>
                   </div>
                   {judgeLogs[item.key as keyof typeof judgeLogs].status === 'done' ? (
