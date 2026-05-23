@@ -882,13 +882,13 @@ export function LiveAnalysis() {
 
         
           
-          <div className="flex flex-col mt-4">
+          <View style={tw`flex flex-col mt-4`}>
             {!isCalibrated() && (
-              <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-2 mb-3 flex items-center justify-center">
+              <View style={tw`bg-red-500/10 border border-red-500/30 rounded-lg p-2 mb-3 flex items-center justify-center`}>
                 <Text style={tw`text-red-400 font-bold text-xs uppercase tracking-widest`}>
                   ⚠ NOT CALIBRATED — Results will be unreliable
                 </Text>
-              </div>
+              </View>
             )}
             <Pressable
               onPress={() => {
@@ -918,8 +918,7 @@ export function LiveAnalysis() {
                 <Text style={tw`text-yellow-400 text-[9px] font-black uppercase tracking-wider text-center`}>PiP not available — use Chrome or Edge browser</Text>
               </View>
             )}
-          </div>
-        )}
+          </View>
 
         {analysisError && (
           <View style={tw`bg-red-500/10 border border-red-500 border-opacity-10 p-4 rounded-xl mt-4 flex-row items-center`}>
