@@ -1107,40 +1107,43 @@ export function LiveAnalysis() {
             </div>
 
             <div style={tw`gap-3 relative z-10`}>
-              {[
-                { key: 'system', label: 'System Context', color: '#00FFFF', bg: 'rgba(0, 255, 255, 0.15)' },
-                { key: 'judge1', label: 'Judge 1: Trend & Momentum', color: '#FF00FF', bg: 'rgba(255, 0, 255, 0.15)' },
-                { key: 'judge2', label: 'Judge 2: Oscillator Consensus', color: '#FF1493', bg: 'rgba(255, 20, 147, 0.15)' },
-                { key: 'judge3', label: 'Skeptic: Veto Multiplier', color: '#39FF14', bg: 'rgba(57, 255, 20, 0.15)' },
-                { key: 'judge4', label: 'Judge 3: Boundary/Reversal', color: '#EAB308', bg: 'rgba(234, 179, 8, 0.15)' }
-              ].map((item, idx) => (
+              {Object.entries(judgeLogs)
+                .filter(([_, log]) => log.text && log.text !== "")
+                .map(([key, log], idx) => {
+                  const uiMeta: Record<string, { label: string, color: string, bg: string }> = {
+                    system: { label: 'System Context', color: '#00FFFF', bg: 'rgba(0, 255, 255, 0.15)' },
+                    judge1: { label: 'Judge 1: Trend & Momentum', color: '#FF00FF', bg: 'rgba(255, 0, 255, 0.15)' },
+                    judge2: { label: 'Judge 2: Oscillator Consensus', color: '#FF1493', bg: 'rgba(255, 20, 147, 0.15)' },
+                    judge3: { label: 'Skeptic: Veto Multiplier', color: '#39FF14', bg: 'rgba(57, 255, 20, 0.15)' },
+                    judge4: { label: 'Judge 3: Boundary/Reversal', color: '#EAB308', bg: 'rgba(234, 179, 8, 0.15)' }
+                  };
+                  const meta = uiMeta[key] || { label: key.toUpperCase(), color: '#FFFFFF', bg: 'rgba(255, 255, 255, 0.15)' };
+                  return (
                 <motion.div
-                  key={item.key}
+                  key={key}
                   initial={{ x: -20, opacity: 0 }}
                   animate={{ x: 0, opacity: 1 }}
                   transition={{ delay: idx * 0.1 }}
                   className="bg-black bg-opacity-40 p-3 rounded-lg flex-row items-center justify-between border-l-4"
-                  style={{ borderColor: item.color, backgroundColor: item.bg }}
+                  style={{ borderColor: meta.color, backgroundColor: meta.bg }}
                 >
                   <div style={tw`flex-1`}>
                     <div className="flex flex-row items-center gap-2 mb-1">
-                      <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: item.color }} />
-                      <Text style={[tw`font-black uppercase tracking-widest`, { fontSize: 10, color: item.color }]}>{item.label}</Text>
+                      <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: meta.color }} />
+                      <Text style={[tw`font-black uppercase tracking-widest`, { fontSize: 10, color: meta.color }]}>{meta.label}</Text>
                     </div>
-                    {judgeLogs[item.key as keyof typeof judgeLogs].text && (
                     <motion.p
-                      key={judgeLogs[item.key as keyof typeof judgeLogs].text}
+                      key={log.text}
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       className="text-white font-bold text-sm"
                     >
-                      {judgeLogs[item.key as keyof typeof judgeLogs].text}
+                      {log.text}
                     </motion.p>
-                  )}
                   </div>
-                  {judgeLogs[item.key as keyof typeof judgeLogs].status === 'done' ? (
+                  {log.status === 'done' ? (
                     <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} className="ml-2">
-                      <Check size={16} color={item.color} />
+                      <Check size={16} color={meta.color} />
                     </motion.div>
                   ) : (
                     <div className="flex flex-row items-end gap-0.5 h-3">
@@ -1155,7 +1158,7 @@ export function LiveAnalysis() {
                     </div>
                   )}
                 </motion.div>
-              ))}
+              )})}
             </div>
           </motion.div>
         ) : (

@@ -59,7 +59,7 @@ self.onmessage = async (e: MessageEvent) => {
     } 
     else if (data.type === 'ANALYZE') {
       sendOk('PROGRESS', { type: 'PROGRESS', msgId: data.msgId, step: 'READING MARKET OUTCOME...' });
-      sendOk('JUDGE_LOG', { msgId: data.msgId, logs: { system: { text: 'Starting...', status: 'active' } } });
+
 
       const tfMinutes = data.graphTimeframeMinutes || 30;
       const durationMinutes = data.investmentDurationMinutes || 5;
@@ -79,9 +79,9 @@ self.onmessage = async (e: MessageEvent) => {
 
       sendOk('PROGRESS', { type: 'PROGRESS', msgId: data.msgId, step: 'EXTRACTING CANDLESTICK DATA...' });
 
-      sendOk('JUDGE_LOG', { msgId: data.msgId, logs: { system: { text: 'Reading image data...', status: 'active' } } });
+
       await delay(150);
-      sendOk('JUDGE_LOG', { msgId: data.msgId, logs: { judge3: { text: 'Extracting Y-Axis...', status: 'active' } } });
+
       await delay(150);
 
       const pipe = await buildPipelineResult(data.imageData) as any;
