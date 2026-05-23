@@ -17,12 +17,12 @@ export default defineConfig({
   },
   worker: {
     rollupOptions: {
-
+      external: ['candlestick'],
     },
   },
   build: {
     rollupOptions: {
-
+      external: ['candlestick'],
     },
     commonjsOptions: {
       include: [/candlestick/, /node_modules/],
