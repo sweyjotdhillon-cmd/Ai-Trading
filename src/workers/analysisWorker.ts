@@ -50,12 +50,18 @@ self.onmessage = async (e: MessageEvent) => {
       heartbeat = setInterval(() => { self.postMessage({ ok: true, stage: 'HEARTBEAT', payload: { type: 'HEARTBEAT', msgId: data.msgId, ts: Date.now() } }); }, 3000);
     }
     
+
     if (data.type === 'CALIBRATE') {
       const { bullColor, bearColor } = data.payload;
       setCalibrationBands(bullColor, bearColor);
       sendOk('CALIBRATE', { type: 'CALIBRATED', bands: getCalibrationBands() });
     } 
     else if (data.type === 'ANALYZE') {
+      sendOk('PROGRESS', { type: 'PROGRESS', msgId: data.msgId, step: 'READING MARKET OUTCOME...' });
+
+      const tfMinutes = data.graphTimeframeMinutes || 30;
+      const durationMinutes = data.investmentDurationMinutes || 5;
+
 
       const tfMinutes = data.graphTimeframeMinutes || 30;
       const durationMinutes = data.investmentDurationMinutes || 5;
@@ -72,7 +78,10 @@ self.onmessage = async (e: MessageEvent) => {
       };
 
       const t0Worker = performance.now();
+
+      sendOk('PROGRESS', { type: 'PROGRESS', msgId: data.msgId, step: 'EXTRACTING CANDLESTICK DATA...' });
       const pipe = await buildPipelineResult(data.imageData) as any;
+
 
       let confirmedPatterns: PatternEvidence[] = [];
       if (featureFlags.enableCandlestickRepoPatterns) {
@@ -86,8 +95,19 @@ self.onmessage = async (e: MessageEvent) => {
         confirmedGaps = gapStabilityManager.processFrame(latestGap);
       }
 
+
       const t1Worker = performance.now();
+
+      if (data.techniquesList && data.techniquesList.length > 0) {
+        const firstFew = data.techniquesList.slice(0, 3).join(', ');
+        const others = data.techniquesList.length > 3 ? ` and ${data.techniquesList.length - 3} more` : '';
+        sendOk('PROGRESS', { type: 'PROGRESS', msgId: data.msgId, step: `APPLYING TECHNIQUES: ${firstFew}${others}...` });
+      } else {
+         sendOk('PROGRESS', { type: 'PROGRESS', msgId: data.msgId, step: 'ANALYZING PRICE ACTION...' });
+      }
+
       const decision = evaluateSignal(
+
         pipe.ohlcSeries,
         data.techniquesList,
         horizonCtx,

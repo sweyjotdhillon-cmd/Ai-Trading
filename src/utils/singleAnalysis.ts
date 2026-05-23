@@ -6,6 +6,9 @@ type Listener = (payload: any) => void;
 const messageResolvers = new Map<string, { resolve: (val: any) => void, reject: (err: any) => void }>();
 const stableListeners = new Set<Listener>();
 
+
+const progressListeners = new Map<string, (step: string) => void>();
+
 function getWorker() {
   if (!worker) {
     worker = new Worker(new URL('../workers/analysisWorker.ts', import.meta.url), { type: 'module' });
@@ -30,14 +33,21 @@ function getWorker() {
         if (res) {
           res.resolve(payload);
           messageResolvers.delete(payload.msgId);
+          progressListeners.delete(payload.msgId);
         }
       } else if (type === 'STABLE_SIGNAL') {
         stableListeners.forEach(l => l(payload));
+      } else if (type === 'PROGRESS' && payload.msgId) {
+        const listener = progressListeners.get(payload.msgId);
+        if (listener) {
+          listener(payload.step);
+        }
       }
     };
   }
   return worker;
 }
+
 
 export function onStableSignal(cb: Listener) {
   stableListeners.add(cb);
@@ -101,8 +111,13 @@ export async function runSingleAnalysis(params: {
     });
   }
 
+
   const msgId = generateId();
+  if (params.onProgress) {
+    progressListeners.set(msgId, params.onProgress);
+  }
   const w = getWorker();
+
 
   let imgData: ImageData;
   try {
