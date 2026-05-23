@@ -126,11 +126,11 @@ export interface NumericOHLC {
 
 This is the cognitive core of ChartLens. The `evaluateSignal` function ingests the `NumericOHLC[]` and executes a deterministic, matrix-based analysis.
 
-### 5.1 The Strict 10-Technique Rule
-A non-negotiable safety guard:
-- The `techniquesList` must contain **at least 10 valid techniques**.
-- **At least 10 techniques must mathematically match** the chart data.
-- If these conditions are unmet, the engine immediately yields a `'NO_TRADE'` default. *(Note: Unit tests can bypass this via `__TEST_BYPASS__`)*.
+### 5.1 Dynamic Technique Evaluation
+The rule engine dynamically processes provided techniques:
+- The `techniquesList` is passed dynamically to evaluate the specific pattern matches against the chart data.
+- The engine no longer enforces a strict minimum 10-technique count, allowing partial or low-technique analysis to proceed to prevent silent timeouts or `'NO_TRADE'` defaults.
+- It aggregates confirmed evidence of both bullish and bearish patterns for scoring inside the matrix. *(Note: Unit tests can bypass general checks via `__TEST_BYPASS__`)*.
 
 ### 5.2 Mathematical Indicator Generation
 The engine leverages Typed Arrays (`Float64Array`) exclusively for deep recursive math (RSI, MACD, Bollinger Bands, ATR, Z-Scores). This avoids standard `number[]` array memory allocation overhead, ensuring blazing-fast, deterministic execution.
