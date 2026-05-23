@@ -56,7 +56,8 @@ export function evaluateSignal(
   techniquesList: any[],
   horizonCtx: HorizonContext,
   _confirmedPatterns: any[] = [],
-
+  _confirmedGaps: any[] = [],
+  onLog?: (judge: string, message: string) => void
 ): DecisionResult {
   const defaultCases = { bull: { j1: 0, j2: 0, j3: 0, total: 0 }, bear: { j1: 0, j2: 0, j3: 0, total: 0 } };
   const defaultNoTrade: DecisionResult = {
