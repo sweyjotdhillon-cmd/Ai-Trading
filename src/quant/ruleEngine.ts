@@ -18,7 +18,7 @@ import { rescaledRangeHurst, PATTERN_WEIGHTS_BY_HORIZON } from './horizon';
 import { featureFlags } from '../config/featureFlags';
 import { patternWeights } from '../config/patternWeights';
 import { gapWeights } from '../config/gapWeights';
-// import { GapEvidence } from './gapDetector';
+
 
 export interface CaseScore {
   j1: number;
@@ -51,10 +51,7 @@ export interface DecisionResult extends JudgeVerdict {
 
 export function evaluateSignal(
   ohlcSeries: NumericOHLC[],
-  techniquesList: any[],
-  _context?: any,
-  _confirmedPatterns?: any,
-  _confirmedGaps?: any
+
 ): DecisionResult {
   const defaultCases = { bull: { j1: 0, j2: 0, j3: 0, total: 0 }, bear: { j1: 0, j2: 0, j3: 0, total: 0 } };
   const defaultNoTrade: DecisionResult = {
@@ -75,7 +72,7 @@ export function evaluateSignal(
   };
 
   if (ohlcSeries.length < 30) return defaultNoTrade;
-  if (!techniquesList) return defaultNoTrade;
+  // if (!techniquesList) return defaultNoTrade; // Let analysis proceed even if no techniques are explicitly passed
 
   let bullJ1 = 0, bullJ2 = 0, bullJ3 = 0;
   let bearJ1 = 0, bearJ2 = 0, bearJ3 = 0;
@@ -305,7 +302,7 @@ export function evaluateSignal(
     }
 
     // Match techniques with requested list
-    const techniquesStr = techniquesList.join(" ").toLowerCase();
+    const techniquesStr = techniquesList.map(t => typeof t === 'string' ? t : t.name).join(" ").toLowerCase();
 
     let bullPatternMatches = 0;
     let bearPatternMatches = 0;
@@ -534,6 +531,8 @@ export function evaluateSignal(
     skepticPenalty: (1 - skepticMultiplier) * 100,
     boundaryBias: 0,
     finalScore: (winner === 'BULL' ? cases.bull.total : -cases.bear.total) * skepticMultiplier,
+    techniquesUsed: matchedTechniques.join(', '),
+    techUsedCount: matchedTechniques.length,
     evidence: {
       rsi: rsiVals[last],
       macd: macdVals.macd[last],
