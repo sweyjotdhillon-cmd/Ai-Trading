@@ -1,8 +1,7 @@
 import { runSingleAnalysis, onStableSignal } from '../utils/singleAnalysis';
 import { LiveAnalysisDashboard } from './live-analysis/LiveAnalysisDashboard';
-import { LiveAnalysisDebate } from './live-analysis/LiveAnalysisDebate';
 import { LiveAnalysisResult } from './live-analysis/LiveAnalysisResult';
-import { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, Pressable, ScrollView, Platform } from 'react-native';
 import { TIMEOUTS } from '../config/timeouts';
 
@@ -86,7 +85,7 @@ export function LiveAnalysis() {
   const [graphTimeframe, setGraphTimeframe] = useState('30 minutes');
   const [loading, setLoading] = useState(false);
   const [isBusy, setIsBusy] = useState(false);
-  const [analysisStep, setAnalysisStep] = useState<string | null>(null);
+    const [, setAnalysisStep] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<any | null>(null);
   const [mode, setMode] = useState<'live' | 'test' | 'bulk'>('live');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -150,7 +149,7 @@ export function LiveAnalysis() {
   }, []);
 
   // Parallel Judge Logs
-  const [judgeLogs, setJudgeLogs] = useState({
+  const [, setJudgeLogs] = useState({
      judge1: { text: "", status: 'idle' },
      judge2: { text: "", status: 'idle' },
      judge3: { text: "", status: 'idle' },
@@ -911,7 +910,7 @@ export function LiveAnalysis() {
               </View>
             </Pressable>
             {mode === 'live' && isCameraActive && !loading && (
-              <Pressable onPress={async () => { if (pipActive) { closePip(true); return; } const launched = await startPip(); if (launched) { handleAnalyze(); } }} style={({ pressed }) => [tw`h-12 rounded-xl items-center justify-center mt-2 flex-row`, pipActive ? tw`bg-[#22C55E]/10 border border-[#22C55E]/40` : tw`bg-[#D9B382]/10 border border-[#D9B382]/30`, { opacity: pressed ? 0.7 : 1 }]}><>{pipActive && (<View style={tw`w-2 h-2 rounded-full bg-[#22C55E] mr-2`} />)}<Text style={[tw`font-black uppercase tracking-[2px] text-xs`, pipActive ? tw`text-[#22C55E]` : tw`text-[#D9B382]`]}>{pipActive ? '📺 PiP Active — Tap to Close' : '📺 Float Signal & Switch App'}</Text></></Pressable>
+              <Pressable onPress={async () => { if (pipActive) { closePip(true); return; } const launched = await startPip(); if (launched) { handleAnalyze(); } }} style={({ pressed }) => [tw`h-12 rounded-xl items-center justify-center mt-2 flex-row`, pipActive ? tw`bg-[#22C55E]/10 border border-[#22C55E]/40` : tw`bg-[#D9B382]/10 border border-[#D9B382]/30`, { opacity: pressed ? 0.7 : 1 }]}><React.Fragment>{pipActive && (<View style={tw`w-2 h-2 rounded-full bg-[#22C55E] mr-2`} />)}<Text style={[tw`font-black uppercase tracking-[2px] text-xs`, pipActive ? tw`text-[#22C55E]` : tw`text-[#D9B382]`]}>{pipActive ? "📺 PiP Active — Tap to Close" : "📺 Float Signal & Switch App"}</Text></React.Fragment></Pressable>
             )}
             {mode === 'live' && !pipSupported && (
               <View style={tw`mt-2 px-3 py-2 rounded-lg bg-yellow-500/10 border border-yellow-500/20`}>
