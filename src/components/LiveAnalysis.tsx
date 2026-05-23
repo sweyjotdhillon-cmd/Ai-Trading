@@ -890,6 +890,7 @@ export function LiveAnalysis() {
                 </Text>
               </View>
             )}
+
             <Pressable
               onPress={() => {
                 if (isBusy) return;
@@ -899,23 +900,53 @@ export function LiveAnalysis() {
               disabled={(mode === 'test' && !selectedImage) || (mode === 'live' && !isCameraActive) || isBusy}
               style={({ pressed }) => [
                 tw`h-14 rounded-xl items-center justify-center`,
-                ((mode === 'test' && !selectedImage) || (mode === 'live' && !isCameraActive) || isBusy) ? tw`bg-[#D9B382]/20` : tw`bg-[#D9B382]`,
+                ((mode === 'test' && !selectedImage) || (mode === 'live' && !isCameraActive) || isBusy)
+                  ? tw`bg-[#D9B382]/20`
+                  : tw`bg-[#D9B382]`,
                 { opacity: (pressed && !isBusy) ? 0.7 : 1 }
               ]}
             >
               <View style={tw`flex-row items-center`}>
                 <Sparkles size={18} color="#1A1308" style={tw`mr-2`} />
                 <Text style={tw`text-[#1A1308] font-black uppercase tracking-[2px] text-base`}>
-                   {mode === 'live' ? 'Start Camera Analysis' : 'Initiate Analysis'}
+                  {mode === 'live' ? 'Start Camera Analysis' : 'Initiate Analysis'}
                 </Text>
               </View>
             </Pressable>
+
             {mode === 'live' && isCameraActive && !loading && (
-              <Pressable onPress={async () => { if (pipActive) { closePip(true); return; } const launched = await startPip(); if (launched) { handleAnalyze(); } }} style={({ pressed }) => [tw`h-12 rounded-xl items-center justify-center mt-2 flex-row`, pipActive ? tw`bg-[#22C55E]/10 border border-[#22C55E]/40` : tw`bg-[#D9B382]/10 border border-[#D9B382]/30`, { opacity: pressed ? 0.7 : 1 }]}><>{pipActive && (<View style={tw`w-2 h-2 rounded-full bg-[#22C55E] mr-2`} />)}<Text style={[tw`font-black uppercase tracking-[2px] text-xs`, pipActive ? tw`text-[#22C55E]` : tw`text-[#D9B382]`]}>{pipActive ? '📺 PiP Active — Tap to Close' : '📺 Float Signal & Switch App'}</Text></></Pressable>
+              <Pressable
+                onPress={async () => {
+                  if (pipActive) {
+                    closePip(true);
+                    return;
+                  }
+
+                  const launched = await startPip();
+                  if (launched) {
+                    handleAnalyze();
+                  }
+                }}
+                style={({ pressed }) => [
+                  tw`h-12 rounded-xl items-center justify-center mt-2 flex-row`,
+                  pipActive
+                    ? tw`bg-[#22C55E]/10 border border-[#22C55E]/40`
+                    : tw`bg-[#D9B382]/10 border border-[#D9B382]/30`,
+                  { opacity: pressed ? 0.7 : 1 }
+                ]}
+              >
+                {pipActive && <View style={tw`w-2 h-2 rounded-full bg-[#22C55E] mr-2`} />}
+                <Text style={[tw`font-black uppercase tracking-[2px] text-xs`, pipActive ? tw`text-[#22C55E]` : tw`text-[#D9B382]`]}>
+                  {pipActive ? '📺 PiP Active — Tap to Close' : '📺 Float Signal & Switch App'}
+                </Text>
+              </Pressable>
             )}
+
             {mode === 'live' && !pipSupported && (
               <View style={tw`mt-2 px-3 py-2 rounded-lg bg-yellow-500/10 border border-yellow-500/20`}>
-                <Text style={tw`text-yellow-400 text-[9px] font-black uppercase tracking-wider text-center`}>PiP not available — use Chrome or Edge browser</Text>
+                <Text style={tw`text-yellow-400 text-[9px] font-black uppercase tracking-wider text-center`}>
+                  PiP not available — use Chrome or Edge browser
+                </Text>
               </View>
             )}
 
