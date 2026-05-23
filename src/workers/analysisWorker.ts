@@ -58,6 +58,7 @@ self.onmessage = async (e: MessageEvent) => {
     } 
     else if (data.type === 'ANALYZE') {
       sendOk('PROGRESS', { type: 'PROGRESS', msgId: data.msgId, step: 'READING MARKET OUTCOME...' });
+      sendOk('JUDGE_LOG', { msgId: data.msgId, logs: { system: { text: 'Starting...', status: 'active' } } });
 
       const tfMinutes = data.graphTimeframeMinutes || 30;
       const durationMinutes = data.investmentDurationMinutes || 5;
@@ -76,6 +77,7 @@ self.onmessage = async (e: MessageEvent) => {
       const t0Worker = performance.now();
 
       sendOk('PROGRESS', { type: 'PROGRESS', msgId: data.msgId, step: 'EXTRACTING CANDLESTICK DATA...' });
+      sendOk('JUDGE_LOG', { msgId: data.msgId, logs: { system: { text: 'Extracting data...', status: 'active' } } });
       const pipe = await buildPipelineResult(data.imageData) as any;
 
 
@@ -103,12 +105,14 @@ self.onmessage = async (e: MessageEvent) => {
       }
 
       const decision = evaluateSignal(
-
         pipe.ohlcSeries,
         data.techniquesList,
         horizonCtx,
         confirmedPatterns,
-        confirmedGaps
+        confirmedGaps,
+        (key, text) => {
+          sendOk('JUDGE_LOG', { msgId: data.msgId, logs: { [key]: { text, status: 'active' } } });
+        }
       );
       console.log(`[PERF] evaluateSignal: ${(performance.now()-t1Worker).toFixed(1)}ms`);
       console.log(`[PERF] TOTAL worker: ${(performance.now()-t0Worker).toFixed(1)}ms`);

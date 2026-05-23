@@ -161,11 +161,11 @@ export function LiveAnalysis() {
 
   // Parallel Judge Logs
   const [judgeLogs, setJudgeLogs] = useState({
-     judge1: { text: "Waiting to initiate...", status: 'idle' },
-     judge2: { text: "Waiting to initiate...", status: 'idle' },
-     judge3: { text: "Waiting to initiate...", status: 'idle' },
-     judge4: { text: "Locating boundaries...", status: 'idle' },
-     system: { text: "Awaiting context...", status: 'idle' }
+     judge1: { text: "", status: 'idle' },
+     judge2: { text: "", status: 'idle' },
+     judge3: { text: "", status: 'idle' },
+     judge4: { text: "", status: 'idle' },
+     system: { text: "", status: 'idle' }
   });
   
   // UX Error Handling
@@ -315,11 +315,11 @@ export function LiveAnalysis() {
     setIsBusy(false);
     
     setJudgeLogs({
-      judge1: { text: "Standby...", status: 'idle' },
-      judge2: { text: "Standby...", status: 'idle' },
-      judge3: { text: "Standby...", status: 'idle' },
-      judge4: { text: "Standby...", status: 'idle' },
-      system: { text: "Standby...", status: 'idle' }
+      judge1: { text: "", status: 'idle' },
+      judge2: { text: "", status: 'idle' },
+      judge3: { text: "", status: 'idle' },
+      judge4: { text: "", status: 'idle' },
+      system: { text: "", status: 'idle' }
     });
 
     if (streamRef.current) {
@@ -1108,30 +1108,30 @@ export function LiveAnalysis() {
 
             <div style={tw`gap-3 relative z-10`}>
               {[
-                { key: 'system', label: 'System Context', color: '#00FFFF', bg: 'rgba(0, 255, 255, 0.05)' },
-                { key: 'judge1', label: 'Judge 1: Trend & Momentum', color: '#FF00FF', bg: 'rgba(255, 0, 255, 0.05)' },
-                { key: 'judge2', label: 'Judge 2: Oscillator Consensus', color: '#FF1493', bg: 'rgba(255, 20, 147, 0.05)' },
-                { key: 'judge3', label: 'Skeptic: Veto Multiplier', color: '#39FF14', bg: 'rgba(57, 255, 20, 0.05)' },
-                { key: 'judge4', label: 'Judge 3: Boundary/Reversal', color: '#EAB308', bg: 'rgba(234, 179, 8, 0.05)' }
+                { key: 'system', label: 'System Context', color: '#00FFFF', bg: 'rgba(0, 255, 255, 0.15)' },
+                { key: 'judge1', label: 'Judge 1: Trend & Momentum', color: '#FF00FF', bg: 'rgba(255, 0, 255, 0.15)' },
+                { key: 'judge2', label: 'Judge 2: Oscillator Consensus', color: '#FF1493', bg: 'rgba(255, 20, 147, 0.15)' },
+                { key: 'judge3', label: 'Skeptic: Veto Multiplier', color: '#39FF14', bg: 'rgba(57, 255, 20, 0.15)' },
+                { key: 'judge4', label: 'Judge 3: Boundary/Reversal', color: '#EAB308', bg: 'rgba(234, 179, 8, 0.15)' }
               ].map((item, idx) => (
                 <motion.div
                   key={item.key}
                   initial={{ x: -20, opacity: 0 }}
                   animate={{ x: 0, opacity: 1 }}
                   transition={{ delay: idx * 0.1 }}
-                  className="bg-black bg-opacity-20 p-3 rounded-lg flex-row items-center justify-between border-l-4"
+                  className="bg-black bg-opacity-40 p-3 rounded-lg flex-row items-center justify-between border-l-4"
                   style={{ borderColor: item.color, backgroundColor: item.bg }}
                 >
                   <div style={tw`flex-1`}>
                     <div className="flex flex-row items-center gap-2 mb-1">
                       <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: item.color }} />
-                      <Text style={[tw`font-black uppercase tracking-widest`, { fontSize: 9, color: item.color }]}>{item.label}</Text>
+                      <Text style={[tw`font-black uppercase tracking-widest`, { fontSize: 10, color: item.color }]}>{item.label}</Text>
                     </div>
                     <motion.p
                       key={judgeLogs[item.key as keyof typeof judgeLogs].text}
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
-                      className="text-white font-bold text-xs"
+                      className="text-white font-bold text-sm"
                     >
                       {judgeLogs[item.key as keyof typeof judgeLogs].text}
                     </motion.p>
