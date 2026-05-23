@@ -949,7 +949,7 @@ export function LiveAnalysis() {
                 </Text>
               </View>
             )}
-          </View>
+
 
         {analysisError && (
           <View style={tw`bg-red-500/10 border border-red-500 border-opacity-10 p-4 rounded-xl mt-4 flex-row items-center`}>
