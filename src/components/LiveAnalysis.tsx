@@ -1,6 +1,6 @@
 import { runSingleAnalysis, onStableSignal } from '../utils/singleAnalysis';
 import { LiveAnalysisDashboard } from './live-analysis/LiveAnalysisDashboard';
-import { LiveAnalysisDebate } from './live-analysis/LiveAnalysisDebate';
+
 import { LiveAnalysisResult } from './live-analysis/LiveAnalysisResult';
 import { useState, useRef, useEffect } from 'react';
 import { View, Text, Pressable, ScrollView, Platform } from 'react-native';
@@ -86,7 +86,7 @@ export function LiveAnalysis() {
   const [graphTimeframe, setGraphTimeframe] = useState('30 minutes');
   const [loading, setLoading] = useState(false);
   const [isBusy, setIsBusy] = useState(false);
-  const [analysisStep, setAnalysisStep] = useState<string | null>(null);
+  const [_analysisStep, setAnalysisStep] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<any | null>(null);
   const [mode, setMode] = useState<'live' | 'test' | 'bulk'>('live');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -150,7 +150,7 @@ export function LiveAnalysis() {
   }, []);
 
   // Parallel Judge Logs
-  const [judgeLogs, setJudgeLogs] = useState({
+  const [_judgeLogs, setJudgeLogs] = useState({
      judge1: { text: "", status: 'idle' },
      judge2: { text: "", status: 'idle' },
      judge3: { text: "", status: 'idle' },
@@ -979,7 +979,7 @@ export function LiveAnalysis() {
                 </Text>
               </View>
             )}
-
+          </View>
 
         {analysisError && (
           <View style={tw`bg-red-500/10 border border-red-500 border-opacity-10 p-4 rounded-xl mt-4 flex-row items-center`}>
