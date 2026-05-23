@@ -720,3 +720,5 @@ export function BulkTestPanel({
       </View>
     </View>
   );
+
+}
