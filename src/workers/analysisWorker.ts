@@ -58,6 +58,7 @@ self.onmessage = async (e: MessageEvent) => {
     } 
     else if (data.type === 'ANALYZE') {
       sendOk('PROGRESS', { type: 'PROGRESS', msgId: data.msgId, step: 'READING MARKET OUTCOME...' });
+      sendOk('JUDGE_LOG', { msgId: data.msgId, logs: { system: { text: 'Starting...', status: 'active' } } });
 
       const tfMinutes = data.graphTimeframeMinutes || 30;
       const durationMinutes = data.investmentDurationMinutes || 5;
@@ -76,6 +77,7 @@ self.onmessage = async (e: MessageEvent) => {
       const t0Worker = performance.now();
 
       sendOk('PROGRESS', { type: 'PROGRESS', msgId: data.msgId, step: 'EXTRACTING CANDLESTICK DATA...' });
+      sendOk('JUDGE_LOG', { msgId: data.msgId, logs: { system: { text: 'Extracting data...', status: 'active' } } });
       const pipe = await buildPipelineResult(data.imageData) as any;
 
 
@@ -95,7 +97,8 @@ self.onmessage = async (e: MessageEvent) => {
       const t1Worker = performance.now();
 
       if (data.techniquesList && data.techniquesList.length > 0) {
-        const firstFew = data.techniquesList.slice(0, 3).join(', ');
+        const mappedTechniques = data.techniquesList.map((t: any) => typeof t === 'string' ? t : t.name);
+        const firstFew = mappedTechniques.slice(0, 3).join(', ');
         const others = data.techniquesList.length > 3 ? ` and ${data.techniquesList.length - 3} more` : '';
         sendOk('PROGRESS', { type: 'PROGRESS', msgId: data.msgId, step: `APPLYING TECHNIQUES: ${firstFew}${others}...` });
       } else {
@@ -103,12 +106,14 @@ self.onmessage = async (e: MessageEvent) => {
       }
 
       const decision = evaluateSignal(
-
         pipe.ohlcSeries,
         data.techniquesList,
         horizonCtx,
         confirmedPatterns,
-        confirmedGaps
+        confirmedGaps,
+        (key, text) => {
+          sendOk('JUDGE_LOG', { msgId: data.msgId, logs: { [key]: { text, status: 'active' } } });
+        }
       );
       console.log(`[PERF] evaluateSignal: ${(performance.now()-t1Worker).toFixed(1)}ms`);
       console.log(`[PERF] TOTAL worker: ${(performance.now()-t0Worker).toFixed(1)}ms`);
