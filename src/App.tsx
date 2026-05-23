@@ -93,27 +93,39 @@ function App() {
   const springProps = { type: "spring" as const, stiffness: 400, damping: 22 };
 
   useEffect(() => {
-    const handleError = (e: any) => {
-      console.error("Global error caught:", e);
-      setGlobalErrors(prev => [...prev, {
-        message: e.message || 'Unknown Error',
-        stack: e.error?.stack || undefined,
-        time: new Date().toLocaleTimeString()
-      }]);
+    const pushError = (msg: string, stack?: string) => {
+      setGlobalErrors(prev => {
+        // Prevent massive error spam
+        if (prev.length > 50) return prev;
+        return [...prev, {
+          message: msg,
+          stack: stack,
+          time: new Date().toLocaleTimeString()
+        }];
+      });
     };
-    const handleRejection = (e: any) => {
-      console.error("Unhandled promise rejection:", e.reason);
-      setGlobalErrors(prev => [...prev, {
-        message: e.reason?.message || (typeof e.reason === 'string' ? e.reason : 'Unhandled Promise Rejection'),
-        stack: e.reason?.stack || undefined,
-        time: new Date().toLocaleTimeString()
-      }]);
+
+    const handleError = (e: ErrorEvent) => {
+      pushError(e.message || 'Unknown Error', e.error?.stack);
     };
+
+    const handleRejection = (e: PromiseRejectionEvent) => {
+      const msg = e.reason?.message || (typeof e.reason === 'string' ? e.reason : 'Unhandled Promise Rejection');
+      pushError(msg, e.reason?.stack);
+    };
+
+    const handleConsoleError = (e: any) => {
+      pushError(e.detail?.message || 'Console Error');
+    };
+
     window.addEventListener('error', handleError);
     window.addEventListener('unhandledrejection', handleRejection);
+    window.addEventListener('app-console-error', handleConsoleError as EventListener);
+
     return () => {
       window.removeEventListener('error', handleError);
       window.removeEventListener('unhandledrejection', handleRejection);
+      window.removeEventListener('app-console-error', handleConsoleError as EventListener);
     };
   }, []);
 
