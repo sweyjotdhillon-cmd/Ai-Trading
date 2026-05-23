@@ -8,6 +8,7 @@ const stableListeners = new Set<Listener>();
 
 
 const progressListeners = new Map<string, (step: string) => void>();
+const judgeLogListeners = new Map<string, (logs: any) => void>();
 
 function getWorker() {
   if (!worker) {
@@ -34,7 +35,11 @@ function getWorker() {
           res.resolve(payload);
           messageResolvers.delete(payload.msgId);
           progressListeners.delete(payload.msgId);
+          judgeLogListeners.delete(payload.msgId);
         }
+      } else if (type === 'JUDGE_LOG' && payload.msgId) {
+        const listener = judgeLogListeners.get(payload.msgId);
+        if (listener) listener(payload.logs);
       } else if (type === 'STABLE_SIGNAL') {
         stableListeners.forEach(l => l(payload));
       } else if (type === 'PROGRESS' && payload.msgId) {
@@ -101,20 +106,15 @@ export async function runSingleAnalysis(params: {
   const t0 = performance.now();
   const { imageDataUrl, onJudgeLogs, isTestMode, onDirectionFound } = params;
 
-  if (onJudgeLogs) {
-    onJudgeLogs({
-      judge1: { text: "Initializing Worker Pipeline...", status: 'active' },
-      judge2: { text: "Awaiting Frame...", status: 'active' },
-      judge3: { text: "Reading Y-Axis...", status: 'active' },
-      judge4: { text: "Checking Filters...", status: 'active' },
-      system: { text: "Starting...", status: 'active' }
-    });
-  }
+
 
 
   const msgId = generateId();
   if (params.onProgress) {
     progressListeners.set(msgId, params.onProgress);
+  }
+  if (params.onJudgeLogs) {
+    judgeLogListeners.set(msgId, params.onJudgeLogs);
   }
   const w = getWorker();
 

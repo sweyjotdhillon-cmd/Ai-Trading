@@ -51,7 +51,11 @@ export interface DecisionResult extends JudgeVerdict {
 
 export function evaluateSignal(
   ohlcSeries: NumericOHLC[],
-
+  techniquesList: any[],
+  horizonCtx: HorizonContext,
+  _confirmedPatterns: any[] = [],
+  _confirmedGaps: GapEvidence[] = [],
+  onLog?: (key: string, text: string) => void
 ): DecisionResult {
   const defaultCases = { bull: { j1: 0, j2: 0, j3: 0, total: 0 }, bear: { j1: 0, j2: 0, j3: 0, total: 0 } };
   const defaultNoTrade: DecisionResult = {
@@ -93,6 +97,7 @@ export function evaluateSignal(
 
 
   // Compute indicators
+  if (onLog) onLog('judge1', 'Calculating RSI/MACD indices...');
   const rsiVals = rsi(closes as unknown as number[], 14);
   const macdVals = macd(closes as unknown as number[], 12, 26, 9);
   const stochVals = stochastic(ohlcSeries, 14, 3);
@@ -359,8 +364,8 @@ export function evaluateSignal(
      if (upperWick > currBody * 2 && lowerWick < currBody) bearReversal = true;
   }
 
-  const wCont = PATTERN_WEIGHTS_BY_HORIZON.CONTINUATION[(((_context ? _context.horizonClass : "INTRA_CANDLE") || "INTRA_CANDLE") as keyof typeof PATTERN_WEIGHTS_BY_HORIZON.CONTINUATION)];
-  const wRev = PATTERN_WEIGHTS_BY_HORIZON.REVERSAL[(((_context ? _context.horizonClass : "INTRA_CANDLE") || "INTRA_CANDLE") as keyof typeof PATTERN_WEIGHTS_BY_HORIZON.CONTINUATION)];
+  const wCont = PATTERN_WEIGHTS_BY_HORIZON.CONTINUATION[(((horizonCtx ? horizonCtx.horizonClass : "INTRA_CANDLE") || "INTRA_CANDLE") as keyof typeof PATTERN_WEIGHTS_BY_HORIZON.CONTINUATION)];
+  const wRev = PATTERN_WEIGHTS_BY_HORIZON.REVERSAL[(((horizonCtx ? horizonCtx.horizonClass : "INTRA_CANDLE") || "INTRA_CANDLE") as keyof typeof PATTERN_WEIGHTS_BY_HORIZON.CONTINUATION)];
 
   if (bullContinuation) bullJ1 += wCont;
   if (bearContinuation) bearJ1 += wCont;
