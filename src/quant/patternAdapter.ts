@@ -1,5 +1,5 @@
 import { NumericOHLC } from '../vision/pipeline';
-import * as candlestick from 'candlestick';
+import candlestick from 'candlestick';
 
 export interface PatternEvidence {
   pattern: string;
@@ -22,7 +22,7 @@ export function extractCandlestickPatterns(series: NumericOHLC[]): PatternEviden
       const c = recent[recent.length - 1];
 
       try {
-          if (candlestick.isBullishEngulfing(p, c)) {
+          if (candlestick.isBullishEngulfing && candlestick.isBullishEngulfing(p, c)) {
               evidence.push({
                   pattern: 'Bullish Engulfing',
                   confidence: 1.0,
@@ -34,7 +34,7 @@ export function extractCandlestickPatterns(series: NumericOHLC[]): PatternEviden
       } catch { /* ignore */ }
 
       try {
-          if (candlestick.isBearishEngulfing(p, c)) {
+          if (candlestick.isBearishEngulfing && candlestick.isBearishEngulfing(p, c)) {
               evidence.push({
                   pattern: 'Bearish Engulfing',
                   confidence: 1.0,
@@ -49,7 +49,7 @@ export function extractCandlestickPatterns(series: NumericOHLC[]): PatternEviden
   if (recent.length >= 1) {
       const c = recent[recent.length - 1];
       try {
-          if (candlestick.isDoji(c)) {
+          if (candlestick.isDoji && candlestick.isDoji(c)) {
               evidence.push({
                   pattern: 'Doji',
                   confidence: 1.0,
