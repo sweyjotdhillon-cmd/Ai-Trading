@@ -374,6 +374,7 @@ export function evaluateSignal(
 
 
   // --- Judge 2: Oscillator Consensus ---
+  if (onLog) onLog('judge2', 'Evaluating oscillator convergence...');
   const rsiValue = rsiVals[last];
   if (!isNaN(rsiValue)) {
     if (rsiValue >= 45) bullJ2 += Math.min(1.5, ((rsiValue - 45) / 30) * 1.5);
@@ -475,12 +476,14 @@ export function evaluateSignal(
   };
 
   // --- Skeptic Multiplier ---
+  if (onLog) onLog('judge4', 'Consulting risk models...');
   // Removed redeclared skeptic multiplier
   const candlesForMathEngine = ohlcSeries.map((c, i) => ({ ...c, prevClose: i > 0 ? ohlcSeries[i-1].close : c.open }));
   
 
 
 
+  if (onLog) onLog('judge3', 'Checking statistical boundaries...');
   const zScoreData = calculateZScoreSignificance(candlesForMathEngine.slice(-21));
   if (Math.abs(zScoreData.zScore) > 2.5) skepticMultiplier *= 0.6;
 
