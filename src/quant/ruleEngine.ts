@@ -98,7 +98,7 @@ export function evaluateSignal(
 
 
   // Compute indicators
-  if (onLog) onLog('judge1', 'Calculating RSI/MACD indices...');
+  if (typeof onLog !== "undefined" && onLog) onLog('judge1', 'Calculating RSI/MACD indices...');
   const rsiVals = rsi(closes as unknown as number[], 14);
   const macdVals = macd(closes as unknown as number[], 12, 26, 9);
   const stochVals = stochastic(ohlcSeries, 14, 3);
