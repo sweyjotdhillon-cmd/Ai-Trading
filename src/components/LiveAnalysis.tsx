@@ -149,7 +149,7 @@ export function LiveAnalysis() {
   }, []);
 
   // Parallel Judge Logs
-
+  const [judgeLogs, setJudgeLogs] = useState<any>({
      judge1: { text: "", status: 'idle' },
      judge2: { text: "", status: 'idle' },
      judge3: { text: "", status: 'idle' },
@@ -876,85 +876,8 @@ export function LiveAnalysis() {
         handlePickTechnique={handlePickTechnique}
       />
 
+
         {/* Action Bar / Live Debate UI Overlay */}
-
-
- 
-                    <motion.p
-                      key={log.text}
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      className="text-white font-bold text-sm"
-                    >
-                      {log.text}
-                    </motion.p>
-                  </div>
-                  {log.status === 'done' ? (
-                    <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} className="ml-2">
-                      <Check size={16} color={meta.color} />
-                    </motion.div>
-                  ) : (
-                    <div className="flex flex-row items-end gap-0.5 h-3">
-                      {[0, 1, 2].map((i) => (
-                        <motion.div
-                          key={i}
-                          animate={{ height: [2, 8, 2] }}
-                          transition={{ duration: 0.8, repeat: Infinity, delay: i * 0.2 }}
-                          className="w-0.5 bg-white/20"
-                        />
-                      ))}
-                    </div>
-                  )}
-                </motion.div>
-              )})}
-            </div>
-          </motion.div>
-        ) : (
-          <div className="flex flex-col mt-4">
-
-            {!isCalibrated() && (
-              <View style={tw`bg-red-500/10 border border-red-500/30 rounded-lg p-2 mb-3 flex items-center justify-center`}>
-                <Text style={tw`text-red-400 font-bold text-xs uppercase tracking-widest`}>
-                  ⚠ NOT CALIBRATED — Results will be unreliable
-                </Text>
-              </View>
-            )}
-
-            <Pressable
-              onPress={() => {
-                if (isBusy) return;
-                closePickers();
-                handleAnalyze();
-              }}
-              disabled={(mode === 'test' && !selectedImage) || (mode === 'live' && !isCameraActive) || isBusy}
-              style={({ pressed }) => [
-                tw`h-14 rounded-xl items-center justify-center`,
-                ((mode === 'test' && !selectedImage) || (mode === 'live' && !isCameraActive) || isBusy)
-                  ? tw`bg-[#D9B382]/20`
-                  : tw`bg-[#D9B382]`,
-                { opacity: (pressed && !isBusy) ? 0.7 : 1 }
-              ]}
-            >
-              <View style={tw`flex-row items-center`}>
-                <Sparkles size={18} color="#1A1308" style={tw`mr-2`} />
-                <Text style={tw`text-[#1A1308] font-black uppercase tracking-[2px] text-base`}>
-                  {mode === 'live' ? 'Start Camera Analysis' : 'Initiate Analysis'}
-                </Text>
-              </View>
-            </Pressable>
-
-            {mode === 'live' && isCameraActive && !loading && (
-
-            )}
-
-            {mode === 'live' && !pipSupported && (
-              <View style={tw`mt-2 px-3 py-2 rounded-lg bg-yellow-500/10 border border-yellow-500/20`}>
-                <Text style={tw`text-yellow-400 text-[9px] font-black uppercase tracking-wider text-center`}>
-                  PiP not available — use Chrome or Edge browser
-                </Text>
-              </View>
-            )}
-          </View>
 
         {analysisError && (
           <View style={tw`bg-red-500/10 border border-red-500 border-opacity-10 p-4 rounded-xl mt-4 flex-row items-center`}>
@@ -1012,50 +935,33 @@ const AnimatedArrows = ({ direction }: { direction: 'UP' | 'DOWN' | 'NO_TRADE' }
   const isNeutral = direction === 'NO_TRADE';
 
   return (
-    <div className="fixed inset-0 pointer-events-none z-[100] flex flex-col justify-center items-center">
+    <View style={tw`absolute top-0 bottom-0 left-0 right-0 z-50 flex flex-col justify-center items-center pointer-events-none`} pointerEvents="none">
       {isNeutral ? (
-        <motion.div
-          initial={{ scale: 0.8, opacity: 0 }}
-          animate={{ scale: [1, 1.1, 1], opacity: [0.4, 0.6, 0.4] }}
-          transition={{ duration: 1.5, repeat: Infinity }}
-          className="flex flex-col items-center"
+        <View
+          style={tw`flex flex-col items-center`}
         >
-          <div className="text-9xl mb-4">✋</div>
+          <Text style={{fontSize: 128, marginBottom: 16}}>✋</Text>
           <Text style={tw`text-yellow-500 font-black text-4xl uppercase tracking-[10px]`}>SIGNAL ADVISORY</Text>
-        </motion.div>
+        </View>
       ) : (
-        <div className="absolute inset-0 flex flex-row flex-wrap justify-around content-around opacity-20">
+        <View style={tw`absolute top-0 bottom-0 left-0 right-0 flex-row flex-wrap justify-around content-around opacity-20`}>
           {[...Array(24)].map((_, i) => (
-            <motion.div
+            <View
               key={i}
-              initial={{ y: isUp ? 1000 : -1000, opacity: 0 }}
-              animate={{ 
-                y: isUp ? -1000 : 1000, 
-                opacity: [0, 0.8, 0] 
-              }}
-              transition={{ 
-                duration: 2, 
-                repeat: Infinity, 
-                delay: pseudoRandom() * 2,
-                ease: "linear"
-              }}
-              style={{ fontSize: 120 }}
-              className={`font-black ${isUp ? 'text-green-500' : 'text-red-500'}`}
+              style={[tw`font-black`, isUp ? tw`text-green-500` : tw`text-red-500`, { fontSize: 120 }]}
             >
-              {isUp ? '▲' : '▼'}
-            </motion.div>
+              <Text style={[tw`font-black`, isUp ? tw`text-green-500` : tw`text-red-500`, { fontSize: 120 }]}>{isUp ? '▲' : '▼'}</Text>
+            </View>
           ))}
-        </div>
+        </View>
       )}
       
       {/* Dynamic Scan Line for Added Tech Feel */}
       {!isNeutral && (
-        <motion.div
-          animate={{ x: ['-100%', '100%'] }}
-          transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
-          className={`absolute inset-y-0 w-1 ${isUp ? 'bg-green-500 shadow-[0_0_20px_#22C55E]' : 'bg-red-500 shadow-[0_0_20px_#EF4444]'} opacity-30`}
+        <View
+          style={tw`absolute top-0 bottom-0 w-1 ${isUp ? 'bg-green-500' : 'bg-red-500'} opacity-30`}
         />
       )}
-    </div>
+    </View>
   );
 };
