@@ -1,5 +1,4 @@
 import { HorizonContext } from './horizon';
-import { GapEvidence } from './gapDetector';
 
 /**
  * CHANGELOG
@@ -56,7 +55,8 @@ export function evaluateSignal(
   techniquesList: any[],
   horizonCtx: HorizonContext,
   _confirmedPatterns: any[] = [],
-
+  _confirmedGaps: any[] = [],
+  onLog?: (key: string, text: string) => void
 ): DecisionResult {
   const defaultCases = { bull: { j1: 0, j2: 0, j3: 0, total: 0 }, bear: { j1: 0, j2: 0, j3: 0, total: 0 } };
   const defaultNoTrade: DecisionResult = {
@@ -98,7 +98,7 @@ export function evaluateSignal(
 
 
   // Compute indicators
-  if (onLog) onLog('judge1', 'Calculating RSI/MACD indices...');
+  if (typeof onLog === 'function') onLog('judge1', 'Calculating RSI/MACD indices...');
   const rsiVals = rsi(closes as unknown as number[], 14);
   const macdVals = macd(closes as unknown as number[], 12, 26, 9);
   const stochVals = stochastic(ohlcSeries, 14, 3);
