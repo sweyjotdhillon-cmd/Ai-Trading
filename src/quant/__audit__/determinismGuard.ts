@@ -1,7 +1,7 @@
+import { buildPipelineResult } from '../../vision/pipeline';
+import { evaluateSignal } from '../ruleEngine';
 
-
-
-export async function runDeterminismGuard(): Promise<boolean> {
+export function runDeterminismGuard(): boolean {
   const w = 64;
   const h = 64;
   const imgData = new Uint8ClampedArray(w * h * 4);
@@ -13,19 +13,17 @@ export async function runDeterminismGuard(): Promise<boolean> {
   for (let i = 0; i < w * h * 4; i++) {
     imgData[i] = Math.floor(rnd() * 255);
   }
-
+  const img = new ImageData(imgData, w, h);
 
   let firstRes = '';
   for (let i = 0; i < 10; i++) {
-    // const pipe = buildPipelineResult(img);
-
+    const pipe = buildPipelineResult(img);
+    const decision = evaluateSignal(pipe.ohlcSeries, pipe.axis);
     
-
-    const result1: any = {};
     const trace = JSON.stringify({
-      signal: result1.signal,
-      confidence: result1.confidence,
-      score: result1.finalScore
+      signal: decision.signal,
+      confidence: decision.confidence,
+      score: decision.finalScore
     });
 
     if (i === 0) {

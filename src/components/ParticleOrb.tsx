@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import React, { useEffect, useRef } from "react";
 
 export function ParticleOrb({ className = "" }: { className?: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -66,9 +66,9 @@ export function ParticleOrb({ className = "" }: { className?: string }) {
       const cX = Math.cos(rx), sX = Math.sin(rx);
 
       const proj = particles.map(p => {
-        const x = p.x * cY - p.z * sY;
+        let x = p.x * cY - p.z * sY;
         let z = p.x * sY + p.z * cY;
-        const y = p.y * cX - z * sX;
+        let y = p.y * cX - z * sX;
         z     = p.y * sX + z * cX;
         const s = 600 / (600 + z * R);
         return { x: cx + x * R * s, y: cy + y * R * s, z, s };
@@ -87,9 +87,9 @@ export function ParticleOrb({ className = "" }: { className?: string }) {
         const x = Math.cos(o.a) * o.dist;
         const z = Math.sin(o.a) * o.dist;
         const y = Math.sin(o.a * 0.7 + o.tilt) * 0.3;
-        const x2 = x * cY - z * sY;
+        let x2 = x * cY - z * sY;
         let z2 = x * sY + z * cY;
-        const y2 = y * cX - z2 * sX;
+        let y2 = y * cX - z2 * sX;
         z2     = y * sX + z2 * cX;
         const s = 600 / (600 + z2 * R);
         ctx.beginPath();

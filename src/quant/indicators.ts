@@ -42,7 +42,7 @@ export function rsi(closes: number[], period = 14): number[] {
   avgGain /= period;
   avgLoss /= period;
   
-  const rs = avgGain === 0 && avgLoss === 0 ? 1 : avgLoss < EPSILON ? (avgGain > 0 ? 100 : 1) : avgGain / avgLoss;
+  const rs = avgGain === 0 && avgLoss === 0 ? 1 : avgGain / Math.max(avgLoss, EPSILON);
   result[period] = 100 - (100 / (1 + rs));
   
   for (let i = period + 1; i < closes.length; i++) {
@@ -53,7 +53,7 @@ export function rsi(closes: number[], period = 14): number[] {
     avgGain = (avgGain * (period - 1) + gain) / period;
     avgLoss = (avgLoss * (period - 1) + loss) / period;
     
-    const currRs = avgGain === 0 && avgLoss === 0 ? 1 : avgLoss < EPSILON ? (avgGain > 0 ? 100 : 1) : avgGain / avgLoss;
+    const currRs = avgGain === 0 && avgLoss === 0 ? 1 : avgGain / Math.max(avgLoss, EPSILON);
     result[i] = 100 - (100 / (1 + currRs));
   }
   return Array.from(result);

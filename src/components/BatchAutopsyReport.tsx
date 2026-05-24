@@ -1,6 +1,5 @@
 // unused React import removed
 import { View, Text, Pressable } from 'react-native';
-import { useEffect, useRef, useCallback } from 'react';
 import tw from 'twrnc';
 import { motion } from 'motion/react';
 import { ShieldAlert, AlertTriangle, Wrench, RefreshCw, Download } from 'lucide-react';
@@ -13,7 +12,7 @@ interface BatchAutopsyReportProps {
 }
 
 export function BatchAutopsyReport({ summary, loading, onClear }: BatchAutopsyReportProps) {
-  const handleDownload = useCallback(() => {
+  const handleDownload = () => {
     if (!summary) return;
     const blob = new Blob([JSON.stringify(summary, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -24,18 +23,7 @@ export function BatchAutopsyReport({ summary, loading, onClear }: BatchAutopsyRe
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  }, [summary]);
-
-
-
-  const lastDownloaded = useRef<MasterAutopsySummary | null>(null);
-
-  useEffect(() => {
-    if (summary && !loading && lastDownloaded.current !== summary) {
-      handleDownload();
-      lastDownloaded.current = summary;
-    }
-  }, [summary, loading, handleDownload]);
+  };
 
   if (loading) {
     return (

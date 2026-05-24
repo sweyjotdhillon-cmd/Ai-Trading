@@ -1,6 +1,5 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { evaluateSignal } from '../ruleEngine';
-
 import { NumericOHLC } from '../../vision/pipeline';
 
 function generateSeries(type: 'uptrend' | 'downtrend' | 'sideways' | 'explosive', length: number = 150): NumericOHLC[] {
@@ -10,7 +9,7 @@ function generateSeries(type: 'uptrend' | 'downtrend' | 'sideways' | 'explosive'
   if (type === 'downtrend') price = 5000;
 
   for (let i = 0; i < length; i++) {
-    const open = price;
+    let open = price;
     let close = price;
     let high = price;
     let low = price;
@@ -44,9 +43,9 @@ function generateSeries(type: 'uptrend' | 'downtrend' | 'sideways' | 'explosive'
     }
 
     series.push({
-      // time: new Date(Date.now() - (length - i) * 60000).toISOString(),
+      date: new Date(Date.now() - (length - i) * 60000).toISOString(),
       open, high, low, close,
-      xCenter: 0, isBull: true
+      volume: 1000
     });
     price = close;
   }
@@ -54,52 +53,52 @@ function generateSeries(type: 'uptrend' | 'downtrend' | 'sideways' | 'explosive'
 }
 
 describe('Judge Verdict', () => {
-
-// Deterministic LCG for test stability
-let seed = 12345;
-function deterministicRandom() {
-  seed = (seed * 1664525 + 1013904223) % 4294967296;
-  return seed / 4294967296;
-}
-
-beforeEach(() => {
-  seed = 12345;
-  vi.spyOn(Math, 'random').mockImplementation(deterministicRandom);
-});
-
-afterEach(() => {
-  vi.restoreAllMocks();
-});
-
   it('1. Strong uptrend synthetic series', () => {
-    // const series = generateSeries('uptrend', 150); // TSFix: remove unused
-
+    const series = generateSeries('uptrend', 150);
+    const result = evaluateSignal(series, null, 'REAL_PRICE');
+    console.log("UPTREND RESULT:", JSON.stringify(result, null, 2));
+    expect(result.winner).toBe('BULL');
+    expect(result.margin).toBeGreaterThanOrEqual(2);
+    expect(result.finalConfidence).toBeGreaterThanOrEqual(50);
   });
 
   it('2. Strong downtrend synthetic series', () => {
-    // const series = generateSeries('downtrend', 150); // TSFix: remove unused
-
+    const series = generateSeries('downtrend', 150);
+    const result = evaluateSignal(series, null, 'REAL_PRICE');
+    console.log("DOWNTREND RESULT:", JSON.stringify(result, null, 2));
+    expect(result.winner).toBe('BEAR');
+    expect(result.margin).toBeGreaterThanOrEqual(2);
+    expect(result.finalConfidence).toBeGreaterThanOrEqual(50);
   });
 
   it('3. Sideways noise', () => {
-    // const series = generateSeries('sideways', 150); // TSFix: remove unused
-
+    const series = generateSeries('sideways', 150);
+    const result = evaluateSignal(series, null, 'REAL_PRICE');
+    
+    expect(result.winner).toBe('NO_TRADE');
+    expect(result.margin).toBeLessThan(2);
   });
 
-  it('4. Trending but EXPLOSIVE_SKIP volatility', async () => {
+  it('4. Trending but EXPLOSIVE_SKIP volatility', () => {
     const series = generateSeries('explosive', 150);
-    const result = evaluateSignal(series, ['__TEST_BYPASS__'] as any, {tfMinutes: 30, durationMinutes: 5, H: 0.5, horizonClass: 'MID_TERM'} as any, [], [], undefined);
-
-
+    const result = evaluateSignal(series, null, 'REAL_PRICE');
+    
+    // An explosive series might be rejected for predictability early, or caught by skeptic
+    expect(result.winner).toBe('NO_TRADE');
     if (result.cases.bull.total > 0 || result.cases.bear.total > 0) {
        expect(result.skepticMultiplier).toBeLessThan(1.0);
     }
   });
 
-  it('5. totals per judge never exceed cap', async () => {
+  it('5. totals per judge never exceed cap', () => {
     const series = generateSeries('uptrend', 100);
-    const result = evaluateSignal(series, ["__TEST_BYPASS__" as any], { tfMinutes: 5, durationMinutes: 5, H: 1.0, horizonClass: 'INTRA_CANDLE' } as any, [], [], undefined);
+    const result = evaluateSignal(series, null, 'REAL_PRICE');
+    
+    const j1Total = result.cases.bull.j1 + result.cases.bear.j1;
+    const j2Total = result.cases.bull.j2 + result.cases.bear.j2;
+    const j3Total = result.cases.bull.j3 + result.cases.bear.j3;
 
+    expect(result.cases.bull.j1).toBeLessThanOrEqual(4);
     expect(result.cases.bear.j1).toBeLessThanOrEqual(4);
     
     expect(result.cases.bull.j2).toBeLessThanOrEqual(4);
@@ -109,13 +108,14 @@ afterEach(() => {
     expect(result.cases.bear.j3).toBeLessThanOrEqual(3);
   });
 
-  it('6. finalConfidence is integer between 0 and 100', async () => {
+  it('6. finalConfidence is integer between 0 and 100', () => {
     for (const type of ['uptrend', 'downtrend', 'sideways', 'explosive'] as const) {
       const series = generateSeries(type);
-      const res = evaluateSignal(series, ["__TEST_BYPASS__" as any], { tfMinutes: 5, durationMinutes: 5, H: 1.0, horizonClass: 'INTRA_CANDLE' } as any, [], [], undefined);
-
-      expect(res.finalConfidence).toBeLessThanOrEqual(100);
-      expect(Number.isInteger(res.finalConfidence)).toBe(true);
+      const result = evaluateSignal(series, null, 'REAL_PRICE');
+      
+      expect(result.finalConfidence).toBeGreaterThanOrEqual(0);
+      expect(result.finalConfidence).toBeLessThanOrEqual(100);
+      expect(Number.isInteger(result.finalConfidence)).toBe(true);
     }
   });
 });

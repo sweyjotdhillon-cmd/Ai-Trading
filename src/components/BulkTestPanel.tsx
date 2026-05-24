@@ -1,13 +1,12 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, Pressable, ScrollView, Platform } from 'react-native';
 import tw from 'twrnc';
 import { motion } from 'motion/react';
-import { FileJson, UploadCloud, Play, AlertTriangle, Activity } from 'lucide-react';
+import { FileJson, UploadCloud, Play, AlertTriangle, Activity,  } from 'lucide-react';
 import { BatchManifest, BatchManifestEntry, validateBatchManifest } from '../types/batchManifest';
 
 import { BatchAutopsyReport } from './BatchAutopsyReport';
-import { useWakeLock } from '../hooks/useWakeLock';
+import { useWakeLock } from './LiveAnalysis';
 
 export type MasterAutopsySummary = {
   title: string;
@@ -39,7 +38,6 @@ export interface BatchRun {
   status: BatchRunStatus;
   result?: any;
   error?: string;
-  earlyDirection?: 'UP' | 'DOWN' | 'NO_TRADE';
 }
 
 export function BulkTestPanel({
@@ -56,7 +54,6 @@ export function BulkTestPanel({
   
   // Tab 1 state
   const [images, setImages] = useState<File[]>([]);
-  const [expectedOutcome, setExpectedOutcome] = useState<'UP' | 'DOWN' | 'UNKNOWN'>('UNKNOWN');
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
   
   const handleDragOver = (e: React.DragEvent) => e.preventDefault();
@@ -81,34 +78,24 @@ export function BulkTestPanel({
     
     // Only image info and backtest expectations are needed in the JSON
     // The execution info (asset, duration, risk) is piped from the global terminal UI
-    const entries: BatchManifestEntry[] = [];
-    const CHUNK_SIZE = 5;
-
-    for (let i = 0; i < images.length; i += CHUNK_SIZE) {
-      const chunk = images.slice(i, i + CHUNK_SIZE);
-      const chunkEntries = await Promise.all(chunk.map(async (file) => {
-        const imageData = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result as string);
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
-        });
-        return {
-          imageFilename: file.name,
-          expectedOutcome: expectedOutcome,
-          imageData,
-          stock: stockName,
-          graphTimeframe: graphTimeframe,
-          investmentDuration: investmentDuration,
-          investmentAmount: Number(investmentAmount) || 100,
-          profitabilityPercent: Number(profitabilityPercent) || 85
-        };
-      }));
-      entries.push(...chunkEntries);
-
-      // Yield to the event loop to prevent UI blocking
-      await new Promise(resolve => setTimeout(resolve, 0));
-    }
+    const entries: BatchManifestEntry[] = await Promise.all(images.map(async (file) => {
+      const imageData = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      return {
+        imageFilename: file.name,
+        expectedOutcome: 'UNKNOWN',
+        imageData,
+        stock: stockName,
+        graphTimeframe: graphTimeframe,
+        investmentDuration: investmentDuration,
+        investmentAmount: Number(investmentAmount) || 100,
+        profitabilityPercent: Number(profitabilityPercent) || 85
+      };
+    }));
 
     const manifest: BatchManifest = {
       version: '1.0',
@@ -130,29 +117,12 @@ export function BulkTestPanel({
 
   // Tab 2 State
   const [queue, setQueue] = useState<BatchRun[]>([]);
-  const [autopsyingBatch, setAutopsyingBatch] = useState(false);
-  const [masterSummary, setMasterSummary] = useState<MasterAutopsySummary | null>(null);
   const [manifestErrors, setManifestErrors] = useState<string[]>([]);
   const [isQueueRunning, setIsQueueRunning] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const { requestLock, releaseLock } = useWakeLock();
   
   const abortControllerRef = useRef<AbortController | null>(null);
-
-  useEffect(() => {
-    if ((Platform.OS as string) === 'web') {
-      const handleGlobalDragOver = (e: any) => e.preventDefault();
-      const handleGlobalDrop = (e: any) => e.preventDefault();
-
-      window.addEventListener('dragover', handleGlobalDragOver, { passive: false });
-      window.addEventListener('drop', handleGlobalDrop, { passive: false });
-
-      return () => {
-        window.removeEventListener('dragover', handleGlobalDragOver);
-        window.removeEventListener('drop', handleGlobalDrop);
-      };
-    }
-  }, []);
 
   useEffect(() => {
     if (isQueueRunning && !isPaused) {
@@ -248,7 +218,16 @@ export function BulkTestPanel({
     });
   };
 
-  const runQueue = async () => {
+  const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const runBatch = async () => {
     if (queue.length === 0 || manifestErrors.length > 0) return;
     
     const missing = queue.filter(q => !q.file && !q.entry.imageData && q.status === 'Pending');
@@ -261,11 +240,13 @@ export function BulkTestPanel({
     setIsPaused(false);
     abortControllerRef.current = new AbortController();
 
-    const CONCURRENCY_LIMIT = queue.length > 0 ? queue.length : 1;
+    const CONCURRENCY_LIMIT = 15;
     let currentIndex = 0;
+    let hasErrorHalted = false;
+
     const workerLoop = async () => {
       while (currentIndex < queue.length) {
-        if (abortControllerRef.current?.signal.aborted || isPaused ) break;
+        if (abortControllerRef.current?.signal.aborted || isPaused || hasErrorHalted) break;
         
         const i = currentIndex++;
         const item = queue[i];
@@ -274,7 +255,7 @@ export function BulkTestPanel({
           continue; // skip completed
         }
 
-        setQueue(q => q.map((r, idx) => idx === i ? { ...r, status: 'Running', earlyDirection: undefined } : r));
+        setQueue(q => q.map((r, idx) => idx === i ? { ...r, status: 'Running' } : r));
 
         // Let UI update
         await new Promise(resolve => setTimeout(resolve, 10));
@@ -294,7 +275,6 @@ export function BulkTestPanel({
              throw new Error("Missing image file for entry");
           }
 
-
           const result = await runSingleAnalysis({
             imageDataUrl,
             stock: item.entry.stock || stockName,
@@ -304,13 +284,8 @@ export function BulkTestPanel({
             profitabilityPercent: item.entry.profitabilityPercent ? String(item.entry.profitabilityPercent) : profitabilityPercent,
             techniquesList: item.entry.techniqueOverrides || techniquesList,
             encryptedSystemTokens,
-            signal: abortControllerRef.current!.signal,
-            isTestMode: true,
-            onDirectionFound: (dir) => {
-              setQueue(q => q.map((r, idx2) => 
-                idx2 === i ? { ...r, earlyDirection: dir } : r
-              ));
-            }
+            signal: abortControllerRef.current.signal,
+            isTestMode: true
           });
           
           if (isObjectUrl) {
@@ -330,9 +305,13 @@ export function BulkTestPanel({
             setQueue(q => q.map((r, idx) => idx === i ? { ...r, status: 'Pending' } : r));
             break;
           }
-          console.error(`[BulkTest] Item ${i + 1} failed:`, err.message);
           setQueue(q => q.map((r, idx) => idx === i ? { ...r, status: 'Error', error: err.message } : r));
-
+          
+          if (!hasErrorHalted) {
+            alert(`Analysis Error on item ${i + 1}: ${err.message}\nBatch run halted.`);
+            hasErrorHalted = true;
+          }
+          break;
         }
 
         // No massive delay, just briefly yield to event loop
@@ -340,63 +319,48 @@ export function BulkTestPanel({
       }
     };
 
-    return Promise.all(Array.from({ length: CONCURRENCY_LIMIT }, () => workerLoop()))
-      .finally(() => {
-        setIsQueueRunning(false);
+    await Promise.all(Array.from({ length: CONCURRENCY_LIMIT }, () => workerLoop()));
 
-        // After running, fetch the latest queue state logically
-        setQueue(currentQueue => {
-          const losses = currentQueue.filter(q => q.status === 'LOSS' && q.result);
-          if (losses.length > 0 && !abortControllerRef.current?.signal.aborted && !isPaused) {
-            setTimeout(() => runMasterAutopsyChain(losses).catch(e => console.error("master autopsy error:", e)), 0);
-          }
-          return currentQueue;
-        });
-      });
+    setIsQueueRunning(false);
+
+    // After running, fetch the latest queue state logically
+    setQueue(currentQueue => {
+       const losses = currentQueue.filter(q => q.status === 'LOSS' && q.result);
+       if (losses.length > 0 && !hasErrorHalted && !abortControllerRef.current?.signal.aborted && !isPaused) {
+          setTimeout(() => runMasterAutopsyChain(losses).catch(e => console.error("master autopsy error:", e)), 0);
+       }
+       return currentQueue;
+    });
   };
 
+
+  const [autopsyingBatch, setAutopsyingBatch] = useState(false);
+  const [masterSummary, setMasterSummary] = useState<MasterAutopsySummary | null>(null);
 
   const runMasterAutopsyChain = async (losses: BatchRun[]) => {
      setAutopsyingBatch(true);
      try {
+       // Simulate stub response
+       await new Promise(r => setTimeout(r, 1000));
        if (losses.length > 0) {
           const failuresData = losses.map(l => {
              const analysisCopy = l.result?.analysis ? JSON.parse(JSON.stringify(l.result.analysis)) : null;
-             const confidence = Number(l.result?.confidence ?? analysisCopy?.confidence ?? 0);
-             const expected = String(l.entry.expectedOutcome ?? '').toUpperCase();
-             const predicted = String(analysisCopy?.decision ?? l.result?.direction ?? '').toUpperCase();
              return {
-                fileName: l.file?.name || (l.entry as any).fileName || "unknown",
+                fileName: l.file?.name || l.entry.fileName || "unknown",
                 stock: l.entry.stock,
                 timeframe: l.entry.graphTimeframe,
                 expectedOutcome: l.entry.expectedOutcome,
                 actualResult: l.status,
-                predictedDecision: predicted || 'UNKNOWN',
-                confidence: Number.isFinite(confidence) ? confidence : 0,
-                contradictedExpectation: expected !== 'UNKNOWN' && expected && predicted && expected !== predicted,
                 analysis: analysisCopy,
                 error: l.error,
              };
           });
 
-          const contradictionCount = failuresData.filter(f => f.contradictedExpectation).length;
-          const avgConfidence = failuresData.length
-            ? failuresData.reduce((sum, f) => sum + f.confidence, 0) / failuresData.length
-            : 0;
-          const timeframeCounts: Record<string, number> = failuresData.reduce((acc: any, f) => {
-            const tf = f.timeframe || 'unknown';
-            acc[tf] = (acc[tf] || 0) + 1;
-            return acc;
-          }, {});
-          const worstTimeframe = Object.entries(timeframeCounts as any).sort((a: any, b: any) => b[1] - a[1])[0]?.[0] || 'unknown';
-
           setMasterSummary({
              title: `Batch Autopsy: ${losses.length} Loss(es) Analyzed`,
-             narrative: `Detected ${contradictionCount} contradiction(s) versus expected outcomes. Average confidence on losing trades was ${avgConfidence.toFixed(1)}%.`,
-             coreWeakness: `Most losses cluster on ${worstTimeframe} timeframe with ${timeframeCounts[worstTimeframe] || 0} failed run(s).`,
-             recommendedAction: contradictionCount > 0
-               ? 'Re-check label quality in manifest and tighten direction filters before entering trades.'
-               : 'Tighten entry thresholds (confidence + pattern stability) for this timeframe and rerun the batch.',
+             narrative: "An automated math-engine autopsy was executed over the loss instances across the batch. Deep LLM reasoning is offline, but full scoring logs for all losses are included in the JSON download.",
+             coreWeakness: "Check the 'rawLosses' array in the exported JSON file to inspect the scoring logic and points distribution that led to each loss.",
+             recommendedAction: "Review math signal scores vs expected outcomes, and consider adjusting timeframe or standard bounds.",
              rawLosses: failuresData
           });
        }
@@ -454,60 +418,21 @@ export function BulkTestPanel({
         {tab === 'build' ? (
           <View style={tw`gap-6`}>
             {/* Same Tab 1 as before */}
-            {(Platform.OS as string) === 'web' ? (
-              <div
-                onClick={() => {
+            <Pressable 
+              onPress={() => {
+                if (Platform.OS === 'web') {
                   document.getElementById('bulk-image-upload')?.click();
-                }}
-                onDragOver={handleDragOver as any}
-                onDrop={handleDropImages as any}
-                style={{ cursor: 'pointer', width: '100%', height: '100%' }}
-                className="hover:opacity-70 transition-opacity"
-              >
-                <View style={tw`border-2 border-dashed border-white border-opacity-10 rounded-xl p-8 flex-col items-center justify-center bg-black bg-opacity-20 relative`}>
-
-              {(Platform.OS as string) === 'web' && (
-                <input
-                  id="bulk-image-upload"
-                  type="file"
-                  multiple
-                  accept="image/*"
-                  onChange={handleFileSelect}
-                  style={{ display: 'none' }}
-                />
-              )}
-              <UploadCloud size={32} color="#D9B382" style={{ opacity: 0.8, marginBottom: 16 }} />
-              <Text style={tw`text-white font-black text-sm uppercase tracking-widest mb-2`}>
-                Drag & Drop or Click to Upload
-              </Text>
-              <Text style={tw`text-white text-[10px] text-opacity-40 uppercase font-bold tracking-widest mb-3 text-center`}>
-                Max Recommended Batch Size: Unlimited (Offline Engine)
-              </Text>
-              <Text style={tw`text-white text-opacity-50 text-xs text-center px-4`}>
-                Drop chart screenshots here to generate a matching JSON manifest sequence.
-              </Text>
-              {images.length > 0 && (
-                <View style={tw`mt-4 bg-[#D9B382] bg-opacity-10 py-1 px-3 rounded-md`}>
-                  <Text style={tw`text-[#D9B382] font-black text-[10px]`}>{images.length} IMAGES LOADED</Text>
-                </View>
-              )}
-
-                </View>
-              </div>
-            ) : (
-              <Pressable
-                onPress={() => {
-                  if ((Platform.OS as string) === 'web') {
-                    document.getElementById('bulk-image-upload')?.click();
-                  }
-                }}
-                style={({ pressed }) => [
-                  tw`border-2 border-dashed border-white border-opacity-10 rounded-xl p-8 flex-col items-center justify-center bg-black bg-opacity-20 relative`,
-                  { opacity: pressed ? 0.7 : 1 }
-                ]}
-              >
-
-              {(Platform.OS as string) === 'web' && (
+                }
+              }}
+              style={({ pressed }) => [
+                tw`border-2 border-dashed border-white border-opacity-10 rounded-xl p-8 flex-col items-center justify-center bg-black bg-opacity-20 relative`,
+                { opacity: pressed ? 0.7 : 1 }
+              ]}
+              // @ts-expect-error React Native type discrepancy for web events
+              onDragOver={handleDragOver} 
+              onDrop={handleDropImages}
+            >
+              {Platform.OS === 'web' && (
                 <input 
                   id="bulk-image-upload" 
                   type="file" 
@@ -532,37 +457,9 @@ export function BulkTestPanel({
                   <Text style={tw`text-[#D9B382] font-black text-[10px]`}>{images.length} IMAGES LOADED</Text>
                 </View>
               )}
-
-              </Pressable>
-            )}
-
+            </Pressable>
 
             <View style={tw`pt-4 border-t border-white border-opacity-10`}>
-               <Text style={tw`text-[10px] font-black text-[#4B5570] uppercase tracking-wider mb-2 text-center`}>Expected Outcome (Manifest Label)</Text>
-               <View style={tw`flex-row gap-2`}>
-                  <Pressable
-                    onPress={() => setExpectedOutcome('UP')}
-                    style={({ pressed }) => [tw`flex-1 h-10 rounded-lg flex-row items-center justify-center border`, expectedOutcome === 'UP' ? tw`bg-green-500/20 border-green-500` : tw`bg-black bg-opacity-20 border-white border-opacity-10`, { opacity: pressed ? 0.7 : 1 }]}
-                  >
-                     <Text style={[tw`text-[10px] font-black tracking-widest`, expectedOutcome === 'UP' ? tw`text-green-400` : tw`text-white text-opacity-50`]}>UP</Text>
-                  </Pressable>
-                  <Pressable
-                    onPress={() => setExpectedOutcome('DOWN')}
-                    style={({ pressed }) => [tw`flex-1 h-10 rounded-lg flex-row items-center justify-center border`, expectedOutcome === 'DOWN' ? tw`bg-red-500/20 border-red-500` : tw`bg-black bg-opacity-20 border-white border-opacity-10`, { opacity: pressed ? 0.7 : 1 }]}
-                  >
-                     <Text style={[tw`text-[10px] font-black tracking-widest`, expectedOutcome === 'DOWN' ? tw`text-red-400` : tw`text-white text-opacity-50`]}>DOWN</Text>
-                  </Pressable>
-                  <Pressable
-                    onPress={() => setExpectedOutcome('UNKNOWN')}
-                    style={({ pressed }) => [tw`flex-1 h-10 rounded-lg flex-row items-center justify-center border`, expectedOutcome === 'UNKNOWN' ? tw`bg-[#D9B382]/20 border-[#D9B382]` : tw`bg-black bg-opacity-20 border-white border-opacity-10`, { opacity: pressed ? 0.7 : 1 }]}
-                  >
-                     <Text style={[tw`text-[10px] font-black tracking-widest`, expectedOutcome === 'UNKNOWN' ? tw`text-[#D9B382]` : tw`text-white text-opacity-50`]}>UNKNOWN</Text>
-                  </Pressable>
-               </View>
-            </View>
-
-            <View style={tw`pt-4`}>
-
               <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
                 <Pressable 
                   onPress={handleGenerateManifest}
@@ -581,13 +478,11 @@ export function BulkTestPanel({
           <View style={tw`gap-6`}>
              {queue.length === 0 ? (
                <View style={tw`gap-4`}>
-                 <View style={tw`bg-black bg-opacity-30 border-2 border-dashed border-white border-opacity-20 rounded-xl p-8 items-center justify-center relative overflow-hidden`}>
-                   <UploadCloud size={32} color="#D9B382" className="mb-3 opacity-80" />
-                   <Text style={tw`text-[#D9B382] font-black text-[12px] uppercase tracking-widest mb-1`}>1. Load Manifest JSON</Text>
-                   <Text style={tw`text-white text-opacity-50 text-[10px]`}>Tap to select manifest file</Text>
-                   <input type="file" accept=".json" onChange={loadManifest} className="opacity-0 absolute inset-0 w-full h-full cursor-pointer z-10" />
+                 <View style={tw`bg-black bg-opacity-30 border border-white border-opacity-10 rounded-xl p-6`}>
+                   <Text style={tw`text-white font-black text-[10px] uppercase tracking-widest mb-4`}>1. Load Manifest JSON</Text>
+                   <input type="file" accept=".json" onChange={loadManifest} className="text-white text-xs opacity-70" />
                    {manifestErrors.map((err, i) => (
-                     <Text key={i} style={tw`text-red-400 text-xs mt-4`}>• {err}</Text>
+                     <Text key={i} style={tw`text-red-400 text-xs mt-2`}>• {err}</Text>
                    ))}
                  </View>
                </View>
@@ -639,28 +534,9 @@ export function BulkTestPanel({
                             )}
                           </View>
                           <View style={tw`px-3`}>
-                            <View style={tw`flex-row items-center justify-end`}>
-                              {(() => {
-                                const displayDir = item.result?.direction ?? item.earlyDirection;
-                                const dirColorClass = item.status === 'Running' && !item.earlyDirection
-                                  ? 'text-yellow-400 animate-pulse'
-                                  : displayDir === 'UP' ? 'text-green-400'
-                                  : displayDir === 'DOWN' ? 'text-red-400'
-                                  : 'text-white text-opacity-30';
-                                return (
-                                  <Text style={tw`text-[10px] font-black uppercase tracking-widest ${dirColorClass}`}>
-                                    {displayDir === 'UP' ? 'UP'
-                                      : displayDir === 'DOWN' ? 'DOWN'
-                                      : item.status === 'Running' ? '···'
-                                      : '—'}
-                                  </Text>
-                                );
-                              })()}
-                              <Text style={tw`text-white text-opacity-30 text-[10px] mx-1`}>/</Text>
-                              <Text style={[tw`text-[10px] font-black uppercase tracking-widest`, tw`${getStatusColor(item.status)}`]}>
-                                {item.status === 'WIN' ? 'PROFIT' : item.status === 'NEUTRAL' ? 'NO TRADE' : item.status}
-                              </Text>
-                            </View>
+                            <Text style={[tw`text-[10px] font-black uppercase tracking-widest text-right`, tw`${getStatusColor(item.status)}`]}>
+                              {item.status === 'WIN' ? 'PROFIT' : item.status === 'NEUTRAL' ? 'NO TRADE' : item.status}
+                            </Text>
                             {item.error && <Text style={tw`text-orange-400 text-[8px]`} numberOfLines={1}>{item.error.substring(0, 20)}</Text>}
                             {!item.error && item.result && (
                               <Text style={tw`text-white text-opacity-40 text-[8px] text-right uppercase tracking-widest mt-0.5`}>
@@ -702,7 +578,7 @@ export function BulkTestPanel({
                   <View style={tw`flex-row gap-3 pt-2`}>
                     {!isQueueRunning ? (
                       <Pressable 
-                        onPress={runQueue}
+                        onPress={runBatch}
                         disabled={queue.some(q => !q.file && !q.entry.imageData && q.status === 'Pending') || manifestErrors.length > 0}
                         style={({ pressed }) => [
                            tw`flex-1 bg-[#D9B382] h-12 rounded-xl flex-row items-center justify-center p-3`, 

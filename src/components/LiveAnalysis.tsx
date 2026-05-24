@@ -150,7 +150,13 @@ export function LiveAnalysis() {
   }, []);
 
   // Parallel Judge Logs
-
+  const [judgeLogs, setJudgeLogs] = useState<{
+     judge1: { text: string; status: 'idle' | 'analyzing' | 'done' | 'failed' };
+     judge2: { text: string; status: 'idle' | 'analyzing' | 'done' | 'failed' };
+     judge3: { text: string; status: 'idle' | 'analyzing' | 'done' | 'failed' };
+     judge4: { text: string; status: 'idle' | 'analyzing' | 'done' | 'failed' };
+     system: { text: string; status: 'idle' | 'analyzing' | 'done' | 'failed' };
+  }>({
      judge1: { text: "", status: 'idle' },
      judge2: { text: "", status: 'idle' },
      judge3: { text: "", status: 'idle' },

@@ -1,5 +1,3 @@
-const _mathCache = new Map<string, Float64Array>();
-export function clearMathCache() { _mathCache.clear(); }
 let _seed = 0xC0FFEE;
 function pseudoRandom() {
   _seed = (_seed * 1664525 + 1013904223) % 4294967296;
@@ -68,8 +66,6 @@ export function calculateWassersteinSimilarity(source: number[], target: number[
  */
 export function calculateRQA(series: number[], epsilon = 0.1) {
   const n = series.length;
-  if (n < 10) return { recurrenceRate: 0, determinism: 0, laminarity: 0 };
-
   const rp = Array.from({ length: n }, () => Array(n).fill(0));
   const range = Math.max(...series) - Math.min(...series);
   const threshold = epsilon * range;
@@ -132,6 +128,30 @@ export function calculateRQA(series: number[], epsilon = 0.1) {
   return { recurrenceRate, determinism, laminarity };
 }
 
+/**
+ * Persistent Entropy (TDA-Lite)
+ * Captures "shape" invariants using simplified persistence of price peaks.
+ */
+export function calculatePersistentEntropy(series: number[]) {
+  const n = series.length;
+  const persistence = [];
+  
+  // Find local extrema (birth/death of features)
+  for (let i = 1; i < n - 1; i++) {
+    if ((series[i] > series[i-1] && series[i] > series[i+1]) || 
+        (series[i] < series[i-1] && series[i] < series[i+1])) {
+      persistence.push(Math.abs(series[i] - series[i-1]));
+    }
+  }
+
+  const sum = persistence.reduce((a, b) => a + b, 0);
+  if (sum === 0) return 0;
+  
+  const normalized = persistence.map(p => p / sum);
+  const entropy = -normalized.reduce((acc, p) => acc + (p > 0 ? p * Math.log2(p) : 0), 0);
+  
+  return { entropy, featureCount: persistence.length };
+}
 
 /**
  * Symplectic Hamiltonian Flow
@@ -356,10 +376,8 @@ export function calculateBoundaryReversal(
   let stateDesc = "";
 
   if (ohlc && ohlc.length >= 3) {
-    const highs = new Float64Array(ohlc.length);
-  ohlc.forEach((c, i) => { highs[i] = c.high; });
-    const lows = new Float64Array(ohlc.length);
-  ohlc.forEach((c, i) => { lows[i] = c.low; });
+    const highs = ohlc.map(c => c.high);
+    const lows = ohlc.map(c => c.low);
     const maxH = Math.max(...highs);
     const minL = Math.min(...lows);
     const currentClose = ohlc[ohlc.length - 1].close;
@@ -440,6 +458,28 @@ export function calculateBoundaryReversal(
   }
 
   return { bullPoints, bearPoints, label, yPercent: effectiveY };
+}
+
+/**
+ * Volatility Regime Gate
+ * Measures market energy to filter out dead or explosive markets.
+ */
+export function calculateVolatilityRegime(candles: { high: number; low: number; close: number; prevClose: number }[], lookback = 20) {
+  if (candles.length < lookback) return { status: 'INSUFFICIENT_DATA', zScore: 0 };
+
+  const trueRanges = candles.slice(-lookback).map(c => 
+    Math.max(c.high - c.low, Math.abs(c.high - c.prevClose), Math.abs(c.low - c.prevClose))
+  );
+
+  const atr = ss.mean(trueRanges);
+  const atrStd = ss.standardDeviation(trueRanges);
+  const currentTr = trueRanges[trueRanges.length - 1];
+
+  const volZ = (currentTr - atr) / (atrStd || 0.0001);
+
+  if (volZ >= -0.5 && volZ <= 1.2) return { status: 'TRADEABLE', zScore: volZ };
+  if (volZ > 2.0) return { status: 'EXPLOSIVE_SKIP', zScore: volZ };
+  return { status: 'DEAD_SKIP', zScore: volZ };
 }
 
 /**
@@ -526,9 +566,6 @@ export function calculateCEF(priceSeries: number[], liquidityMap: Record<number,
   }
   const vol = ss.standardDeviation(returns);
 
-  const liquidityKeys = Object.keys(liquidityMap).map(Number);
-  const hasLiquidityZones = liquidityKeys.length > 0;
-
   const directions = { UP: 1, DOWN: -1 };
   const futureEntropy: Record<string, number> = {};
 
@@ -547,12 +584,13 @@ export function calculateCEF(priceSeries: number[], liquidityMap: Record<number,
       }
 
       const zonesVisited = new Set<number>();
-      if (hasLiquidityZones) {
-        for (const p of futurePrices) {
-          // Find nearest liquidity zone
-          const nearestZone = liquidityKeys.reduce((prev, curr) => Math.abs(curr - p) < Math.abs(prev - p) ? curr : prev);
-          zonesVisited.add(nearestZone);
-        }
+      for (const p of futurePrices) {
+        // Find nearest liquidity zone
+        const keys = Object.keys(liquidityMap).map(Number);
+        if (keys.length === 0) continue; // Skip if no liquidity zones exist
+        
+        const nearestZone = keys.reduce((prev, curr) => Math.abs(curr - p) < Math.abs(prev - p) ? curr : prev);
+        zonesVisited.add(nearestZone);
       }
 
       const weights = Array.from(zonesVisited).map(z => liquidityMap[z]);
@@ -702,170 +740,4 @@ export class OptimalStoppingEntry {
 
     return { action: 'WAIT', ev: currentEv };
   }
-}
-
-/**
- * Calculates the Hurst Exponent (H) over a rolling window.
- * H < 0.5 = mean-reverting
- * H ~ 0.5 = random walk
- * H > 0.5 = trending
- */
-export function calculateHurst(prices: number[], window: number): number {
-  if (prices.length < window || window < 2) return 0.5;
-
-  const segment = prices.slice(-window);
-  const returns: number[] = [];
-  for (let i = 1; i < segment.length; i++) {
-    if (segment[i - 1] === 0) continue; // Avoid division by zero
-    returns.push(Math.log(segment[i] / segment[i - 1]));
-  }
-
-  if (returns.length < 2) return 0.5;
-
-  const m = ss.mean(returns);
-  const meanAdjusted = returns.map(r => r - m);
-
-  let currentZ = 0;
-  const zSeries: number[] = [];
-  for (const y of meanAdjusted) {
-    currentZ += y;
-    zSeries.push(currentZ);
-  }
-
-  const maxZ = Math.max(...zSeries);
-  const minZ = Math.min(...zSeries);
-  const R = maxZ - minZ;
-
-  const S = ss.standardDeviation(returns);
-
-  if (S === 0 || R === 0) return 0.5; // Flatline
-
-  const RS = R / S;
-  if (RS <= 0) return 0.5;
-
-  return Math.log(RS) / Math.log(window);
-}
-
-/**
- * Calculates the Z-Score of the current price against a rolling lookback window.
- * Z = (Price - Mean) / StdDev
- */
-export function calculateZScore(prices: number[], lookback: number): number {
-  if (prices.length < lookback || lookback < 2) return 0;
-
-  const segment = prices.slice(-lookback);
-  const mean = ss.mean(segment);
-  const std = ss.standardDeviation(segment);
-
-  if (std === 0) return 0;
-
-  const currentPrice = prices[prices.length - 1];
-  return (currentPrice - mean) / std;
-}
-
-/**
- * Calculates the 1st (velocity), 2nd (acceleration), and 3rd (jerk) derivatives
- * of a given EMA series using discrete differences.
- */
-export function calculateEMADerivatives(emaValues: number[]): { velocity: number; acceleration: number; jerk: number } {
-  const len = emaValues.length;
-  if (len < 4) return { velocity: 0, acceleration: 0, jerk: 0 };
-
-  const v_n = emaValues[len - 1] - emaValues[len - 2];
-  const v_n1 = emaValues[len - 2] - emaValues[len - 3];
-  const v_n2 = emaValues[len - 3] - emaValues[len - 4];
-
-  const a_n = v_n - v_n1;
-  const a_n1 = v_n1 - v_n2;
-
-  const j_n = a_n - a_n1;
-
-  return { velocity: v_n, acceleration: a_n, jerk: j_n };
-}
-
-/**
- * Calculates a composite Micro-Momentum Score based on Z-Score and EMA derivatives.
- * Score ranges from -3 (Strong PUT) to +3 (Strong CALL).
- */
-export function calculateMicroMomentumScore(z: number, velocity: number, acceleration: number): number {
-  let score = 0;
-
-  if (z > 1.0) score += 1;
-  else if (z < -1.0) score -= 1;
-
-  if (velocity > 0) score += 1;
-  else if (velocity < 0) score -= 1;
-
-  if (acceleration > 0) score += 1;
-  else if (acceleration < 0) score -= 1;
-
-  return score;
-}
-
-/**
- * Determines the volatility regime based on the ratio of the current ATR
- * to its average over a historical window (assumed pre-calculated in atrValues).
- */
-export function calculateVolatilityRegime(atrValues: number[]): 'HIGH' | 'NORMAL' | 'LOW' {
-  if (atrValues.length < 20) return 'NORMAL';
-
-  const currentAtr = atrValues[atrValues.length - 1];
-  const avgAtr = ss.mean(atrValues.slice(-20));
-
-  if (avgAtr === 0) return 'LOW';
-
-  const ratio = currentAtr / avgAtr;
-
-  if (ratio > 1.8) return 'HIGH';
-  if (ratio < 0.6) return 'LOW';
-
-  return 'NORMAL';
-}
-
-/**
- * Detects divergence between price action and an RSI oscillator.
- * Compares the slopes of the last two localized swing high/low points.
- */
-export function detectRSIDivergence(prices: number[], rsiValues: number[]): 'BULLISH' | 'BEARISH' | 'NONE' {
-  const len = prices.length;
-  if (len < 10 || rsiValues.length !== len) return 'NONE';
-
-  // Helper to find local swings. Simplistic: looking back for the highest/lowest in a window.
-  // In a robust implementation, this would use a zigzag or pivot algorithm.
-  // We'll approximate by finding the max/min over the last 10 candles, then the 10 before that.
-
-  // Segment 2: Recent
-  const seg2Price = prices.slice(-5);
-  const seg2Rsi = rsiValues.slice(-5);
-  // Segment 1: Older
-  const seg1Price = prices.slice(-10, -5);
-  const seg1Rsi = rsiValues.slice(-10, -5);
-
-  const pHigh2 = Math.max(...seg2Price);
-  const idxHigh2 = seg2Price.indexOf(pHigh2);
-  const rHigh2 = seg2Rsi[idxHigh2];
-
-  const pHigh1 = Math.max(...seg1Price);
-  const idxHigh1 = seg1Price.indexOf(pHigh1);
-  const rHigh1 = seg1Rsi[idxHigh1];
-
-  const pLow2 = Math.min(...seg2Price);
-  const idxLow2 = seg2Price.indexOf(pLow2);
-  const rLow2 = seg2Rsi[idxLow2];
-
-  const pLow1 = Math.min(...seg1Price);
-  const idxLow1 = seg1Price.indexOf(pLow1);
-  const rLow1 = seg1Rsi[idxLow1];
-
-  // Bearish Divergence: Price higher high, RSI lower high
-  if (pHigh2 > pHigh1 && rHigh2 < rHigh1) {
-      return 'BEARISH';
-  }
-
-  // Bullish Divergence: Price lower low, RSI higher low
-  if (pLow2 < pLow1 && rLow2 > rLow1) {
-      return 'BULLISH';
-  }
-
-  return 'NONE';
 }

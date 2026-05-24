@@ -7,7 +7,7 @@ import {
   ScrollView
 } from 'react-native';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, ShieldAlert, CheckCircle, Copy, Share2 } from 'lucide-react';
+import { X, ShieldAlert, CheckCircle, Copy, Share2, Activity } from 'lucide-react';
 import tw from 'twrnc';
 
 interface Props {
@@ -80,8 +80,6 @@ export function SystemSettingsModal({ show, onClose }: Props) {
                 <Pressable 
                   onPress={() => setTimeout(onClose, 10)} 
                   style={({ pressed }) => [tw`p-2 hover:bg-white bg-opacity-20 rounded-full`, { opacity: pressed ? 0.7 : 1 }]}
-                  accessibilityRole="button"
-                  accessibilityLabel="Close"
                 >
                   <X size={20} color="#8B95B0" />
                 </Pressable>
@@ -93,8 +91,8 @@ export function SystemSettingsModal({ show, onClose }: Props) {
                     Share Application
                   </Text>
                   <View style={tw`border border-white border-opacity-10 p-4 rounded-xl bg-black bg-opacity-20 mb-4`}>
-                    <View style={tw`flex-col`}>
-                      <View style={tw`flex-row items-center gap-3 mb-4`}>
+                    <View style={tw`flex-row items-center justify-between`}>
+                      <View style={tw`flex-row items-center gap-3`}>
                         <View style={tw`w-10 h-10 rounded-lg bg-[#D9B382]/10 items-center justify-center`}>
                           <Share2 size={18} color="#D9B382" />
                         </View>
@@ -106,7 +104,7 @@ export function SystemSettingsModal({ show, onClose }: Props) {
                       <Pressable 
                         onPress={handleCopyLink}
                         style={({ pressed }) => [
-                          tw`w-full py-3 rounded-lg flex-row items-center justify-center gap-2`,
+                          tw`px-3 py-2 rounded-lg flex-row items-center gap-2`,
                           copyStatus === 'copied' ? tw`bg-green-500/10` : tw`bg-[#D9B382]/10`,
                           { opacity: pressed ? 0.7 : 1 }
                         ]}
@@ -116,12 +114,40 @@ export function SystemSettingsModal({ show, onClose }: Props) {
                         ) : (
                           <Copy size={14} color="#D9B382" />
                         )}
-                        <Text style={[tw`text-xs font-bold uppercase`, copyStatus === 'copied' ? tw`text-green-500` : tw`text-[#D9B382]`]}>
+                        <Text style={[tw`text-[10px] font-black uppercase`, copyStatus === 'copied' ? tw`text-green-500` : tw`text-[#D9B382]`]}>
                           {copyStatus === 'copied' ? 'Copied' : 'Copy'}
                         </Text>
                       </Pressable>
                     </View>
                   </View>
+                </View>
+
+                {/* Recalibrate Colors */}
+                <View style={tw`bg-gray-800 bg-opacity-50 p-4 rounded-xl border border-white border-opacity-10 mb-6`}>
+                   <View style={tw`flex-row items-center justify-between mb-2`}>
+                     <View style={tw`flex-row items-center flex-1`}>
+                       <Activity size={20} color="#D9B382" />
+                       <Text style={tw`text-white font-bold ml-2 text-base`}>Recalibrate Colors</Text>
+                     </View>
+                   </View>
+                   <Text style={tw`text-gray-400 text-sm mb-4 leading-5`}>
+                     Resample the chart's green and red colors for the deterministic engine to detect candles accurately.
+                   </Text>
+                   <Pressable
+                      onPress={() => {
+                        import('../vision/colorCalibration').then(m => {
+                          m.clearCalibration();
+                          window.dispatchEvent(new Event('determinist:recalibrate'));
+                          onClose();
+                        });
+                      }}
+                      style={({ pressed }) => [
+                        tw`flex-row items-center justify-center bg-[#D9B382] h-12 rounded-lg`,
+                        { opacity: pressed ? 0.7 : 1 }
+                      ]}
+                   >
+                      <Text style={tw`text-[#1A1308] font-bold uppercase tracking-wider`}>Recalibrate</Text>
+                   </Pressable>
                 </View>
 
                 <Pressable
