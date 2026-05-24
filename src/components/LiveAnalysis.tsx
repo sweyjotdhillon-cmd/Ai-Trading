@@ -150,7 +150,7 @@ export function LiveAnalysis() {
   }, []);
 
   // Parallel Judge Logs
-  const [judgeLogs, setJudgeLogs] = useState({
+
      judge1: { text: "", status: 'idle' },
      judge2: { text: "", status: 'idle' },
      judge3: { text: "", status: 'idle' },
@@ -878,15 +878,6 @@ export function LiveAnalysis() {
       />
 
         {/* Action Bar / Live Debate UI Overlay */}
-        <LiveAnalysisDebate
-          loading={loading}
-          analysisStep={analysisStep}
-          judgeLogs={judgeLogs}
-          prefersReducedMotion={prefersReducedMotion ?? false}
-        />
-
-
-
 
           <div className="flex flex-col mt-4">
             {!isCalibrated() && (
@@ -917,7 +908,7 @@ export function LiveAnalysis() {
               </View>
             </Pressable>
             {mode === 'live' && isCameraActive && !loading && (
-              <Pressable onPress={async () => { if (pipActive) { closePip(true); return; } const launched = await startPip(); if (launched) { handleAnalyze(); } }} style={({ pressed }) => [tw`h-12 rounded-xl items-center justify-center mt-2 flex-row`, pipActive ? tw`bg-[#22C55E]/10 border border-[#22C55E]/40` : tw`bg-[#D9B382]/10 border border-[#D9B382]/30`, { opacity: pressed ? 0.7 : 1 }]}><>{pipActive && (<View style={tw`w-2 h-2 rounded-full bg-[#22C55E] mr-2`} />)}<Text style={[tw`font-black uppercase tracking-[2px] text-xs`, pipActive ? tw`text-[#22C55E]` : tw`text-[#D9B382]`]}>{pipActive ? '📺 PiP Active — Tap to Close' : '📺 Float Signal & Switch App'}</Text></></Pressable>
+
             )}
             {mode === 'live' && !pipSupported && (
               <View style={tw`mt-2 px-3 py-2 rounded-lg bg-yellow-500/10 border border-yellow-500/20`}>
