@@ -1,8 +1,7 @@
 import { runSingleAnalysis, onStableSignal } from '../utils/singleAnalysis';
 import { LiveAnalysisDashboard } from './live-analysis/LiveAnalysisDashboard';
-import { LiveAnalysisDebate } from './live-analysis/LiveAnalysisDebate';
 import { LiveAnalysisResult } from './live-analysis/LiveAnalysisResult';
-import { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, Pressable, ScrollView, Platform } from 'react-native';
 import { TIMEOUTS } from '../config/timeouts';
 
@@ -83,10 +82,10 @@ function pseudoRandom() {
 
 export function LiveAnalysis() {
   const [stockName, setStockName] = useState('Bitcoin');
-  const [graphTimeframe, setGraphTimeframe] = useState('3 minutes');
+  const [graphTimeframe, setGraphTimeframe] = useState('30 minutes');
   const [loading, setLoading] = useState(false);
   const [isBusy, setIsBusy] = useState(false);
-  const [analysisStep, setAnalysisStep] = useState<string | null>(null);
+
   const [analysis, setAnalysis] = useState<any | null>(null);
   const [mode, setMode] = useState<'live' | 'test' | 'bulk'>('live');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -268,7 +267,7 @@ export function LiveAnalysis() {
     { name: 'Google', icon: 'G' },
   ];
 
-  const timeframes = ['5 minutes', '3 minutes'];
+  const timeframes = ['30 minutes', '15 minutes', '5 minutes', '3 minutes'];
   const durations = ['3m', '5m'];
 
 
@@ -888,15 +887,77 @@ export function LiveAnalysis() {
               <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[size:16px_16px]" />
             </div>
 
+            <div className="flex flex-row justify-between items-center mb-4 relative z-10">
+              <Text style={tw`text-white font-black text-xs uppercase tracking-widest`}>Arbiter Matrix Sync</Text>
+              <div className="flex flex-row items-center">
+                <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse mr-2" />
+                <Text style={tw`text-blue-400 text-[10px] font-bold`}>EVALUATING</Text>
+              </div>
+            </div>
 
+            <div className="flex flex-col gap-2 relative z-10">
+              {Object.entries(judgeLogs).map(([key, log]) => {
+                if (!log.text) return null;
+                const meta = {
+                  judge1: { name: 'J1: Trend', color: '#60A5FA' },
+                  judge2: { name: 'J2: Oscillator', color: '#A78BFA' },
+                  judge3: { name: 'J3: Boundary', color: '#F472B6' },
+                  judge4: { name: 'J4: Skeptic', color: '#FBBF24' },
+                  system: { name: 'SYS: Core', color: '#9CA3AF' }
+                }[key] || { name: key, color: '#FFFFFF' };
+
+                return (
+                <motion.div
+                  key={key}
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  className="flex flex-row items-center justify-between p-2 rounded bg-white/5 border border-white/5"
+                >
+                  <div className="flex flex-row items-center">
+                    <div style={{ backgroundColor: meta.color }} className="w-1.5 h-1.5 rounded-full mr-3" />
+                    <Text style={[tw`text-[10px] font-black uppercase w-24 mr-2`, { color: meta.color }]}>
+                      {meta.name}
+                    </Text>
+                    <motion.p
+                      key={log.text}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      className="text-white font-bold text-sm"
+                    >
+                      {log.text}
+                    </motion.p>
+                  </div>
+                  {log.status === 'done' ? (
+                    <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} className="ml-2">
+                      <Check size={16} color={meta.color} />
+                    </motion.div>
+                  ) : (
+                    <div className="flex flex-row items-end gap-0.5 h-3">
+                      {[0, 1, 2].map((i) => (
+                        <motion.div
+                          key={i}
+                          animate={{ height: [2, 8, 2] }}
+                          transition={{ duration: 0.8, repeat: Infinity, delay: i * 0.2 }}
+                          className="w-0.5 bg-white/20"
+                        />
+                      ))}
+                    </div>
+                  )}
+                </motion.div>
+              )})}
+            </div>
+          </motion.div>
+        ) : (
           <div className="flex flex-col mt-4">
+
             {!isCalibrated() && (
-              <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-2 mb-3 flex items-center justify-center">
+              <View style={tw`bg-red-500/10 border border-red-500/30 rounded-lg p-2 mb-3 flex items-center justify-center`}>
                 <Text style={tw`text-red-400 font-bold text-xs uppercase tracking-widest`}>
                   ⚠ NOT CALIBRATED — Results will be unreliable
                 </Text>
-              </div>
+              </View>
             )}
+
             <Pressable
               onPress={() => {
                 if (isBusy) return;
@@ -906,14 +967,16 @@ export function LiveAnalysis() {
               disabled={(mode === 'test' && !selectedImage) || (mode === 'live' && !isCameraActive) || isBusy}
               style={({ pressed }) => [
                 tw`h-14 rounded-xl items-center justify-center`,
-                ((mode === 'test' && !selectedImage) || (mode === 'live' && !isCameraActive) || isBusy) ? tw`bg-[#D9B382]/20` : tw`bg-[#D9B382]`,
+                ((mode === 'test' && !selectedImage) || (mode === 'live' && !isCameraActive) || isBusy)
+                  ? tw`bg-[#D9B382]/20`
+                  : tw`bg-[#D9B382]`,
                 { opacity: (pressed && !isBusy) ? 0.7 : 1 }
               ]}
             >
               <View style={tw`flex-row items-center`}>
                 <Sparkles size={18} color="#1A1308" style={tw`mr-2`} />
                 <Text style={tw`text-[#1A1308] font-black uppercase tracking-[2px] text-base`}>
-                   {mode === 'live' ? 'Start Camera Analysis' : 'Initiate Analysis'}
+                  {mode === 'live' ? 'Start Camera Analysis' : 'Initiate Analysis'}
                 </Text>
               </View>
             </Pressable>
@@ -922,11 +985,13 @@ export function LiveAnalysis() {
 
             {mode === 'live' && !pipSupported && (
               <View style={tw`mt-2 px-3 py-2 rounded-lg bg-yellow-500/10 border border-yellow-500/20`}>
-                <Text style={tw`text-yellow-400 text-[9px] font-black uppercase tracking-wider text-center`}>PiP not available — use Chrome or Edge browser</Text>
+                <Text style={tw`text-yellow-400 text-[9px] font-black uppercase tracking-wider text-center`}>
+                  PiP not available — use Chrome or Edge browser
+                </Text>
               </View>
             )}
           </div>
-
+        )}
 
         {analysisError && (
           <View style={tw`bg-red-500/10 border border-red-500 border-opacity-10 p-4 rounded-xl mt-4 flex-row items-center`}>

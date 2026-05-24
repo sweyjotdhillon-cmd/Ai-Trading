@@ -56,7 +56,6 @@ export function BulkTestPanel({
   
   // Tab 1 state
   const [images, setImages] = useState<File[]>([]);
-  const [expectedOutcome, setExpectedOutcome] = useState<'UP' | 'DOWN' | 'UNKNOWN'>('UNKNOWN');
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
   
   const handleDragOver = (e: React.DragEvent) => e.preventDefault();
@@ -95,7 +94,7 @@ export function BulkTestPanel({
         });
         return {
           imageFilename: file.name,
-          expectedOutcome: expectedOutcome,
+          expectedOutcome: (file.name.toLowerCase().includes('up') || file.name.toLowerCase().includes('call') ? 'UP' : file.name.toLowerCase().includes('down') || file.name.toLowerCase().includes('put') ? 'DOWN' : 'UNKNOWN') as any,
           imageData,
           stock: stockName,
           graphTimeframe: graphTimeframe,
@@ -536,33 +535,7 @@ export function BulkTestPanel({
               </Pressable>
             )}
 
-
             <View style={tw`pt-4 border-t border-white border-opacity-10`}>
-               <Text style={tw`text-[10px] font-black text-[#4B5570] uppercase tracking-wider mb-2 text-center`}>Expected Outcome (Manifest Label)</Text>
-               <View style={tw`flex-row gap-2`}>
-                  <Pressable
-                    onPress={() => setExpectedOutcome('UP')}
-                    style={({ pressed }) => [tw`flex-1 h-10 rounded-lg flex-row items-center justify-center border`, expectedOutcome === 'UP' ? tw`bg-green-500/20 border-green-500` : tw`bg-black bg-opacity-20 border-white border-opacity-10`, { opacity: pressed ? 0.7 : 1 }]}
-                  >
-                     <Text style={[tw`text-[10px] font-black tracking-widest`, expectedOutcome === 'UP' ? tw`text-green-400` : tw`text-white text-opacity-50`]}>UP</Text>
-                  </Pressable>
-                  <Pressable
-                    onPress={() => setExpectedOutcome('DOWN')}
-                    style={({ pressed }) => [tw`flex-1 h-10 rounded-lg flex-row items-center justify-center border`, expectedOutcome === 'DOWN' ? tw`bg-red-500/20 border-red-500` : tw`bg-black bg-opacity-20 border-white border-opacity-10`, { opacity: pressed ? 0.7 : 1 }]}
-                  >
-                     <Text style={[tw`text-[10px] font-black tracking-widest`, expectedOutcome === 'DOWN' ? tw`text-red-400` : tw`text-white text-opacity-50`]}>DOWN</Text>
-                  </Pressable>
-                  <Pressable
-                    onPress={() => setExpectedOutcome('UNKNOWN')}
-                    style={({ pressed }) => [tw`flex-1 h-10 rounded-lg flex-row items-center justify-center border`, expectedOutcome === 'UNKNOWN' ? tw`bg-[#D9B382]/20 border-[#D9B382]` : tw`bg-black bg-opacity-20 border-white border-opacity-10`, { opacity: pressed ? 0.7 : 1 }]}
-                  >
-                     <Text style={[tw`text-[10px] font-black tracking-widest`, expectedOutcome === 'UNKNOWN' ? tw`text-[#D9B382]` : tw`text-white text-opacity-50`]}>UNKNOWN</Text>
-                  </Pressable>
-               </View>
-            </View>
-
-            <View style={tw`pt-4`}>
-
               <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
                 <Pressable 
                   onPress={handleGenerateManifest}

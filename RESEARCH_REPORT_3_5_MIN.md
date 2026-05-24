@@ -19,10 +19,10 @@ We use the Rescaled Range (R/S) method. Over a rolling window of size $N$:
 7. Hurst Exponent: $H = \frac{\log(R/S)}{\log(N)}$
 
 ### Thresholds & Horizon Application
-*   **$H < 0.45$**: Market is strongly **mean-reverting**. Acts as a multiplier reducing momentum (`J1 *= 0.85`) and boosting boundary/reversal signals (`J3 *= 1.15`).
-*   **$H \approx 0.5$**: Random walk (Brownian motion). Market is noisy. Neutral effect.
-*   **$H > 0.55$**: Market is strongly **trending**. Acts as a multiplier boosting momentum (`J1 *= 1.15`) and reducing boundary/reversal signals (`J3 *= 0.85`).
-*   **Window Size**: Lookback period $N$ is typically `30` or `32` candles for the local Hurst function calculation.
+*   **$H < 0.45$**: Market is strongly **mean-reverting**. Suppress all momentum signals (e.g., trend following) and favor mean reversion signals (e.g., fades from Bollinger Band edges).
+*   **$H \approx 0.5$**: Random walk (Brownian motion). Market is noisy. Decrease confidence.
+*   **$H > 0.55$**: Market is strongly **trending**. Suppress mean reversion signals.
+*   **Window Size**: For 3-5 minute charts, we look back approx 1-1.5 hours of data. If each candle is 1 min, use $N = 30$ to $60$. If candles are 5-sec, use $N = 100$ to $300$. Let's assume a default window size of `30` candles for the local Hurst function.
 
 ## 2. Z-Score Breakout Significance
 
@@ -33,11 +33,11 @@ $Z = \frac{P_{current} - \mu}{\sigma}$
 where $\mu$ is the simple moving average (SMA) over lookback $L$, and $\sigma$ is the standard deviation over lookback $L$.
 
 ### Thresholds & Horizon Application
-*   **Lookback ($L$)**: $L = 20$ or $21$ (standard for short horizons).
+*   **Lookback ($L$)**: $L = 20$ (standard for short horizons).
 *   **$|Z| > 2.0$**: **Significant Breakout**. The price action has escaped the local noise band.
-    *   If $Z > 2.0$, contributes $+1.5$ points directly to the bullish oscillator consensus (`bullJ2 += 1.5`).
-    *   If $Z < -2.0$, contributes $+1.5$ points directly to the bearish oscillator consensus (`bearJ2 += 1.5`).
-*   **$|Z| > 2.5$ (Total Range Significance)**: When extreme total candle range movements are detected, acts as a confidence modifier reducing overall confidence (`skepticMultiplier *= 0.6`).
+    *   If $Z > 2.0$, trade CALL (momentum).
+    *   If $Z < -2.0$, trade PUT (momentum).
+*   **$|Z| < 0.5$**: **Near Mean**. Price is chopping around the average. Trade mean-reversion if at boundaries, otherwise skip.
 
 ## 3. EMA Higher-Order Derivatives
 
@@ -79,8 +79,8 @@ Volatility expands and contracts. A strategy that works in high volatility will 
 $Ratio_{ATR} = \frac{ATR_{current}}{ATR_{average\_over\_20\_candles}}$
 
 ### Thresholds & Horizon Application
-*   **$Ratio_{ATR} > 1.8$**: **HIGH VOLATILITY**. The market is wild. Scales down overall confidence (`skepticMultiplier *= 0.7`).
-*   **$Ratio_{ATR} < 0.6$**: **LOW VOLATILITY / COMPRESSION**. The market is coiling. A breakout is mathematically imminent. If combined with a Z-Score Breakout ($|Z| > 2.0$), it boosts overall confidence (`skepticMultiplier *= 1.2`).
+*   **$Ratio_{ATR} > 1.8$**: **HIGH VOLATILITY**. The market is wild. We must reduce overall confidence scores and widen thresholds to avoid getting stopped out by noise spikes.
+*   **$Ratio_{ATR} < 0.6$**: **LOW VOLATILITY / COMPRESSION**. The market is coiling. A breakout is mathematically imminent. Flag this state so the engine prepares for a high-momentum Z-score breakout.
 *   Otherwise: **NORMAL**.
 
 ## 6. RSI Divergence Math
@@ -92,9 +92,9 @@ Let $P_{H1}, P_{H2}$ be the last two swing highs in price (where $P_{H2}$ is mor
 Let $R_{H1}, R_{H2}$ be the RSI values at those exact same candle indices.
 
 *   **Bearish Divergence**: Price made a higher high ($P_{H2} > P_{H1}$) BUT RSI made a lower high ($R_{H2} < R_{H1}$).
-    *   Return: `'BEARISH'` (Weight: +2.0 to bearJ3 in rule engine)
+    *   Return: `'BEARISH'` (Weight: -15 in rule engine)
 *   **Bullish Divergence**: Price made a lower low ($P_{L2} < P_{L1}$) BUT RSI made a higher low ($R_{L2} > R_{L1}$).
-    *   Return: `'BULLISH'` (Weight: +2.0 to bullJ3 in rule engine)
+    *   Return: `'BULLISH'` (Weight: +15 in rule engine)
 *   Otherwise: `'NONE'`
 
 ## Integration: Scoring Weight Table (Rule Engine)
