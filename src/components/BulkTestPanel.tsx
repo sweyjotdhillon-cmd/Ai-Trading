@@ -6,7 +6,7 @@ import { FileJson, UploadCloud, Play, AlertTriangle, Activity,  } from 'lucide-r
 import { BatchManifest, BatchManifestEntry, validateBatchManifest } from '../types/batchManifest';
 
 import { BatchAutopsyReport } from './BatchAutopsyReport';
-import { useWakeLock } from './LiveAnalysis';
+import { useWakeLock } from '../hooks/useWakeLock';
 
 export type MasterAutopsySummary = {
   title: string;
