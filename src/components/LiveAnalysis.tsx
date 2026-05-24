@@ -83,7 +83,7 @@ function pseudoRandom() {
 
 export function LiveAnalysis() {
   const [stockName, setStockName] = useState('Bitcoin');
-  const [graphTimeframe, setGraphTimeframe] = useState('30 minutes');
+  const [graphTimeframe, setGraphTimeframe] = useState('3 minutes');
   const [loading, setLoading] = useState(false);
   const [isBusy, setIsBusy] = useState(false);
   const [analysisStep, setAnalysisStep] = useState<string | null>(null);
@@ -151,6 +151,7 @@ export function LiveAnalysis() {
 
   // Parallel Judge Logs
 
+    const [judgeLogs, setJudgeLogs] = useState({
      judge1: { text: "", status: 'idle' },
      judge2: { text: "", status: 'idle' },
      judge3: { text: "", status: 'idle' },
@@ -268,7 +269,7 @@ export function LiveAnalysis() {
     { name: 'Google', icon: 'G' },
   ];
 
-  const timeframes = ['30 minutes', '15 minutes', '5 minutes', '3 minutes'];
+  const timeframes = ['5 minutes', '3 minutes'];
   const durations = ['3m', '5m'];
 
 
@@ -907,9 +908,7 @@ export function LiveAnalysis() {
                 </Text>
               </View>
             </Pressable>
-            {mode === 'live' && isCameraActive && !loading && (
-
-            )}
+            {mode === 'live' && isCameraActive && !loading && null}
             {mode === 'live' && !pipSupported && (
               <View style={tw`mt-2 px-3 py-2 rounded-lg bg-yellow-500/10 border border-yellow-500/20`}>
                 <Text style={tw`text-yellow-400 text-[9px] font-black uppercase tracking-wider text-center`}>PiP not available — use Chrome or Edge browser</Text>
