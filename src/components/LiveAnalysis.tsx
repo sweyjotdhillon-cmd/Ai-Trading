@@ -150,7 +150,7 @@ export function LiveAnalysis() {
   }, []);
 
   // Parallel Judge Logs
-
+  const [judgeLogs, setJudgeLogs] = useState({
      judge1: { text: "", status: 'idle' },
      judge2: { text: "", status: 'idle' },
      judge3: { text: "", status: 'idle' },
@@ -908,7 +908,7 @@ export function LiveAnalysis() {
               </View>
             </Pressable>
             {mode === 'live' && isCameraActive && !loading && (
-
+              null
             )}
             {mode === 'live' && !pipSupported && (
               <View style={tw`mt-2 px-3 py-2 rounded-lg bg-yellow-500/10 border border-yellow-500/20`}>
