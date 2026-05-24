@@ -1,5 +1,4 @@
 import { HorizonContext } from './horizon';
-import { GapEvidence } from './gapDetector';
 
 /**
  * CHANGELOG
@@ -77,6 +76,7 @@ export function evaluateSignal(
   horizonCtx: HorizonContext,
   _confirmedPatterns: any[] = [],
   _confirmedGaps: any[] = [],
+  onLog?: (key: string, text: string) => void
 
 ): DecisionResult {
   const defaultCases = { bull: { j1: 0, j2: 0, j3: 0, total: 0 }, bear: { j1: 0, j2: 0, j3: 0, total: 0 } };

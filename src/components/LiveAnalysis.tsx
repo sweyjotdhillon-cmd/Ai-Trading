@@ -150,7 +150,7 @@ export function LiveAnalysis() {
   }, []);
 
   // Parallel Judge Logs
-  const [judgeLogs, setJudgeLogs] = useState<{ [key: string]: { text: string, status: string } }>({
+
      judge1: { text: "", status: 'idle' },
      judge2: { text: "", status: 'idle' },
      judge3: { text: "", status: 'idle' },
@@ -277,13 +277,13 @@ export function LiveAnalysis() {
 
   const closePip = (exitPip = true) => { if (pipAnimFrameRef.current) { cancelAnimationFrame(pipAnimFrameRef.current); pipAnimFrameRef.current = null; } if (exitPip && document.pictureInPictureElement) { document.exitPictureInPicture().catch(() => {}); } pipStreamRef.current?.getTracks().forEach(t => t.stop()); pipStreamRef.current = null; if (pipVideoRef.current) { pipVideoRef.current.pause(); if (document.body.contains(pipVideoRef.current)) { document.body.removeChild(pipVideoRef.current); } pipVideoRef.current = null; } pipCanvasRef.current = null; setPipActive(false); setPipSignal('IDLE'); setPipConfidence(0); };
 
-  const startPip = async (): Promise<boolean> => { if (!pipSupported) { alert('Picture-in-Picture is not supported in this browser. Use Chrome or Edge.'); return false; } try { const canvas = document.createElement('canvas'); canvas.width = 480; canvas.height = 270; pipCanvasRef.current = canvas; drawPipFrame('ANALYZING', 0, 'Switching to your broker now...'); const stream = canvas.captureStream(2); pipStreamRef.current = stream; const video = document.createElement('video'); video.srcObject = stream; video.muted = true; pipVideoRef.current = video; document.body.appendChild(video); await video.play(); await (video as any).requestPictureInPicture(); video.addEventListener('leavepictureinpicture', () => { setPipActive(false); setPipSignal('IDLE'); closePip(false); }); setPipActive(true); setPipSignal('ANALYZING'); const redraw = () => { drawPipFrame(pipSignal === 'IDLE' ? 'ANALYZING' : pipSignal, pipConfidence); pipAnimFrameRef.current = requestAnimationFrame(redraw); }; pipAnimFrameRef.current = requestAnimationFrame(redraw); return true; } catch (err: any) { console.error('[PiP] Failed to start:', err); if (err.name !== 'NotAllowedError') { alert(`PiP failed: ${err.message}`); } return false; } };
+  // @ts-expect-error unused
+  const _startPip = async (): Promise<boolean> => { if (!pipSupported) { alert('Picture-in-Picture is not supported in this browser. Use Chrome or Edge.'); return false; } try { const canvas = document.createElement('canvas'); canvas.width = 480; canvas.height = 270; pipCanvasRef.current = canvas; drawPipFrame('ANALYZING', 0, 'Switching to your broker now...'); const stream = canvas.captureStream(2); pipStreamRef.current = stream; const video = document.createElement('video'); video.srcObject = stream; video.muted = true; pipVideoRef.current = video; document.body.appendChild(video); await video.play(); await (video as any).requestPictureInPicture(); video.addEventListener('leavepictureinpicture', () => { setPipActive(false); setPipSignal('IDLE'); closePip(false); }); setPipActive(true); setPipSignal('ANALYZING'); const redraw = () => { drawPipFrame(pipSignal === 'IDLE' ? 'ANALYZING' : pipSignal, pipConfidence); pipAnimFrameRef.current = requestAnimationFrame(redraw); }; pipAnimFrameRef.current = requestAnimationFrame(redraw); return true; } catch (err: any) { console.error('[PiP] Failed to start:', err); if (err.name !== 'NotAllowedError') { alert(`PiP failed: ${err.message}`); } return false; } };
 
   // const updatePip = (signal: 'CALL' | 'PUT' | 'NO_TRADE', confidence: number) => { if (!pipActive || !pipCanvasRef.current) return; setPipSignal(signal); setPipConfidence(confidence); const subText = signal === 'NO_TRADE' ? 'Conditions unclear — skip this trade' : `${signal === 'CALL' ? 'Buy CALL' : 'Buy PUT'} — execute now`; drawPipFrame(signal, confidence, subText); if ('vibrate' in navigator) { navigator.vibrate(signal === 'NO_TRADE' ? [200] : [150, 80, 150]); } };
 
   const handleReset = () => {
     setAnalysis(null);
-    setAnalysisStep(null);
     setAnalysisError(null);
     setSelectedImage(null);
     setTradingPhase('IDLE');
@@ -443,7 +443,6 @@ export function LiveAnalysis() {
                 setAnalysisError(`Trade Aborted: ${scoutJSON.reason}`);
                 setScoutActive(false);
                 setTradingPhase('IDLE');
-                setAnalysisStep('TRADE REJECTED - CONDITIONS INVALIDATED');
               }
             }
           }
@@ -634,7 +633,6 @@ export function LiveAnalysis() {
         let timeoutId: any;
         try {
           setLoading(true);
-          setAnalysisStep('INITIATING OFFLINE ANALYSIS...');
 
           controller = new AbortController();
 
@@ -653,7 +651,6 @@ export function LiveAnalysis() {
             encryptedSystemTokens,
             signal: controller.signal,
             isTestMode: mode === 'test',
-            onProgress: (step) => setAnalysisStep(step),
             onJudgeLogs: (logs) => setJudgeLogs(prev => ({...prev, ...logs}))
           });
 
@@ -687,7 +684,6 @@ export function LiveAnalysis() {
                // Usually on stable signal we do this, but if we're not running stable logic here
             } else {
               setTradingPhase('IDLE');
-              setAnalysisStep('LIVE TICK SCOUT ACTIVE');
               if (mode !== 'test') setTradingDirection(null);
             }
           }, 6000);
@@ -878,16 +874,6 @@ export function LiveAnalysis() {
       />
 
         {/* Action Bar / Live Debate UI Overlay */}
-        {isBusy ? (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mt-4 p-4 rounded-xl bg-[#0A0C10] border border-[#1E2330] relative overflow-hidden"
-          >
-            <div className="absolute inset-0 opacity-10 pointer-events-none">
-              <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[size:16px_16px]" />
-            </div>
-
 
           <div className="flex flex-col mt-4">
             {!isCalibrated() && (
@@ -918,7 +904,6 @@ export function LiveAnalysis() {
               </View>
             </Pressable>
 
-            {/* Removed */}
 
             {mode === 'live' && !pipSupported && (
               <View style={tw`mt-2 px-3 py-2 rounded-lg bg-yellow-500/10 border border-yellow-500/20`}>

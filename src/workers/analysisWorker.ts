@@ -13,7 +13,6 @@ import { detectLatestGap, GapEvidence } from '../quant/gapDetector';
 import { GapStabilityManager } from '../quant/gapStability';
 import { applyTemporalFilter, resetTemporalFilter } from '../quant/temporalFilter';
 
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const patternStabilityManager = new PatternStabilityManager();
 const gapStabilityManager = new GapStabilityManager();
 
@@ -114,7 +113,7 @@ self.onmessage = async (e: MessageEvent) => {
         horizonCtx,
         confirmedPatterns,
         confirmedGaps,
-        (key, text) => {
+        (key: string, text: string) => {
           sendOk('JUDGE_LOG', { msgId: data.msgId, logs: { [key]: { text, status: 'active' } } });
         }
       );
