@@ -214,10 +214,19 @@ export function LiveAnalysisResult({
       )}
 
       {analysis.judge.tradeDetails?.techniquesUsed && (
-        <View style={tw`mb-8`}>
-           <Text style={tw`text-[10px] font-black text-[#8B95B0] uppercase tracking-widest mb-2`}>Technique Recognition ({analysis.techUsedCount} Found)</Text>
+        <View style={tw`mb-4`}>
+           <Text style={tw`text-[10px] font-black text-[#8B95B0] uppercase tracking-widest mb-2`}>Technique Recognition (User Uploaded: {analysis.techUsedCount})</Text>
            <View style={tw`bg-black bg-opacity-20 p-4 rounded-xl border border-[#D9B382] border-opacity-20 `}>
               <Text style={tw`text-white text-xs leading-5 font-bold italic text-[#D9B382]`}>{analysis.judge.tradeDetails.techniquesUsed}</Text>
+           </View>
+        </View>
+      )}
+
+      {analysis.judge.tradeDetails?.repoPatternsDetected && (
+        <View style={tw`mb-8`}>
+           <Text style={tw`text-[10px] font-black text-[#8B95B0] uppercase tracking-widest mb-2`}>Technique Recognition (Repo Detected: {analysis.judge.tradeDetails?.repoPatternCount})</Text>
+           <View style={tw`bg-black bg-opacity-20 p-4 rounded-xl border border-purple-500/20 `}>
+              <Text style={tw`text-white text-xs leading-5 font-bold italic text-purple-400`}>{analysis.judge.tradeDetails.repoPatternsDetected}</Text>
            </View>
         </View>
       )}

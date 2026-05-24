@@ -128,6 +128,8 @@ export interface TradeAnalysis {
   structuredInsight?: StructuredInsight; // The "SIO"
   bigInsight?: string;
   techniquesUsed?: string;
+  repoPatternsDetected?: string;
+  repoPatternCount?: number;
   notesUsed?: string;
   investmentAmount?: number;
   profitAmount?: number;
