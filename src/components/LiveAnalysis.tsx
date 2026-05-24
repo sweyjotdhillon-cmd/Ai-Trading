@@ -149,7 +149,7 @@ export function LiveAnalysis() {
   }, []);
 
   // Parallel Judge Logs
-
+  const [judgeLogs, setJudgeLogs] = useState<any>({
      judge1: { text: "", status: 'idle' },
      judge2: { text: "", status: 'idle' },
      judge3: { text: "", status: 'idle' },
@@ -877,38 +877,10 @@ export function LiveAnalysis() {
       />
 
         {/* Action Bar / Live Debate UI Overlay */}
-
-
- 
-                    <motion.p
-                      key={log.text}
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      className="text-white font-bold text-sm"
-                    >
-                      {log.text}
-                    </motion.p>
-                  </div>
-                  {log.status === 'done' ? (
-                    <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} className="ml-2">
-                      <Check size={16} color={meta.color} />
-                    </motion.div>
-                  ) : (
-                    <div className="flex flex-row items-end gap-0.5 h-3">
-                      {[0, 1, 2].map((i) => (
-                        <motion.div
-                          key={i}
-                          animate={{ height: [2, 8, 2] }}
-                          transition={{ duration: 0.8, repeat: Infinity, delay: i * 0.2 }}
-                          className="w-0.5 bg-white/20"
-                        />
-                      ))}
-                    </div>
-                  )}
-                </motion.div>
-              )})}
-            </div>
-          </motion.div>
+        {isAnalyzing ? (
+          <View style={tw`mt-4`}>
+            <Text>Analyzing...</Text>
+          </View>
         ) : (
           <div className="flex flex-col mt-4">
 
@@ -944,7 +916,7 @@ export function LiveAnalysis() {
             </Pressable>
 
             {mode === 'live' && isCameraActive && !loading && (
-
+              <View></View>
             )}
 
             {mode === 'live' && !pipSupported && (
@@ -954,7 +926,8 @@ export function LiveAnalysis() {
                 </Text>
               </View>
             )}
-          </View>
+          </div>
+        )}
 
         {analysisError && (
           <View style={tw`bg-red-500/10 border border-red-500 border-opacity-10 p-4 rounded-xl mt-4 flex-row items-center`}>

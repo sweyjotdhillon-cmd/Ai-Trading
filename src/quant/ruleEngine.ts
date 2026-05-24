@@ -39,7 +39,25 @@ export interface JudgeVerdict {
 }
 
 export interface DecisionResult extends JudgeVerdict {
+  agent: 'JUDGE';
   signal: 'CALL' | 'PUT' | 'NO_TRADE';
+  decision: 'STRONG SIGNAL' | 'WEAK';
+  skepticVerdict: 'ACCEPT' | 'CAUTION' | 'WEAK';
+  primaryEvidence: string;
+  noTradeReason: string | null;
+  topPatterns: { bull: string[]; bear: string[] };
+  formattedReport: string;
+  tradeDetails: {
+    latencyAdjustedForecast: string;
+    techniquesUsed: string;
+    executionTimeMs: number;
+  };
+  j1Score: number;
+  j2Score: number;
+  j3Score: number;
+  j4Score: number;
+
+  // Legacy fields
   confidence: number;
   bullScore: number;
   bearScore: number;
@@ -56,17 +74,36 @@ export function evaluateSignal(
   techniquesList: any[],
   horizonCtx: HorizonContext,
   _confirmedPatterns: any[] = [],
-
+  _confirmedGaps: any[] = [],
+  onLog?: (id: string, msg: string) => void
 ): DecisionResult {
   const defaultCases = { bull: { j1: 0, j2: 0, j3: 0, total: 0 }, bear: { j1: 0, j2: 0, j3: 0, total: 0 } };
   const defaultNoTrade: DecisionResult = {
+    agent: 'JUDGE',
     cases: defaultCases,
     skepticMultiplier: 0,
     winner: 'NO_TRADE',
     margin: 0,
     finalConfidence: 0,
-    ruling: 'Not enough data',
+    ruling: 'NO_TRADE — Not enough data to extract a reliable signal.',
     signal: 'NO_TRADE',
+    decision: 'WEAK',
+    skepticVerdict: 'WEAK',
+    primaryEvidence: 'Insufficient data points',
+    noTradeReason: 'Winning total of 0.0 is below minimum strength threshold of 4.0/11. Evidence too weak to trade.',
+    topPatterns: { bull: [], bear: [] },
+    formattedReport: '┌─────────────────────────────────────┐\n│  ARBITRATOR FINAL VERDICT           │\n│  Signal: NO_TRADE                   │\n│  Confidence: 0%                     │\n├─────────────────────────────────────┤\n│  CASE 1 — BULL                      │\n│  J1 Momentum:  0.0 / 4.0           │\n│  J2 Oscillator:0.0 / 4.0           │\n│  J3 Boundary:  0.0 / 3.0           │\n│  Total:        0.0 / 11.0          │\n├─────────────────────────────────────┤\n│  CASE 2 — BEAR                      │\n│  J1 Momentum:  0.0 / 4.0           │\n│  J2 Oscillator:0.0 / 4.0           │\n│  J3 Boundary:  0.0 / 3.0           │\n│  Total:        0.0 / 11.0          │\n├─────────────────────────────────────┤\n│  SKEPTIC VETO:  0.00 (WEAK)        │\n│  Margin:        0.0                 │\n│  Final Score:   0.0                 │\n├─────────────────────────────────────┤\n│  RULING:                            │\n│  NO_TRADE — Not enough data to     │\n│  extract a reliable signal.         │\n└─────────────────────────────────────┘',
+    tradeDetails: {
+      latencyAdjustedForecast: 'Signal: NO_TRADE',
+      techniquesUsed: '',
+      executionTimeMs: 0
+    },
+    j1Score: 0,
+    j2Score: 0,
+    j3Score: 0,
+    j4Score: 100,
+
+    // Legacy fields
     confidence: 0,
     bullScore: 0,
     bearScore: 0,
@@ -211,6 +248,7 @@ export function evaluateSignal(
   
   // --- Pattern Techniques Processing ---
   const matchedTechniques: string[] = [];
+  const patterns = { bullish: [] as string[], bearish: [] as string[] };
 
   if (techniquesList && techniquesList.length > 0) {
     // Look back at the last 3 candles for pattern matching
@@ -226,10 +264,6 @@ export function evaluateSignal(
     const lowerWickSize = (c: any) => Math.min(c.open, c.close) - c.low;
 
     // Detect common candlestick patterns
-    const patterns = {
-      bullish: [] as string[],
-      bearish: [] as string[]
-    };
 
     // 1. Doji
     if (bodySize(c3) <= (c3.high - c3.low) * 0.1) {
@@ -507,38 +541,164 @@ export function evaluateSignal(
   skepticMultiplier = Math.max(0, Math.min(1, skepticMultiplier));
 
   // --- Decision Logic ---
-  let winner: 'BULL' | 'BEAR' | 'NO_TRADE' = cases.bull.total > cases.bear.total ? 'BULL' : (cases.bear.total > cases.bull.total ? 'BEAR' : 'NO_TRADE');
-  const margin = Math.abs(cases.bull.total - cases.bear.total);
 
-  const rawWinningTotal = winner === 'BULL' ? cases.bull.total : (winner === 'BEAR' ? cases.bear.total : 0);
-  
-  // Only neutral if points are tied or practically tied, as requested by strict point system
-  if (margin < 3 || rawWinningTotal < 7) {
-    winner = 'NO_TRADE';
-  }
-  
+  // 2.1 Confirm Raw Totals
+  const bullTotal = Number(Math.min(11.0, cases.bull.total).toFixed(2));
+  const bearTotal = Number(Math.min(11.0, cases.bear.total).toFixed(2));
+
+  // 2.2 Identify Raw Winner
+  let rawWinner: 'BULL' | 'BEAR' | 'TIE' = 'TIE';
+  if (bullTotal > bearTotal) rawWinner = 'BULL';
+  else if (bearTotal > bullTotal) rawWinner = 'BEAR';
+
+  // 2.3 Calculate Margin
+  const margin = Number(Math.abs(bullTotal - bearTotal).toFixed(2));
+
+  // 2.4 Raw Winning Total
+  let rawWinningTotal = 0;
+  if (rawWinner === 'BULL') rawWinningTotal = bullTotal;
+  else if (rawWinner === 'BEAR') rawWinningTotal = bearTotal;
+
+  // Clamp skeptic multiplier 0.30 - 1.00
+  skepticMultiplier = Math.max(0.30, Math.min(1.00, skepticMultiplier));
+
+  // Determine Skeptic Verdict
+  let skepticVerdict: 'ACCEPT' | 'CAUTION' | 'WEAK' = 'ACCEPT';
+  if (skepticMultiplier < 0.60) skepticVerdict = 'WEAK';
+  else if (skepticMultiplier < 0.85) skepticVerdict = 'CAUTION';
+
+  // 2.6 Calculate Final Confidence Percentage
   const finalConfidence = Math.round((rawWinningTotal * skepticMultiplier / 11) * 100);
 
+  // --- Step 3: Apply NO_TRADE Rules ---
+  let finalSignal: 'CALL' | 'PUT' | 'NO_TRADE' = rawWinner === 'BULL' ? 'CALL' : (rawWinner === 'BEAR' ? 'PUT' : 'NO_TRADE');
+  let noTradeReason: string | null = null;
 
+  if (rawWinner === 'TIE') {
+    finalSignal = 'NO_TRADE';
+    noTradeReason = "Bull and Bear scored identically. No directional edge.";
+  } else if (margin < 1.0) {
+    finalSignal = 'NO_TRADE';
+    noTradeReason = `Margin of ${margin.toFixed(1)} is below minimum threshold of 1.0. Scores too close to extract a reliable signal.`;
+  } else if (rawWinningTotal < 4.0) {
+    finalSignal = 'NO_TRADE';
+    noTradeReason = `Winning total of ${rawWinningTotal.toFixed(1)} is below minimum strength threshold of 4.0/11. Evidence too weak to trade.`;
+  } else if (skepticVerdict === 'WEAK' && margin < 2.0) {
+    finalSignal = 'NO_TRADE';
+    noTradeReason = "Skeptic issued WEAK verdict with insufficient margin. Combined risk too high.";
+  } else if (finalConfidence < 25) {
+    finalSignal = 'NO_TRADE';
+    noTradeReason = `Final confidence of ${finalConfidence}% falls below minimum actionable threshold of 25%.`;
+  }
+
+  // --- Step 4: Calculate Final Score ---
+  let finalScore = 0;
+  if (finalSignal === 'CALL') finalScore = bullTotal * skepticMultiplier;
+  else if (finalSignal === 'PUT') finalScore = -(bearTotal * skepticMultiplier);
+
+  // --- Step 5: Determine Decision Label ---
+  const decisionLabel: 'STRONG SIGNAL' | 'WEAK' = (finalSignal === 'CALL' || finalSignal === 'PUT') ? 'STRONG SIGNAL' : 'WEAK';
+
+  // --- Step 6: Write the Ruling ---
+  const primaryEvidence = rawWinner === 'BULL'
+    ? (patterns.bullish[0] || 'Bullish momentum')
+    : (patterns.bearish[0] || 'Bearish momentum');
+
+  let ruling = '';
+  if (finalSignal === 'NO_TRADE') {
+    ruling = `NO_TRADE — ${noTradeReason} A clearer trend or pattern confirmation would unlock a signal.`;
+  } else {
+    const skepticNote = skepticMultiplier < 0.75 ? ` Skeptic noted risks; multiplied by ${skepticMultiplier.toFixed(2)}.` : '';
+    ruling = `${finalSignal} — ${primaryEvidence}. Margin ${margin.toFixed(1)}, Confidence ${finalConfidence}%.${skepticNote}`;
+  }
+
+  // --- Step 7: Formatted Report ---
+  const wrapText = (text: string, width: number) => {
+    if (text.length <= width) return text.padEnd(width);
+    const words = text.split(' ');
+    const lines = [];
+    let currentLine = '';
+    for (const word of words) {
+      if ((currentLine + word).length > width) {
+        lines.push(currentLine.trim().padEnd(width));
+        currentLine = word + ' ';
+      } else {
+        currentLine += word + ' ';
+      }
+    }
+    if (currentLine) lines.push(currentLine.trim().padEnd(width));
+    return lines;
+  };
+
+  const rulingLines = wrapText(ruling, 33);
+  const rulingStr = rulingLines.map(line => `│  ${line}  │`).join('\n');
+
+  const formattedReport =
+`┌─────────────────────────────────────┐
+│  ARBITRATOR FINAL VERDICT           │
+│  Signal: ${finalSignal.padEnd(21)}│
+│  Confidence: ${finalConfidence.toString().padEnd(3)}%                 │
+├─────────────────────────────────────┤
+│  CASE 1 — BULL                      │
+│  J1 Momentum:  ${cases.bull.j1.toFixed(1).padEnd(5)}/ 4.0         │
+│  J2 Oscillator:${cases.bull.j2.toFixed(1).padEnd(5)}/ 4.0         │
+│  J3 Boundary:  ${cases.bull.j3.toFixed(1).padEnd(5)}/ 3.0         │
+│  Total:        ${cases.bull.total.toFixed(1).padEnd(5)}/ 11.0        │
+├─────────────────────────────────────┤
+│  CASE 2 — BEAR                      │
+│  J1 Momentum:  ${cases.bear.j1.toFixed(1).padEnd(5)}/ 4.0         │
+│  J2 Oscillator:${cases.bear.j2.toFixed(1).padEnd(5)}/ 4.0         │
+│  J3 Boundary:  ${cases.bear.j3.toFixed(1).padEnd(5)}/ 3.0         │
+│  Total:        ${cases.bear.total.toFixed(1).padEnd(5)}/ 11.0        │
+├─────────────────────────────────────┤
+│  SKEPTIC VETO:  ${skepticMultiplier.toFixed(2)} (${skepticVerdict.padEnd(7)}) │
+│  Margin:        ${margin.toFixed(1).padEnd(19)} │
+│  Final Score:   ${finalScore.toFixed(1).padEnd(19)} │
+├─────────────────────────────────────┤
+│  RULING:                            │
+${rulingStr}
+└─────────────────────────────────────┘`;
+
+  const techniquesUsed = matchedTechniques.join(', ');
+  const skepticPenalty = (1 - skepticMultiplier) * 100;
 
   return {
+    agent: 'JUDGE',
+    signal: finalSignal,
+    decision: decisionLabel,
     cases,
-    skepticMultiplier,
-    winner,
+    winner: rawWinner === 'TIE' ? 'NO_TRADE' : rawWinner,
     margin,
+    skepticMultiplier,
+    skepticPenalty,
+    skepticVerdict,
     finalConfidence,
-    ruling: 'Computed by point logic',
-    
+    finalScore,
+    ruling,
+    primaryEvidence,
+    noTradeReason,
+    topPatterns: {
+      bull: patterns.bullish,
+      bear: patterns.bearish
+    },
+    techniquesUsed,
+    techUsedCount: matchedTechniques.length,
+    formattedReport,
+    tradeDetails: {
+      latencyAdjustedForecast: `Signal: ${finalSignal}`,
+      techniquesUsed,
+      executionTimeMs: 0
+    },
+    j1Score: cases.bull.j1 + cases.bear.j1,
+    j2Score: cases.bull.j2 + cases.bear.j2,
+    j3Score: cases.bull.j3 + cases.bear.j3,
+    j4Score: skepticPenalty,
+
     // Legacy fields
-    signal: winner === 'BULL' ? 'CALL' : (winner === 'BEAR' ? 'PUT' : 'NO_TRADE'),
     confidence: finalConfidence,
     bullScore: cases.bull.total,
     bearScore: cases.bear.total,
-    skepticPenalty: (1 - skepticMultiplier) * 100,
     boundaryBias: 0,
-    finalScore: (winner === 'BULL' ? cases.bull.total : -cases.bear.total) * skepticMultiplier,
-    techniquesUsed: matchedTechniques.join(', '),
-    techUsedCount: matchedTechniques.length,
     evidence: {
       rsi: rsiVals[last],
       macd: macdVals.macd[last],
@@ -547,7 +707,4 @@ export function evaluateSignal(
       lastClose: closes[last]
     }
   };
-
-
-
 }
