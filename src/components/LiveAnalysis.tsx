@@ -149,7 +149,7 @@ export function LiveAnalysis() {
   }, []);
 
   // Parallel Judge Logs
-
+  const [judgeLogs, setJudgeLogs] = useState<{ [key: string]: { text: string, status: string } }>({
      judge1: { text: "", status: 'idle' },
      judge2: { text: "", status: 'idle' },
      judge3: { text: "", status: 'idle' },
@@ -877,9 +877,47 @@ export function LiveAnalysis() {
       />
 
         {/* Action Bar / Live Debate UI Overlay */}
+        {isBusy ? (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mt-4 p-4 rounded-xl bg-[#0A0C10] border border-[#1E2330] relative overflow-hidden"
+          >
+            <div className="absolute inset-0 opacity-10 pointer-events-none">
+              <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[size:16px_16px]" />
+            </div>
 
+            <div className="flex flex-row justify-between items-center mb-4 relative z-10">
+              <Text style={tw`text-white font-black text-xs uppercase tracking-widest`}>Arbiter Matrix Sync</Text>
+              <div className="flex flex-row items-center">
+                <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse mr-2" />
+                <Text style={tw`text-blue-400 text-[10px] font-bold`}>EVALUATING</Text>
+              </div>
+            </div>
 
- 
+            <div className="flex flex-col gap-2 relative z-10">
+              {Object.entries(judgeLogs).map(([key, log]) => {
+                if (!log.text) return null;
+                const meta = {
+                  judge1: { name: 'J1: Trend', color: '#60A5FA' },
+                  judge2: { name: 'J2: Oscillator', color: '#A78BFA' },
+                  judge3: { name: 'J3: Boundary', color: '#F472B6' },
+                  judge4: { name: 'J4: Skeptic', color: '#FBBF24' },
+                  system: { name: 'SYS: Core', color: '#9CA3AF' }
+                }[key] || { name: key, color: '#FFFFFF' };
+
+                return (
+                <motion.div
+                  key={key}
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  className="flex flex-row items-center justify-between p-2 rounded bg-white/5 border border-white/5"
+                >
+                  <div className="flex flex-row items-center">
+                    <div style={{ backgroundColor: meta.color }} className="w-1.5 h-1.5 rounded-full mr-3" />
+                    <Text style={[tw`text-[10px] font-black uppercase w-24 mr-2`, { color: meta.color }]}>
+                      {meta.name}
+                    </Text>
                     <motion.p
                       key={log.text}
                       initial={{ opacity: 0 }}
@@ -943,9 +981,7 @@ export function LiveAnalysis() {
               </View>
             </Pressable>
 
-            {mode === 'live' && isCameraActive && !loading && (
-
-            )}
+            {/* Removed */}
 
             {mode === 'live' && !pipSupported && (
               <View style={tw`mt-2 px-3 py-2 rounded-lg bg-yellow-500/10 border border-yellow-500/20`}>
@@ -954,7 +990,8 @@ export function LiveAnalysis() {
                 </Text>
               </View>
             )}
-          </View>
+          </div>
+        )}
 
         {analysisError && (
           <View style={tw`bg-red-500/10 border border-red-500 border-opacity-10 p-4 rounded-xl mt-4 flex-row items-center`}>
