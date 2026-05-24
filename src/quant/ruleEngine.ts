@@ -75,7 +75,7 @@ export function evaluateSignal(
   horizonCtx: HorizonContext,
   _confirmedPatterns: any[] = [],
   _confirmedGaps: any[] = [],
-
+  onLog?: (id: string, msg: string) => void
 ): DecisionResult {
   const defaultCases = { bull: { j1: 0, j2: 0, j3: 0, total: 0 }, bear: { j1: 0, j2: 0, j3: 0, total: 0 } };
   const defaultNoTrade: DecisionResult = {
@@ -135,7 +135,7 @@ export function evaluateSignal(
 
 
   // Compute indicators
-  if (typeof onLog !== "undefined" && onLog) onLog('judge1', 'Calculating RSI/MACD indices...');
+  if (onLog) onLog('judge1', 'Calculating RSI/MACD indices...');
   const rsiVals = rsi(closes as unknown as number[], 14);
   const macdVals = macd(closes as unknown as number[], 12, 26, 9);
   const stochVals = stochastic(ohlcSeries, 14, 3);

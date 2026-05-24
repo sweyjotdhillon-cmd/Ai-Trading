@@ -1,8 +1,7 @@
 import { runSingleAnalysis, onStableSignal } from '../utils/singleAnalysis';
 import { LiveAnalysisDashboard } from './live-analysis/LiveAnalysisDashboard';
-import { LiveAnalysisDebate } from './live-analysis/LiveAnalysisDebate';
 import { LiveAnalysisResult } from './live-analysis/LiveAnalysisResult';
-import { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, Pressable, ScrollView, Platform } from 'react-native';
 import { TIMEOUTS } from '../config/timeouts';
 
@@ -86,7 +85,7 @@ export function LiveAnalysis() {
   const [graphTimeframe, setGraphTimeframe] = useState('30 minutes');
   const [loading, setLoading] = useState(false);
   const [isBusy, setIsBusy] = useState(false);
-  const [analysisStep, setAnalysisStep] = useState<string | null>(null);
+
   const [analysis, setAnalysis] = useState<any | null>(null);
   const [mode, setMode] = useState<'live' | 'test' | 'bulk'>('live');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -150,7 +149,7 @@ export function LiveAnalysis() {
   }, []);
 
   // Parallel Judge Logs
-
+  const [judgeLogs, setJudgeLogs] = useState({
      judge1: { text: "", status: 'idle' },
      judge2: { text: "", status: 'idle' },
      judge3: { text: "", status: 'idle' },
@@ -878,15 +877,21 @@ export function LiveAnalysis() {
       />
 
         {/* Action Bar / Live Debate UI Overlay */}
-
+        {isAnalyzing ? (
+          <View style={tw`mt-4`}>
+            <Text>Analyzing...</Text>
+          </View>
+        ) : (
           <div className="flex flex-col mt-4">
+
             {!isCalibrated() && (
-              <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-2 mb-3 flex items-center justify-center">
+              <View style={tw`bg-red-500/10 border border-red-500/30 rounded-lg p-2 mb-3 flex items-center justify-center`}>
                 <Text style={tw`text-red-400 font-bold text-xs uppercase tracking-widest`}>
                   ⚠ NOT CALIBRATED — Results will be unreliable
                 </Text>
-              </div>
+              </View>
             )}
+
             <Pressable
               onPress={() => {
                 if (isBusy) return;
@@ -896,26 +901,33 @@ export function LiveAnalysis() {
               disabled={(mode === 'test' && !selectedImage) || (mode === 'live' && !isCameraActive) || isBusy}
               style={({ pressed }) => [
                 tw`h-14 rounded-xl items-center justify-center`,
-                ((mode === 'test' && !selectedImage) || (mode === 'live' && !isCameraActive) || isBusy) ? tw`bg-[#D9B382]/20` : tw`bg-[#D9B382]`,
+                ((mode === 'test' && !selectedImage) || (mode === 'live' && !isCameraActive) || isBusy)
+                  ? tw`bg-[#D9B382]/20`
+                  : tw`bg-[#D9B382]`,
                 { opacity: (pressed && !isBusy) ? 0.7 : 1 }
               ]}
             >
               <View style={tw`flex-row items-center`}>
                 <Sparkles size={18} color="#1A1308" style={tw`mr-2`} />
                 <Text style={tw`text-[#1A1308] font-black uppercase tracking-[2px] text-base`}>
-                   {mode === 'live' ? 'Start Camera Analysis' : 'Initiate Analysis'}
+                  {mode === 'live' ? 'Start Camera Analysis' : 'Initiate Analysis'}
                 </Text>
               </View>
             </Pressable>
-            {mode === 'live' && isCameraActive && !loading && (
 
+            {mode === 'live' && isCameraActive && !loading && (
+              <View></View>
             )}
+
             {mode === 'live' && !pipSupported && (
               <View style={tw`mt-2 px-3 py-2 rounded-lg bg-yellow-500/10 border border-yellow-500/20`}>
-                <Text style={tw`text-yellow-400 text-[9px] font-black uppercase tracking-wider text-center`}>PiP not available — use Chrome or Edge browser</Text>
+                <Text style={tw`text-yellow-400 text-[9px] font-black uppercase tracking-wider text-center`}>
+                  PiP not available — use Chrome or Edge browser
+                </Text>
               </View>
             )}
           </div>
+        )}
 
         {analysisError && (
           <View style={tw`bg-red-500/10 border border-red-500 border-opacity-10 p-4 rounded-xl mt-4 flex-row items-center`}>
