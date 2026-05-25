@@ -10,6 +10,7 @@ import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { 
   Sparkles, 
   AlertTriangle,
+  X
 } from 'lucide-react';
 import tw from 'twrnc';
 import { isCalibrated } from '../vision/colorCalibration';
@@ -166,6 +167,19 @@ export function LiveAnalysis() {
   
   // UX Error Handling
   const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [systemNotice, setSystemNotice] = useState<{ text: string; type: 'success' | 'info' | 'error' } | null>(null);
+
+  const showNotice = (text: string, type: 'success' | 'info' | 'error' = 'info') => {
+    setSystemNotice({ text, type });
+    if (type === 'success' || type === 'info') {
+      setTimeout(() => {
+        setSystemNotice(prev => {
+          if (prev?.text === text) return null;
+          return prev;
+        });
+      }, 5000);
+    }
+  };
   
   // Dropdown States
   const [showTfPicker, setShowTfPicker] = useState(false);
@@ -223,7 +237,7 @@ export function LiveAnalysis() {
     if (isCameraActive && videoRef.current && !isCalibrated()) {
       const v = videoRef.current;
       const captureCalibration = () => {
-        if (v.readyState >= 2) {
+        if (v && v.readyState >= 2 && v.videoWidth > 0 && v.videoHeight > 0) {
             const canvas = document.createElement('canvas');
             canvas.width = v.videoWidth;
             canvas.height = v.videoHeight;
@@ -243,7 +257,7 @@ export function LiveAnalysis() {
   useEffect(() => {
     const handleRecalibrate = () => {
       const v = videoRef.current;
-      if (v && v.readyState >= 2) {
+      if (v && v.readyState >= 2 && v.videoWidth > 0 && v.videoHeight > 0) {
         const canvas = document.createElement('canvas');
         canvas.width = v.videoWidth;
         canvas.height = v.videoHeight;
@@ -284,7 +298,7 @@ export function LiveAnalysis() {
   const closePip = (exitPip = true) => { if (pipAnimFrameRef.current) { cancelAnimationFrame(pipAnimFrameRef.current); pipAnimFrameRef.current = null; } if (exitPip && document.pictureInPictureElement) { document.exitPictureInPicture().catch(() => {}); } pipStreamRef.current?.getTracks().forEach(t => t.stop()); pipStreamRef.current = null; if (pipVideoRef.current) { pipVideoRef.current.pause(); if (document.body.contains(pipVideoRef.current)) { document.body.removeChild(pipVideoRef.current); } pipVideoRef.current = null; } pipCanvasRef.current = null; setPipActive(false); setPipSignal('IDLE'); setPipConfidence(0); };
 
   // @ts-expect-error unused
-  const _startPip = async (): Promise<boolean> => { if (!pipSupported) { alert('Picture-in-Picture is not supported in this browser. Use Chrome or Edge.'); return false; } try { const canvas = document.createElement('canvas'); canvas.width = 480; canvas.height = 270; pipCanvasRef.current = canvas; drawPipFrame('ANALYZING', 0, 'Switching to your broker now...'); const stream = canvas.captureStream(2); pipStreamRef.current = stream; const video = document.createElement('video'); video.srcObject = stream; video.muted = true; pipVideoRef.current = video; document.body.appendChild(video); await video.play(); await (video as any).requestPictureInPicture(); video.addEventListener('leavepictureinpicture', () => { setPipActive(false); setPipSignal('IDLE'); closePip(false); }); setPipActive(true); setPipSignal('ANALYZING'); const redraw = () => { drawPipFrame(pipSignal === 'IDLE' ? 'ANALYZING' : pipSignal, pipConfidence); pipAnimFrameRef.current = requestAnimationFrame(redraw); }; pipAnimFrameRef.current = requestAnimationFrame(redraw); return true; } catch (err: any) { console.error('[PiP] Failed to start:', err); if (err.name !== 'NotAllowedError') { alert(`PiP failed: ${err.message}`); } return false; } };
+  const _startPip = async (): Promise<boolean> => { if (!pipSupported) { showNotice('Picture-in-Picture is not supported in this browser. Use Chrome or Edge.', 'error'); return false; } try { const canvas = document.createElement('canvas'); canvas.width = 480; canvas.height = 270; pipCanvasRef.current = canvas; drawPipFrame('ANALYZING', 0, 'Switching to your broker now...'); const stream = canvas.captureStream(2); pipStreamRef.current = stream; const video = document.createElement('video'); video.srcObject = stream; video.muted = true; pipVideoRef.current = video; document.body.appendChild(video); await video.play(); await (video as any).requestPictureInPicture(); video.addEventListener('leavepictureinpicture', () => { setPipActive(false); setPipSignal('IDLE'); closePip(false); }); setPipActive(true); setPipSignal('ANALYZING'); const redraw = () => { drawPipFrame(pipSignal === 'IDLE' ? 'ANALYZING' : pipSignal, pipConfidence); pipAnimFrameRef.current = requestAnimationFrame(redraw); }; pipAnimFrameRef.current = requestAnimationFrame(redraw); return true; } catch (err: any) { console.error('[PiP] Failed to start:', err); if (err.name !== 'NotAllowedError') { showNotice(`PiP failed: ${err.message}`, 'error'); } return false; } };
 
   // const updatePip = (signal: 'CALL' | 'PUT' | 'NO_TRADE', confidence: number) => { if (!pipActive || !pipCanvasRef.current) return; setPipSignal(signal); setPipConfidence(confidence); const subText = signal === 'NO_TRADE' ? 'Conditions unclear — skip this trade' : `${signal === 'CALL' ? 'Buy CALL' : 'Buy PUT'} — execute now`; drawPipFrame(signal, confidence, subText); if ('vibrate' in navigator) { navigator.vibrate(signal === 'NO_TRADE' ? [200] : [150, 80, 150]); } };
 
@@ -332,7 +346,7 @@ export function LiveAnalysis() {
     closePip(true);
 
     setTimeout(() => {
-      alert("Analysis reset. Controls restored to defaults.");
+      showNotice("Analysis reset. Controls restored to defaults.", "info");
     }, 300);
   };
 
@@ -354,12 +368,12 @@ export function LiveAnalysis() {
       } catch (err) {
         console.error("Camera access error:", err);
         setTimeout(() => {
-          alert("Camera access denied or not available. Please ensure you have granted permission.");
+          showNotice("Camera access denied or not available. Please ensure you have granted permission.", "error");
         }, 300);
       }
     } else {
       setTimeout(() => {
-        alert("Live camera is supported on web interface only via standard browser APIs.");
+        showNotice("Live camera is supported on web interface only via standard browser APIs.", "error");
       }, 300);
     }
   };
@@ -407,6 +421,10 @@ export function LiveAnalysis() {
         isFetching = true;
         try {
           const video = videoRef.current;
+          if (!video || !video.videoWidth || !video.videoHeight || video.videoWidth === 0) {
+            isFetching = false;
+            return;
+          }
           const canvas = document.createElement('canvas');
           // Downscale for scout to run very fast
           canvas.width = 640;
@@ -544,12 +562,12 @@ export function LiveAnalysis() {
           const list = parsedList.map((item: any) => typeof item === 'object' ? (item.name || item.technique || JSON.stringify(item)) : item);
           setTechniquesList(list);
           setTimeout(() => {
-            alert(`Successfully loaded ${list.length} techniques from ${file.name}.`);
+            showNotice(`Successfully loaded ${list.length} techniques from ${file.name}.`, `success`);
           }, 300);
         } catch (err) {
           console.error("Failed to parse technique file:", err);
           setTimeout(() => {
-            alert("Invalid technique file format. Please upload a JSON file containing a list of techniques.");
+            showNotice("Invalid technique file format. Please upload a JSON file containing a list of techniques.", `error`);
           }, 300);
         }
       };
@@ -628,7 +646,7 @@ export function LiveAnalysis() {
 
     if (!finalImageToAnalyze) {
       const msg = 'Please start the camera or upload a chart image first.';
-      setTimeout(() => alert(msg), 300);
+      setTimeout(() => showNotice(msg, 'error'), 300);
       setIsBusy(false);
       return;
     }
@@ -835,6 +853,34 @@ export function LiveAnalysis() {
         )}
       
       <View style={tw`p-4`}>
+        {systemNotice && (
+          <View style={[
+            tw`mb-4 p-4 rounded-xl flex-row items-center justify-between border`,
+            systemNotice.type === 'success' ? tw`bg-green-500/10 border-green-500/30` :
+            systemNotice.type === 'error' ? tw`bg-red-500/10 border-red-500/30` :
+            tw`bg-zinc-500/10 border-zinc-500/30`
+          ]}>
+            <View style={tw`flex-row items-center flex-1 mr-3`}>
+              <View style={[
+                tw`w-2 h-2 rounded-full mr-2.5`,
+                systemNotice.type === 'success' ? tw`bg-green-400` :
+                systemNotice.type === 'error' ? tw`bg-red-400` :
+                tw`bg-zinc-400`
+              ]} />
+              <Text style={[
+                tw`text-xs font-medium`,
+                systemNotice.type === 'success' ? tw`text-green-200` :
+                systemNotice.type === 'error' ? tw`text-red-200` :
+                tw`text-zinc-200`
+              ]}>
+                {systemNotice.text}
+              </Text>
+            </View>
+            <Pressable onPress={() => setSystemNotice(null)} style={tw`p-1 bg-white/5 rounded-full`}>
+              <X size={12} color="#A1A1AA" />
+            </Pressable>
+          </View>
+        )}
         {/* Compact Terminal Header */}
         <LiveAnalysisDashboard
         symbols={symbols}

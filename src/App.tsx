@@ -15,6 +15,7 @@ import { motion, AnimatePresence, LayoutGroup, useReducedMotion } from 'motion/r
 import { LiveAnalysis } from './components/LiveAnalysis';
 import { SystemSettingsModal } from './components/SystemSettingsModal';
 import { HeroIntro } from './components/HeroIntro';
+import { UserProfileModal } from './components/UserProfileModal';
 
 
 class TerminalErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; errorMessage: string | null; errorStack: string | null }> {
@@ -80,11 +81,16 @@ function App() {
   console.log("[App] Mounting...");
   const buildStamp = (import.meta as any).env?.VITE_BUILD_STAMP || 'dev';
   const [showSystemSettings, setShowSystemSettings] = useState(false);
+  const [showProfileCard, setShowProfileCard] = useState(false);
   const [heroDismissed, setHeroDismissed] = useState(false);
   const [globalErrors, setGlobalErrors] = useState<{ message: string; stack?: string; time: string }[]>([]);
   
   const handleLaunch = () => {
     setHeroDismissed(true);
+  };
+
+  const handleResetHero = () => {
+    setHeroDismissed(false);
   };
 
   const prefersReducedMotion = useReducedMotion();
@@ -158,13 +164,9 @@ function App() {
             <View style={{ marginLeft: 10 }}>
               <Pressable
                 style={({ pressed }) => [styles.profilePlaceholder, { marginLeft: 0 }, { opacity: pressed ? 0.7 : 1 }]}
-                onPress={() => {
-                  if (typeof window !== 'undefined') {
-                    window.location.reload();
-                  }
-                }}
+                onPress={() => setShowProfileCard(true)}
                 accessibilityRole="button"
-                accessibilityLabel="Reload application"
+                accessibilityLabel="Open profile"
               >
                 <motion.div
                   whileHover={prefersReducedMotion ? {} : { scale: 1.04 }}
@@ -218,6 +220,13 @@ function App() {
       <SystemSettingsModal 
         show={showSystemSettings} 
         onClose={() => setShowSystemSettings(false)} 
+      />
+
+      <UserProfileModal 
+        show={showProfileCard}
+        onClose={() => setShowProfileCard(false)}
+        userEmail="kveerpal681@gmail.com"
+        onResetHero={handleResetHero}
       />
 
       {globalErrors.length > 0 && (

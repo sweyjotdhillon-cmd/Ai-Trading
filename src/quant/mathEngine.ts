@@ -741,3 +741,57 @@ export class OptimalStoppingEntry {
     return { action: 'WAIT', ev: currentEv };
   }
 }
+
+/**
+ * Calculates Z-score of the last value relative to a rolling window period
+ */
+export function calculateZScore(series: number[], period = 20): number {
+  if (series.length < period) return 0;
+  const data = series.slice(-period);
+  const mean = data.reduce((a, b) => a + b, 0) / period;
+  const variance = data.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / period;
+  const stdDev = Math.sqrt(variance);
+  return stdDev === 0 ? 0 : (series[series.length - 1] - mean) / stdDev;
+}
+
+/**
+ * Calculates first (velocity) and second (acceleration) derivatives of a series (e.g., EMA)
+ */
+export function calculateEMADerivatives(series: number[]): { velocity: number; acceleration: number } {
+  const n = series.length;
+  if (n < 3) return { velocity: 0, acceleration: 0 };
+  const v = series[n - 1] - series[n - 2];
+  const vPrev = series[n - 2] - series[n - 3];
+  const a = v - vPrev;
+  return { velocity: v, acceleration: a };
+}
+
+/**
+ * Calculates micro-momentum score based on Z-score, velocity, and acceleration alignment
+ */
+export function calculateMicroMomentumScore(zScore: number, velocity: number, acceleration: number): number {
+  if (zScore > 0.5 && velocity > 0 && acceleration > 0) return 3;
+  if (zScore < -0.5 && velocity < 0 && acceleration < 0) return -3;
+  return 0;
+}
+
+/**
+ * Simple, robust detection of classical RSI divergence
+ */
+export function detectRSIDivergence(closes: number[], rsiVals: number[]): 'BULLISH' | 'BEARISH' | 'NONE' {
+  const n = closes.length;
+  if (n < 6 || rsiVals.length < 6) return 'NONE';
+  
+  const curClose = closes[n - 1];
+  const prevClose = closes[n - 5];
+  const curRSI = rsiVals[rsiVals.length - 1];
+  const prevRSI = rsiVals[rsiVals.length - 5];
+  
+  if (curClose < prevClose && curRSI > prevRSI) {
+    return 'BULLISH';
+  }
+  if (curClose > prevClose && curRSI < prevRSI) {
+    return 'BEARISH';
+  }
+  return 'NONE';
+}

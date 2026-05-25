@@ -1,14 +1,29 @@
 let msgCounter = 0;
 import { dataUrlToImageData } from './imageUtils';
+import { loadCalibration } from '../vision/colorCalibration';
 
 let worker: Worker | null = null;
 type Listener = (payload: any) => void;
 const messageResolvers = new Map<string, { resolve: (val: any) => void, reject: (err: any) => void }>();
 const stableListeners = new Set<Listener>();
 
+
+const progressListeners = new Map<string, (step: string) => void>();
+const judgeLogListeners = new Map<string, (logs: any) => void>();
+
 function getWorker() {
   if (!worker) {
     worker = new Worker(new URL('../workers/analysisWorker.ts', import.meta.url), { type: 'module' });
+    
+    // Automatically load stored calibration and set on worker to prevent NO_CALIBRATION state during offline/batch checks
+    const cal = loadCalibration();
+    if (cal) {
+      worker.postMessage({
+        type: 'CALIBRATE',
+        payload: { bullColor: cal.bull, bearColor: cal.bear }
+      });
+    }
+
     worker.onmessage = (e: MessageEvent) => {
       const { ok, stage, ms, payload } = e.data;
 
@@ -30,14 +45,25 @@ function getWorker() {
         if (res) {
           res.resolve(payload);
           messageResolvers.delete(payload.msgId);
+          progressListeners.delete(payload.msgId);
+          judgeLogListeners.delete(payload.msgId);
         }
+      } else if (type === 'JUDGE_LOG' && payload.msgId) {
+        const listener = judgeLogListeners.get(payload.msgId);
+        if (listener) listener(payload.logs);
       } else if (type === 'STABLE_SIGNAL') {
         stableListeners.forEach(l => l(payload));
+      } else if (type === 'PROGRESS' && payload.msgId) {
+        const listener = progressListeners.get(payload.msgId);
+        if (listener) {
+          listener(payload.step);
+        }
       }
     };
   }
   return worker;
 }
+
 
 export function onStableSignal(cb: Listener) {
   stableListeners.add(cb);
@@ -56,6 +82,8 @@ function generateId() {
   return String(performance.now()).replace(".","")+String(++msgCounter);
 }
 
+import { parseDurationToMinutes } from '../quant/horizon';
+
 export async function runSingleAnalysis(params: {
   imageDataUrl: string;
   stock: string;
@@ -69,6 +97,8 @@ export async function runSingleAnalysis(params: {
   onProgress?: (step: string) => void;
   onJudgeLogs?: (logs: any) => void;
   isTestMode?: boolean;
+  isManifestCheck?: boolean;
+  onDirectionFound?: (direction: 'UP' | 'DOWN' | 'NO_TRADE') => void;
 }): Promise<{
   analysis: any;
   direction: 'UP' | 'DOWN' | 'NO_TRADE';
@@ -80,21 +110,26 @@ export async function runSingleAnalysis(params: {
   entryAnchorBase64: string | null;
   rawOutcome?: string;
   frameStable?: boolean;
+  actualDirection?: 'UP' | 'DOWN' | 'FLAT' | null;
+  entryClose?: number;
+  exitClose?: number;
+  candlesCut?: number;
 }> {
-  const { imageDataUrl, onJudgeLogs, isTestMode } = params;
+  const t0 = performance.now();
+  const { imageDataUrl, onJudgeLogs, isTestMode, onDirectionFound } = params;
 
-  if (onJudgeLogs) {
-    onJudgeLogs({
-      judge1: { text: "Initializing Worker Pipeline...", status: 'active' },
-      judge2: { text: "Awaiting Frame...", status: 'active' },
-      judge3: { text: "Reading Y-Axis...", status: 'active' },
-      judge4: { text: "Checking Filters...", status: 'active' },
-      system: { text: "Starting...", status: 'active' }
-    });
-  }
+
+
 
   const msgId = generateId();
+  if (params.onProgress) {
+    progressListeners.set(msgId, params.onProgress);
+  }
+  if (params.onJudgeLogs) {
+    judgeLogListeners.set(msgId, params.onJudgeLogs);
+  }
   const w = getWorker();
+
 
   let imgData: ImageData;
   try {
@@ -106,24 +141,71 @@ export async function runSingleAnalysis(params: {
     throw err;
   }
 
-  const payloadPromise = new Promise<any>((resolve, reject) => {
-    messageResolvers.set(msgId, { resolve, reject });
-    try {
-      if (isTestMode) {
-        w.postMessage({ type: 'ANALYZE', imageData: imgData, msgId, timestamp: performance.now() });
-      } else {
-        w.postMessage({ type: 'ANALYZE', imageData: imgData, msgId, timestamp: performance.now() }, [imgData.data.buffer]);
+
+    const tfM = parseDurationToMinutes(params.graphTimeframe);
+    const durM = parseDurationToMinutes(params.investmentDuration);
+
+    if (params.isManifestCheck) {
+      const payloadPromise = new Promise<any>((resolve, reject) => {
+        messageResolvers.set(msgId, { resolve, reject });
+        try {
+          w.postMessage({
+            type: 'ANALYZE',
+            msgId,
+            imageData: imgData,
+            isManifestCheck: true,
+            investmentDurationMinutes: durM,
+          });
+        } catch (e: any) {
+          messageResolvers.delete(msgId);
+          reject(e);
+        }
+        params.signal.addEventListener('abort', () => {
+          messageResolvers.delete(msgId);
+          reject(new Error('Aborted'));
+        });
+      });
+
+      const payload = await payloadPromise;
+      if (payload.type === 'ERROR') {
+        throw new Error(payload.message || 'Error running fast manifest check');
       }
-    } catch {
-      w.postMessage({ type: 'ANALYZE', imageData: imgData, msgId, timestamp: performance.now() });
+
+      return {
+        analysis: {},
+        direction: 'NO_TRADE',
+        actualDirection: payload.actualDirection,
+        outcome: 'NEUTRAL',
+        confidence: 0,
+        reason: 'Fast manifest check completed',
+        testModeRightSlice: null,
+        finalImageForAnalysis: imageDataUrl,
+        entryAnchorBase64: null,
+        rawOutcome: 'FAST_CHECK',
+        frameStable: true
+      };
     }
 
-    // Handle abort
-    params.signal.addEventListener('abort', () => {
-      messageResolvers.delete(msgId);
-      reject(new Error('Aborted'));
+    const payloadPromise = new Promise<any>((resolve, reject) => {
+  messageResolvers.set(msgId, { resolve, reject });
+  try {
+    w.postMessage({
+      type: 'ANALYZE',
+      msgId,
+      imageData: imgData,
+      graphTimeframeMinutes: tfM,
+      investmentDurationMinutes: durM,
+      techniquesList: params.techniquesList,
     });
+  } catch (e: any) {
+    messageResolvers.delete(msgId);
+    reject(e);
+  }
+  params.signal.addEventListener('abort', () => {
+    messageResolvers.delete(msgId);
+    reject(new Error('Aborted'));
   });
+});
 
   const payload = await payloadPromise;
   
@@ -139,17 +221,22 @@ export async function runSingleAnalysis(params: {
     }
     return {
       analysis: {
-        judge: { winner: 'NONE', decision: 'FAULT', finalConfidence: 0, j1Score: 0, j2Score: 0, j3Score: 0, j4Score: 0, ruling: payload.message, totalScore: 0, tradeDetails: { latencyAdjustedForecast: '', techniquesUsed: '' } },
+        judge: { winner: 'NONE', decision: 'FAULT', finalConfidence: 0, j1Score: 0, j2Score: 0, j3Score: 0, j4Score: 0, ruling: payload.message, totalScore: 0, tradeDetails: { latencyAdjustedForecast: '', techniquesUsed: '', executionTimeMs: performance.now() - t0 } },
         bull: { reasoning: 'FAULT' }, bear: { reasoning: 'FAULT' }, skeptic: { riskVerdict: 'FAULT' }, techUsedCount: 0
       },
       direction: 'NO_TRADE', outcome: 'NEUTRAL', confidence: 0, reason: payload.message,
-      testModeRightSlice: null, finalImageForAnalysis: imageDataUrl, entryAnchorBase64: null, rawOutcome: 'ERROR', frameStable: false
+      testModeRightSlice: null, finalImageForAnalysis: imageDataUrl, entryAnchorBase64: null, rawOutcome: 'ERROR', frameStable: false,
+      actualDirection: null
     };
   }
 
-  const { signal, confidence, frameStable, debugTrace } = payload;
+  const { frameStable, debugTrace } = payload;
   const decision = debugTrace.decision;
   const meta = debugTrace.meta;
+  const initialMappedDirection = decision.winner === 'BULL' ? 'UP' : (decision.winner === 'BEAR' ? 'DOWN' : 'NO_TRADE');
+  if (onDirectionFound) {
+    onDirectionFound(initialMappedDirection);
+  }
   
   if (meta.reason === 'NO_CALIBRATION' || meta.candlesLength === 0) {
     if (onJudgeLogs) {
@@ -165,9 +252,14 @@ export async function runSingleAnalysis(params: {
   
   let finalDecision = decision;
   let FS = finalDecision.finalScore;
+  let entryClose: number | undefined;
+  let exitClose: number | undefined;
+  let actualDirection: 'UP' | 'DOWN' | 'FLAT' | null = null;
+  let candlesCut: number | undefined;
 
   if (isTestMode && meta.candlesLength && meta.candlesLength > 10) {
     const nCut = parseInt(params.investmentDuration) || 5;
+    candlesCut = nCut;
     const cropRatio = nCut / meta.candlesLength;
     
     if (cropRatio < 0.5) {
@@ -177,13 +269,16 @@ export async function runSingleAnalysis(params: {
         const ctx = canvas.getContext('2d')!;
         ctx.putImageData(imgData, 0, 0);
 
-        const leftWidth = Math.floor(imgData.width * (1 - cropRatio));
+        const clampedRatio = Math.max(0.05, Math.min(0.40, cropRatio));
+        const cutWidth = Math.floor(imgData.width * clampedRatio);
+        const leftWidth = imgData.width - cutWidth;
+
         const leftCanvas = document.createElement('canvas');
         leftCanvas.width = leftWidth;
         leftCanvas.height = imgData.height;
         leftCanvas.getContext('2d')!.drawImage(canvas, 0, 0, leftWidth, imgData.height, 0, 0, leftWidth, imgData.height);
         
-        const rightWidth = imgData.width - leftWidth;
+        const rightWidth = cutWidth;
         const rightCanvas = document.createElement('canvas');
         rightCanvas.width = rightWidth;
         rightCanvas.height = imgData.height;
@@ -192,38 +287,57 @@ export async function runSingleAnalysis(params: {
         testModeRightSlice = rightCanvas.toDataURL('image/jpeg', 0.5);
         finalImageForAnalysis = leftCanvas.toDataURL('image/jpeg', 0.5);
 
-        // Memory cleanup
-        canvas.width = 0;
-        canvas.height = 0;
-        leftCanvas.width = 0;
-        leftCanvas.height = 0;
-        rightCanvas.width = 0;
-        rightCanvas.height = 0;
+        canvas.width = 0; canvas.height = 0;
+        leftCanvas.width = 0; leftCanvas.height = 0;
+        rightCanvas.width = 0; rightCanvas.height = 0;
 
         const leftImgData = await dataUrlToImageData(finalImageForAnalysis);
-        
-        const msgId2 = generateId();
+
+
         const payloadPromise2 = new Promise<any>((resolve, reject) => {
-          messageResolvers.set(msgId2, { resolve, reject });
-          w.postMessage({ type: 'ANALYZE', imageData: leftImgData, msgId: msgId2, timestamp: performance.now() }, [leftImgData.data.buffer]);
+          messageResolvers.set(msgId, { resolve, reject });
+          try {
+            w.postMessage({
+              type: 'ANALYZE',
+              msgId,
+              imageData: leftImgData,
+              graphTimeframeMinutes: tfM,
+              investmentDurationMinutes: durM,
+              techniquesList: params.techniquesList,
+            });
+          } catch (e: any) {
+            reject(e);
+          }
+          params.signal.addEventListener('abort', () => {
+            messageResolvers.delete(msgId);
+            reject(new Error('Aborted'));
+          });
         });
+
         const payload2 = await payloadPromise2;
         
-        if (payload2.type !== 'ERROR' && payload2.debugTrace?.decision?.evidence?.lastClose !== undefined) {
-           finalDecision = payload2.debugTrace.decision;
-           FS = finalDecision.finalScore;
+        if (payload2.type !== 'ERROR') {
+           finalDecision = payload2.debugTrace?.decision || payload2.decision || finalDecision;
+           FS = finalDecision.finalScore || 0;
            
-           const originalClose = decision.evidence?.lastClose;
-           const newClose = finalDecision.evidence.lastClose;
+           exitClose = decision?.evidence?.lastClose;
+           entryClose = finalDecision?.evidence?.lastClose;
            
-           if (originalClose !== undefined) {
-             const actualDir = originalClose > newClose ? 'UP' : (originalClose < newClose ? 'DOWN' : 'NO_TRADE');
-             if (actualDir === 'NO_TRADE' || finalDecision.winner === 'NO_TRADE') {
+           if (entryClose !== undefined && exitClose !== undefined) {
+             if (exitClose > entryClose) {
+               actualDirection = 'UP';
+             } else if (exitClose < entryClose) {
+               actualDirection = 'DOWN';
+             } else {
+               actualDirection = 'FLAT';
+             }
+
+             if (actualDirection === 'FLAT' || finalDecision.winner === 'NO_TRADE') {
                  outcome = 'NEUTRAL';
              } else if (finalDecision.winner === 'BULL') {
-                 outcome = actualDir === 'UP' ? 'WIN' : 'LOSS';
+                 outcome = actualDirection === 'UP' ? 'WIN' : 'LOSS';
              } else if (finalDecision.winner === 'BEAR') {
-                 outcome = actualDir === 'DOWN' ? 'WIN' : 'LOSS';
+                 outcome = actualDirection === 'DOWN' ? 'WIN' : 'LOSS';
              }
            }
         }
@@ -248,6 +362,8 @@ export async function runSingleAnalysis(params: {
     });
   }
 
+  const tTotal = performance.now() - t0;
+
   return {
     analysis: {
       judge: {
@@ -261,17 +377,21 @@ export async function runSingleAnalysis(params: {
         j4Score: finalDecision.skepticPenalty,
         ruling: finalDecision.ruling,
         totalScore: FS,
+        evidence: finalDecision.evidence,
+        techniquesEvaluation: finalDecision.techniquesEvaluation,
         tradeDetails: {
           latencyAdjustedForecast: `Signal: ${finalDecision.signal}`,
-          techniquesUsed: `RSI: ${finalDecision.evidence?.rsi?.toFixed(1) || 0}`
+          techniquesUsed: finalDecision.techniquesUsed || 'None',
+          executionTimeMs: tTotal
         }
       },
       bull: { reasoning: `Score ${cases.bull.total}` },
       bear: { reasoning: `Score ${cases.bear.total}` },
       skeptic: { riskVerdict: `Multiplier ${J4}` },
-      techUsedCount: 3
+      techUsedCount: finalDecision.techUsedCount || 0
     },
     direction: mappedDirection,
+    actualDirection,
     outcome,
     confidence: finalDecision.finalConfidence,
     reason: `Engine completed with finalScore=${FS}`,
@@ -279,7 +399,9 @@ export async function runSingleAnalysis(params: {
     finalImageForAnalysis,
     entryAnchorBase64: null,
     rawOutcome: finalDecision.signal,
-    frameStable
+    frameStable,
+    entryClose,
+    exitClose,
+    candlesCut
   };
 }
-

@@ -1,12 +1,13 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, Pressable, ScrollView, Platform } from 'react-native';
 import tw from 'twrnc';
 import { motion } from 'motion/react';
-import { FileJson, UploadCloud, Play, AlertTriangle, Activity,  } from 'lucide-react';
+import { FileJson, UploadCloud, Play, AlertTriangle, Activity, X } from 'lucide-react';
 import { BatchManifest, BatchManifestEntry, validateBatchManifest } from '../types/batchManifest';
 
 import { BatchAutopsyReport } from './BatchAutopsyReport';
-import { useWakeLock } from './LiveAnalysis';
+import { useWakeLock } from '../hooks/useWakeLock';
 
 export type MasterAutopsySummary = {
   title: string;
@@ -38,6 +39,7 @@ export interface BatchRun {
   status: BatchRunStatus;
   result?: any;
   error?: string;
+  earlyDirection?: 'UP' | 'DOWN' | 'NO_TRADE';
 }
 
 export function BulkTestPanel({
@@ -54,6 +56,9 @@ export function BulkTestPanel({
   
   // Tab 1 state
   const [images, setImages] = useState<File[]>([]);
+  const [buildDuration, setBuildDuration] = useState<'3m' | '5m'>('5m');
+  const [generationProgress, setGenerationProgress] = useState<string>('');
+  const [isGenerating, setIsGenerating] = useState(false);
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
   
   const handleDragOver = (e: React.DragEvent) => e.preventDefault();
@@ -76,53 +81,123 @@ export function BulkTestPanel({
   const handleGenerateManifest = async () => {
     if (images.length === 0) return;
     
-    // Only image info and backtest expectations are needed in the JSON
-    // The execution info (asset, duration, risk) is piped from the global terminal UI
-    const entries: BatchManifestEntry[] = await Promise.all(images.map(async (file) => {
-      const imageData = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
-      return {
-        imageFilename: file.name,
-        expectedOutcome: 'UNKNOWN',
-        imageData,
-        stock: stockName,
-        graphTimeframe: graphTimeframe,
-        investmentDuration: investmentDuration,
-        investmentAmount: Number(investmentAmount) || 100,
-        profitabilityPercent: Number(profitabilityPercent) || 85
+    setIsGenerating(true);
+    setGenerationProgress(`Analyzing ${images.length} images...`);
+    
+    const entries: BatchManifestEntry[] = [];
+    
+    try {
+      setGenerationProgress('Extracting & profiling candle histories in parallel...');
+      const results = await Promise.all(images.map(async (file) => {
+        const imageData = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+
+        // Run Single deterministic analysis using the real testMode (cropping target window out of canvas, evaluating entry/exit bounds)
+        let detectedOutcome: 'UP' | 'DOWN' | 'UNKNOWN' = 'UNKNOWN';
+        try {
+          const result = await runSingleAnalysis({
+            imageDataUrl: imageData,
+            stock: stockName,
+            graphTimeframe: graphTimeframe,
+            investmentDuration: buildDuration, // '3m' or '5m' selected by user
+            investmentAmount: '100',
+            profitabilityPercent: '85',
+            techniquesList: techniquesList,
+            encryptedSystemTokens,
+            signal: new AbortController().signal,
+            isManifestCheck: true // Highly optimized fast manifest-check pathway for lightning-fast speeds
+          });
+          
+          if (result && (result.actualDirection === 'UP' || result.actualDirection === 'DOWN')) {
+            detectedOutcome = result.actualDirection;
+          }
+        } catch (err) {
+          console.warn(`Analysis failed on manifest build for ${file.name}:`, err);
+        }
+
+        return {
+          imageFilename: file.name,
+          expectedOutcome: detectedOutcome,
+          imageData,
+          stock: stockName,
+          graphTimeframe: graphTimeframe,
+          investmentDuration: buildDuration,
+          investmentAmount: Number(investmentAmount) || 100,
+          profitabilityPercent: Number(profitabilityPercent) || 85
+        };
+      }));
+
+      entries.push(...results);
+
+      setGenerationProgress('Packaging manifest content...');
+
+      const manifest: BatchManifest = {
+        version: '1.0',
+        createdAt: new Date().toISOString(),
+        entries
       };
-    }));
 
-    const manifest: BatchManifest = {
-      version: '1.0',
-      createdAt: new Date().toISOString(),
-      entries
-    };
-
-    const blob = new Blob([JSON.stringify(manifest, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.target = '_blank';
-    a.href = url;
-    a.download = `manifest_${performance.now()}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+      const blob = new Blob([JSON.stringify(manifest, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.target = '_blank';
+      a.href = url;
+      a.download = `manifest_${performance.now()}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      console.error('Failed to generate manifest:', e);
+      showBulkNotice('Error during manifest creation: ' + e.message, 'error');
+    } finally {
+      setIsGenerating(false);
+      setGenerationProgress('');
+    }
   };
 
   // Tab 2 State
   const [queue, setQueue] = useState<BatchRun[]>([]);
+  const [autopsyingBatch, setAutopsyingBatch] = useState(false);
+  const [masterSummary, setMasterSummary] = useState<MasterAutopsySummary | null>(null);
   const [manifestErrors, setManifestErrors] = useState<string[]>([]);
+  const [bulkNotice, setBulkNotice] = useState<{ text: string; type: 'success' | 'info' | 'error' } | null>(null);
+
+  const showBulkNotice = (text: string, type: 'success' | 'info' | 'error' = 'info') => {
+    setBulkNotice({ text, type });
+    if (type === 'success' || type === 'info') {
+      setTimeout(() => {
+        setBulkNotice(prev => {
+          if (prev?.text === text) return null;
+          return prev;
+        });
+      }, 5000);
+    }
+  };
   const [isQueueRunning, setIsQueueRunning] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const { requestLock, releaseLock } = useWakeLock();
   
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    if ((Platform.OS as string) === 'web') {
+      const handleGlobalDragOver = (e: any) => e.preventDefault();
+      const handleGlobalDrop = (e: any) => e.preventDefault();
+
+      window.addEventListener('dragover', handleGlobalDragOver, { passive: false });
+      window.addEventListener('drop', handleGlobalDrop, { passive: false });
+
+      return () => {
+        window.removeEventListener('dragover', handleGlobalDragOver);
+        window.removeEventListener('drop', handleGlobalDrop);
+      };
+    }
+  }, []);
 
   useEffect(() => {
     if (isQueueRunning && !isPaused) {
@@ -218,21 +293,12 @@ export function BulkTestPanel({
     });
   };
 
-  const fileToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-  };
-
-  const runBatch = async () => {
+  const runQueue = async () => {
     if (queue.length === 0 || manifestErrors.length > 0) return;
     
     const missing = queue.filter(q => !q.file && !q.entry.imageData && q.status === 'Pending');
     if (missing.length > 0) {
-      alert(`Missing ${missing.length} files. Please select them first.`);
+      showBulkNotice(`Missing ${missing.length} files. Please select them first.`, 'error');
       return;
     }
 
@@ -240,13 +306,11 @@ export function BulkTestPanel({
     setIsPaused(false);
     abortControllerRef.current = new AbortController();
 
-    const CONCURRENCY_LIMIT = 15;
+    const CONCURRENCY_LIMIT = queue.length > 0 ? queue.length : 1;
     let currentIndex = 0;
-    let hasErrorHalted = false;
-
     const workerLoop = async () => {
       while (currentIndex < queue.length) {
-        if (abortControllerRef.current?.signal.aborted || isPaused || hasErrorHalted) break;
+        if (abortControllerRef.current?.signal.aborted || isPaused ) break;
         
         const i = currentIndex++;
         const item = queue[i];
@@ -255,7 +319,7 @@ export function BulkTestPanel({
           continue; // skip completed
         }
 
-        setQueue(q => q.map((r, idx) => idx === i ? { ...r, status: 'Running' } : r));
+        setQueue(q => q.map((r, idx) => idx === i ? { ...r, status: 'Running', earlyDirection: undefined } : r));
 
         // Let UI update
         await new Promise(resolve => setTimeout(resolve, 10));
@@ -275,6 +339,7 @@ export function BulkTestPanel({
              throw new Error("Missing image file for entry");
           }
 
+
           const result = await runSingleAnalysis({
             imageDataUrl,
             stock: item.entry.stock || stockName,
@@ -284,34 +349,51 @@ export function BulkTestPanel({
             profitabilityPercent: item.entry.profitabilityPercent ? String(item.entry.profitabilityPercent) : profitabilityPercent,
             techniquesList: item.entry.techniqueOverrides || techniquesList,
             encryptedSystemTokens,
-            signal: abortControllerRef.current.signal,
-            isTestMode: true
+            signal: abortControllerRef.current!.signal,
+            isTestMode: true,
+            onDirectionFound: (dir) => {
+              setQueue(q => q.map((r, idx2) => 
+                idx2 === i ? { ...r, earlyDirection: dir } : r
+              ));
+            }
           });
           
           if (isObjectUrl) {
              URL.revokeObjectURL(imageDataUrl);
           }
 
-          if (result.outcome === 'WIN' || result.outcome === 'LOSS') {
-             saveToStats(result.analysis, result.outcome);
+          let finalOutcome: 'WIN' | 'LOSS' | 'NEUTRAL' = result.outcome;
+          const expected = String(item.entry.expectedOutcome ?? '').toUpperCase();
+          const predicted = result.direction;
+
+          if (expected === 'UP' || expected === 'DOWN') {
+            if (predicted === 'NO_TRADE') {
+              finalOutcome = 'NEUTRAL';
+            } else {
+              finalOutcome = predicted === expected ? 'WIN' : 'LOSS';
+            }
+          }
+
+          if (finalOutcome === 'WIN' || finalOutcome === 'LOSS') {
+             saveToStats(result.analysis, finalOutcome);
           }
           
-          const lightweightResult = { ...result };
+          const lightweightResult = { 
+            ...result, 
+            outcome: finalOutcome,
+            actualDirection: (expected === 'UP' || expected === 'DOWN') ? (expected as 'UP' | 'DOWN') : result.actualDirection
+          };
           // We keep images here for the UI to display thumbnails
 
-          setQueue(q => q.map((r, idx) => idx === i ? { ...r, status: result.outcome, result: lightweightResult } : r));
+          setQueue(q => q.map((r, idx) => idx === i ? { ...r, status: finalOutcome, result: lightweightResult } : r));
         } catch (err: any) {
           if (abortControllerRef.current?.signal.aborted || isPaused) {
             setQueue(q => q.map((r, idx) => idx === i ? { ...r, status: 'Pending' } : r));
             break;
           }
+          console.error(`[BulkTest] Item ${i + 1} failed:`, err.message);
           setQueue(q => q.map((r, idx) => idx === i ? { ...r, status: 'Error', error: err.message } : r));
-          
-          if (!hasErrorHalted) {
-            alert(`Analysis Error on item ${i + 1}: ${err.message}\nBatch run halted.`);
-            hasErrorHalted = true;
-          }
-          break;
+
         }
 
         // No massive delay, just briefly yield to event loop
@@ -319,48 +401,63 @@ export function BulkTestPanel({
       }
     };
 
-    await Promise.all(Array.from({ length: CONCURRENCY_LIMIT }, () => workerLoop()));
+    return Promise.all(Array.from({ length: CONCURRENCY_LIMIT }, () => workerLoop()))
+      .finally(() => {
+        setIsQueueRunning(false);
 
-    setIsQueueRunning(false);
-
-    // After running, fetch the latest queue state logically
-    setQueue(currentQueue => {
-       const losses = currentQueue.filter(q => q.status === 'LOSS' && q.result);
-       if (losses.length > 0 && !hasErrorHalted && !abortControllerRef.current?.signal.aborted && !isPaused) {
-          setTimeout(() => runMasterAutopsyChain(losses).catch(e => console.error("master autopsy error:", e)), 0);
-       }
-       return currentQueue;
-    });
+        // After running, fetch the latest queue state logically
+        setQueue(currentQueue => {
+          const losses = currentQueue.filter(q => q.status === 'LOSS' && q.result);
+          if (losses.length > 0 && !abortControllerRef.current?.signal.aborted && !isPaused) {
+            setTimeout(() => runMasterAutopsyChain(losses).catch(e => console.error("master autopsy error:", e)), 0);
+          }
+          return currentQueue;
+        });
+      });
   };
 
-
-  const [autopsyingBatch, setAutopsyingBatch] = useState(false);
-  const [masterSummary, setMasterSummary] = useState<MasterAutopsySummary | null>(null);
 
   const runMasterAutopsyChain = async (losses: BatchRun[]) => {
      setAutopsyingBatch(true);
      try {
-       // Simulate stub response
-       await new Promise(r => setTimeout(r, 1000));
        if (losses.length > 0) {
           const failuresData = losses.map(l => {
              const analysisCopy = l.result?.analysis ? JSON.parse(JSON.stringify(l.result.analysis)) : null;
+             const confidence = Number(l.result?.confidence ?? analysisCopy?.confidence ?? 0);
+             const expected = String(l.entry.expectedOutcome ?? '').toUpperCase();
+             const predicted = String(analysisCopy?.decision ?? l.result?.direction ?? '').toUpperCase();
              return {
-                fileName: l.file?.name || l.entry.fileName || "unknown",
+                fileName: l.file?.name || (l.entry as any).fileName || "unknown",
                 stock: l.entry.stock,
                 timeframe: l.entry.graphTimeframe,
                 expectedOutcome: l.entry.expectedOutcome,
                 actualResult: l.status,
+                predictedDecision: predicted || 'UNKNOWN',
+                confidence: Number.isFinite(confidence) ? confidence : 0,
+                contradictedExpectation: expected !== 'UNKNOWN' && expected && predicted && expected !== predicted,
                 analysis: analysisCopy,
                 error: l.error,
              };
           });
 
+          const contradictionCount = failuresData.filter(f => f.contradictedExpectation).length;
+          const avgConfidence = failuresData.length
+            ? failuresData.reduce((sum, f) => sum + f.confidence, 0) / failuresData.length
+            : 0;
+          const timeframeCounts: Record<string, number> = failuresData.reduce((acc: any, f) => {
+            const tf = f.timeframe || 'unknown';
+            acc[tf] = (acc[tf] || 0) + 1;
+            return acc;
+          }, {});
+          const worstTimeframe = Object.entries(timeframeCounts as any).sort((a: any, b: any) => b[1] - a[1])[0]?.[0] || 'unknown';
+
           setMasterSummary({
              title: `Batch Autopsy: ${losses.length} Loss(es) Analyzed`,
-             narrative: "An automated math-engine autopsy was executed over the loss instances across the batch. Deep LLM reasoning is offline, but full scoring logs for all losses are included in the JSON download.",
-             coreWeakness: "Check the 'rawLosses' array in the exported JSON file to inspect the scoring logic and points distribution that led to each loss.",
-             recommendedAction: "Review math signal scores vs expected outcomes, and consider adjusting timeframe or standard bounds.",
+             narrative: `Detected ${contradictionCount} contradiction(s) versus expected outcomes. Average confidence on losing trades was ${avgConfidence.toFixed(1)}%.`,
+             coreWeakness: `Most losses cluster on ${worstTimeframe} timeframe with ${timeframeCounts[worstTimeframe] || 0} failed run(s).`,
+             recommendedAction: contradictionCount > 0
+               ? 'Re-check label quality in manifest and tighten direction filters before entering trades.'
+               : 'Tighten entry thresholds (confidence + pattern stability) for this timeframe and rerun the batch.',
              rawLosses: failuresData
           });
        }
@@ -415,24 +512,91 @@ export function BulkTestPanel({
       </View>
 
       <View style={tw`p-6`}>
+        {bulkNotice && (
+          <View style={[
+            tw`mb-4 p-4 rounded-xl flex-row items-center justify-between border`,
+            bulkNotice.type === 'success' ? tw`bg-green-500/10 border-green-500/30` :
+            bulkNotice.type === 'error' ? tw`bg-red-500/10 border-red-500/30` :
+            tw`bg-zinc-500/10 border-zinc-500/30`
+          ]}>
+            <View style={tw`flex-row items-center flex-1 mr-3`}>
+              <View style={[
+                tw`w-2 h-2 rounded-full mr-2.5`,
+                bulkNotice.type === 'success' ? tw`bg-green-400` :
+                bulkNotice.type === 'error' ? tw`bg-red-400` :
+                tw`bg-zinc-400`
+              ]} />
+              <Text style={[
+                tw`text-xs font-medium`,
+                bulkNotice.type === 'success' ? tw`text-green-200` :
+                bulkNotice.type === 'error' ? tw`text-red-200` :
+                tw`text-zinc-200`
+              ]}>
+                {bulkNotice.text}
+              </Text>
+            </View>
+            <Pressable onPress={() => setBulkNotice(null)} style={tw`p-1 bg-white/5 rounded-full`}>
+              <X size={12} color="#A1A1AA" />
+            </Pressable>
+          </View>
+        )}
         {tab === 'build' ? (
           <View style={tw`gap-6`}>
             {/* Same Tab 1 as before */}
-            <Pressable 
-              onPress={() => {
-                if (Platform.OS === 'web') {
+            {(Platform.OS as string) === 'web' ? (
+              <div
+                onClick={() => {
                   document.getElementById('bulk-image-upload')?.click();
-                }
-              }}
-              style={({ pressed }) => [
-                tw`border-2 border-dashed border-white border-opacity-10 rounded-xl p-8 flex-col items-center justify-center bg-black bg-opacity-20 relative`,
-                { opacity: pressed ? 0.7 : 1 }
-              ]}
-              // @ts-expect-error React Native type discrepancy for web events
-              onDragOver={handleDragOver} 
-              onDrop={handleDropImages}
-            >
-              {Platform.OS === 'web' && (
+                }}
+                onDragOver={handleDragOver as any}
+                onDrop={handleDropImages as any}
+                style={{ cursor: 'pointer', width: '100%', height: '100%' }}
+                className="hover:opacity-70 transition-opacity"
+              >
+                <View style={tw`border-2 border-dashed border-white border-opacity-10 rounded-xl p-8 flex-col items-center justify-center bg-black bg-opacity-20 relative`}>
+
+              {(Platform.OS as string) === 'web' && (
+                <input
+                  id="bulk-image-upload"
+                  type="file"
+                  multiple
+                  accept="image/*"
+                  onChange={handleFileSelect}
+                  style={{ display: 'none' }}
+                />
+              )}
+              <UploadCloud size={32} color="#D9B382" style={{ opacity: 0.8, marginBottom: 16 }} />
+              <Text style={tw`text-white font-black text-sm uppercase tracking-widest mb-2`}>
+                Drag & Drop or Click to Upload
+              </Text>
+              <Text style={tw`text-white text-[10px] text-opacity-40 uppercase font-bold tracking-widest mb-3 text-center`}>
+                Max Recommended Batch Size: Unlimited (Offline Engine)
+              </Text>
+              <Text style={tw`text-white text-opacity-50 text-xs text-center px-4`}>
+                Drop chart screenshots here to generate a matching JSON manifest sequence.
+              </Text>
+              {images.length > 0 && (
+                <View style={tw`mt-4 bg-[#D9B382] bg-opacity-10 py-1 px-3 rounded-md`}>
+                  <Text style={tw`text-[#D9B382] font-black text-[10px]`}>{images.length} IMAGES LOADED</Text>
+                </View>
+              )}
+
+                </View>
+              </div>
+            ) : (
+              <Pressable
+                onPress={() => {
+                  if ((Platform.OS as string) === 'web') {
+                    document.getElementById('bulk-image-upload')?.click();
+                  }
+                }}
+                style={({ pressed }) => [
+                  tw`border-2 border-dashed border-white border-opacity-10 rounded-xl p-8 flex-col items-center justify-center bg-black bg-opacity-20 relative`,
+                  { opacity: pressed ? 0.7 : 1 }
+                ]}
+              >
+
+              {(Platform.OS as string) === 'web' && (
                 <input 
                   id="bulk-image-upload" 
                   type="file" 
@@ -457,32 +621,64 @@ export function BulkTestPanel({
                   <Text style={tw`text-[#D9B382] font-black text-[10px]`}>{images.length} IMAGES LOADED</Text>
                 </View>
               )}
-            </Pressable>
+
+              </Pressable>
+            )}
+
 
             <View style={tw`pt-4 border-t border-white border-opacity-10`}>
-              <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
-                <Pressable 
-                  onPress={handleGenerateManifest}
-                  disabled={images.length === 0}
-                  style={tw`flex-row items-center justify-center bg-[#D9B382] ${images.length === 0 ? 'opacity-50' : 'opacity-100'} h-12 rounded-xl px-6`}
-                >
-                  <FileJson size={16} color="#1A1308" />
-                  <Text style={tw`text-[#1A1308] font-black text-xs uppercase tracking-widest ml-2`}>
-                    Download Manifest JSON
+               <Text style={tw`text-[10px] font-black text-[#4B5570] uppercase tracking-wider mb-2 text-center`}>Investment Duration (Cut Target Window)</Text>
+               <View style={tw`flex-row gap-2`}>
+                  <Pressable
+                    onPress={() => setBuildDuration('3m')}
+                    style={({ pressed }) => [tw`flex-1 h-10 rounded-lg flex-row items-center justify-center border`, buildDuration === '3m' ? tw`bg-[#D9B382]/20 border-[#D9B382]` : tw`bg-black bg-opacity-20 border-white border-opacity-10`, { opacity: pressed ? 0.7 : 1 }]}
+                  >
+                     <Text style={[tw`text-[10px] font-black tracking-widest`, buildDuration === '3m' ? tw`text-[#D9B382]` : tw`text-white text-opacity-50`]}>3 MINUTES</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => setBuildDuration('5m')}
+                    style={({ pressed }) => [tw`flex-1 h-10 rounded-lg flex-row items-center justify-center border`, buildDuration === '5m' ? tw`bg-[#D9B382]/20 border-[#D9B382]` : tw`bg-black bg-opacity-20 border-white border-opacity-10`, { opacity: pressed ? 0.7 : 1 }]}
+                  >
+                     <Text style={[tw`text-[10px] font-black tracking-widest`, buildDuration === '5m' ? tw`text-[#D9B382]` : tw`text-white text-opacity-50`]}>5 MINUTES</Text>
+                  </Pressable>
+               </View>
+            </View>
+
+            <View style={tw`pt-4`}>
+              {isGenerating ? (
+                <View style={tw`items-center justify-center gap-2 h-14 bg-[#D9B382]/10 border border-[#D9B382]/30 rounded-xl px-4 flex-row`}>
+                  <Activity size={16} color="#D9B382" className="animate-spin" />
+                  <Text style={tw`text-[#D9B382] font-black text-[10px] uppercase tracking-widest`}>
+                    {generationProgress}
                   </Text>
-                </Pressable>
-              </motion.div>
+                </View>
+              ) : (
+                <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                  <Pressable 
+                    onPress={handleGenerateManifest}
+                    disabled={images.length === 0}
+                    style={tw`flex-row items-center justify-center bg-[#D9B382] ${images.length === 0 ? 'opacity-50' : 'opacity-100'} h-12 rounded-xl px-6`}
+                  >
+                    <FileJson size={16} color="#1A1308" />
+                    <Text style={tw`text-[#1A1308] font-black text-xs uppercase tracking-widest ml-2`}>
+                      Generate & Download Manifest
+                    </Text>
+                  </Pressable>
+                </motion.div>
+              )}
             </View>
           </View>
         ) : (
           <View style={tw`gap-6`}>
              {queue.length === 0 ? (
                <View style={tw`gap-4`}>
-                 <View style={tw`bg-black bg-opacity-30 border border-white border-opacity-10 rounded-xl p-6`}>
-                   <Text style={tw`text-white font-black text-[10px] uppercase tracking-widest mb-4`}>1. Load Manifest JSON</Text>
-                   <input type="file" accept=".json" onChange={loadManifest} className="text-white text-xs opacity-70" />
+                 <View style={tw`bg-black bg-opacity-30 border-2 border-dashed border-white border-opacity-20 rounded-xl p-8 items-center justify-center relative overflow-hidden`}>
+                   <UploadCloud size={32} color="#D9B382" className="mb-3 opacity-80" />
+                   <Text style={tw`text-[#D9B382] font-black text-[12px] uppercase tracking-widest mb-1`}>1. Load Manifest JSON</Text>
+                   <Text style={tw`text-white text-opacity-50 text-[10px]`}>Tap to select manifest file</Text>
+                   <input type="file" accept=".json" onChange={loadManifest} className="opacity-0 absolute inset-0 w-full h-full cursor-pointer z-10" />
                    {manifestErrors.map((err, i) => (
-                     <Text key={i} style={tw`text-red-400 text-xs mt-2`}>• {err}</Text>
+                     <Text key={i} style={tw`text-red-400 text-xs mt-4`}>• {err}</Text>
                    ))}
                  </View>
                </View>
@@ -522,39 +718,58 @@ export function BulkTestPanel({
                           <Text style={tw`text-white text-opacity-40 text-[10px] w-6`}>{(idx + 1).toString().padStart(2, '0')}</Text>
                           <View style={tw`flex-1`}>
                             <Text style={tw`text-white text-xs font-bold`} numberOfLines={1}>{item.entry.imageFilename}</Text>
-                            {(item.entry.stock || item.entry.investmentDuration) && (
+                            {!!(item.entry.stock || item.entry.investmentDuration) && (
                               <Text style={tw`text-white text-opacity-50 text-[9px] uppercase tracking-widest mt-0.5`}>
                                 {item.entry.stock || stockName} • {item.entry.investmentDuration || investmentDuration}
                               </Text>
                             )}
-                            {item.entry.expectedOutcome && item.entry.expectedOutcome !== 'UNKNOWN' && (
+                            {!!(item.entry.expectedOutcome && item.entry.expectedOutcome !== 'UNKNOWN') && (
                                <Text style={tw`text-white text-opacity-50 text-[9px] uppercase tracking-widest mt-0.5`}>
                                  Expects: {item.entry.expectedOutcome}
                                </Text>
                             )}
                           </View>
                           <View style={tw`px-3`}>
-                            <Text style={[tw`text-[10px] font-black uppercase tracking-widest text-right`, tw`${getStatusColor(item.status)}`]}>
-                              {item.status === 'WIN' ? 'PROFIT' : item.status === 'NEUTRAL' ? 'NO TRADE' : item.status}
-                            </Text>
-                            {item.error && <Text style={tw`text-orange-400 text-[8px]`} numberOfLines={1}>{item.error.substring(0, 20)}</Text>}
-                            {!item.error && item.result && (
+                            <View style={tw`flex-row items-center justify-end`}>
+                              {(() => {
+                                const displayDir = item.result?.direction ?? item.earlyDirection;
+                                const dirColorClass = item.status === 'Running' && !item.earlyDirection
+                                  ? 'text-yellow-400 animate-pulse'
+                                  : displayDir === 'UP' ? 'text-green-400'
+                                  : displayDir === 'DOWN' ? 'text-red-400'
+                                  : 'text-white text-opacity-30';
+                                return (
+                                  <Text style={tw`text-[10px] font-black uppercase tracking-widest ${dirColorClass}`}>
+                                    {displayDir === 'UP' ? 'UP'
+                                      : displayDir === 'DOWN' ? 'DOWN'
+                                      : item.status === 'Running' ? '···'
+                                      : '—'}
+                                  </Text>
+                                );
+                              })()}
+                              <Text style={tw`text-white text-opacity-30 text-[10px] mx-1`}>/</Text>
+                              <Text style={[tw`text-[10px] font-black uppercase tracking-widest`, tw`${getStatusColor(item.status)}`]}>
+                                {item.status === 'WIN' ? 'WIN' : item.status === 'NEUTRAL' ? 'NO TRADE' : item.status}
+                              </Text>
+                            </View>
+                            {!!item.error && <Text style={tw`text-orange-400 text-[8px]`} numberOfLines={1}>{item.error.substring(0, 20)}</Text>}
+                            {!item.error && !!item.result && (
                               <Text style={tw`text-white text-opacity-40 text-[8px] text-right uppercase tracking-widest mt-0.5`}>
                                 {item.result.confidence}% conf
                               </Text>
                             )}
                           </View>
                         </Pressable>
-                        {expandedIdx === idx && item.result && (
+                        {expandedIdx === idx && !!item.result && (
                           <View style={tw`px-4 pb-4 pt-1 gap-3`}>
                             <View style={tw`flex-row gap-2`}>
-                              {item.result.finalImageForAnalysis && (
+                              {!!item.result.finalImageForAnalysis && (
                                 <View style={tw`flex-1`}>
                                   <Text style={tw`text-white text-opacity-50 text-[8px] uppercase tracking-widest mb-1`}>Analyzed Past</Text>
                                   <img src={item.result.finalImageForAnalysis} style={{ width: '100%', height: 60, objectFit: 'cover', borderRadius: 4, border: '1px solid rgba(255,255,255,0.1)' }} />
                                 </View>
                               )}
-                              {item.result.testModeRightSlice && (
+                              {!!item.result.testModeRightSlice && (
                                 <View style={tw`flex-1`}>
                                   <Text style={tw`text-yellow-400 text-opacity-70 text-[8px] uppercase tracking-widest mb-1`}>Outcome Window</Text>
                                   <img src={item.result.testModeRightSlice} style={{ width: '100%', height: 60, objectFit: 'cover', borderRadius: 4, border: '1px solid rgba(239,68,68,0.3)' }} />
@@ -578,7 +793,7 @@ export function BulkTestPanel({
                   <View style={tw`flex-row gap-3 pt-2`}>
                     {!isQueueRunning ? (
                       <Pressable 
-                        onPress={runBatch}
+                        onPress={runQueue}
                         disabled={queue.some(q => !q.file && !q.entry.imageData && q.status === 'Pending') || manifestErrors.length > 0}
                         style={({ pressed }) => [
                            tw`flex-1 bg-[#D9B382] h-12 rounded-xl flex-row items-center justify-center p-3`, 

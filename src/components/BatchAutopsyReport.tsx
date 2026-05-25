@@ -1,8 +1,9 @@
 // unused React import removed
 import { View, Text, Pressable } from 'react-native';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import tw from 'twrnc';
 import { motion } from 'motion/react';
-import { ShieldAlert, AlertTriangle, Wrench, RefreshCw, Download } from 'lucide-react';
+import { ShieldAlert, AlertTriangle, Wrench, RefreshCw, Download, Copy, Check } from 'lucide-react';
 import { MasterAutopsySummary } from './BulkTestPanel';
 
 interface BatchAutopsyReportProps {
@@ -12,7 +13,38 @@ interface BatchAutopsyReportProps {
 }
 
 export function BatchAutopsyReport({ summary, loading, onClear }: BatchAutopsyReportProps) {
-  const handleDownload = () => {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = useCallback(() => {
+    if (!summary) return;
+    
+    let text = `=== MASTER LOSS AUTOPSY REPORT ===\n`;
+    text += `Title: ${summary.title}\n`;
+    text += `Narrative: ${summary.narrative}\n`;
+    text += `Core Weakness: ${summary.coreWeakness}\n`;
+    text += `Recommended Action: ${summary.recommendedAction}\n\n`;
+    
+    if (summary.rawLosses && summary.rawLosses.length > 0) {
+      text += `=== DETAILED FAILURES (${summary.rawLosses.length}) ===\n`;
+      summary.rawLosses.forEach((loss: any, index: number) => {
+        text += `[${index + 1}] File: ${loss.fileName || 'unknown'}\n`;
+        text += `    Stock: ${loss.stock || 'unknown'} | Timeframe: ${loss.timeframe || 'unknown'}\n`;
+        text += `    Expected Outcome: ${loss.expectedOutcome || 'unknown'}\n`;
+        text += `    Predicted Decision: ${loss.predictedDecision || 'unknown'} (Confidence: ${loss.confidence}%)\n`;
+        if (loss.error) {
+          text += `    Error Detail: ${loss.error}\n`;
+        }
+        text += `\n`;
+      });
+    }
+
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }, [summary]);
+
+  const handleDownload = useCallback(() => {
     if (!summary) return;
     const blob = new Blob([JSON.stringify(summary, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -23,7 +55,18 @@ export function BatchAutopsyReport({ summary, loading, onClear }: BatchAutopsyRe
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  };
+  }, [summary]);
+
+
+
+  const lastDownloaded = useRef<MasterAutopsySummary | null>(null);
+
+  useEffect(() => {
+    if (summary && !loading && lastDownloaded.current !== summary) {
+      handleDownload();
+      lastDownloaded.current = summary;
+    }
+  }, [summary, loading, handleDownload]);
 
   if (loading) {
     return (
@@ -57,8 +100,14 @@ export function BatchAutopsyReport({ summary, loading, onClear }: BatchAutopsyRe
              </Text>
            </View>
            <View style={tw`flex-row items-center gap-6`}>
+             <Pressable onPress={handleCopy} style={({pressed}) => [{opacity: pressed ? 0.5 : 1}, tw`flex-row items-center gap-1.5`]}>
+               {copied ? <Check size={12} color="#22C55E" /> : <Copy size={12} color="#EF4444" style={{ opacity: 0.6 }} />}
+               <Text style={tw`${copied ? 'text-green-400' : 'text-red-400/60'} font-bold text-[10px] uppercase tracking-widest`}>
+                 {copied ? 'Copied!' : 'Copy Report'}
+               </Text>
+             </Pressable>
              <Pressable onPress={handleDownload} style={({pressed}) => [{opacity: pressed ? 0.5 : 1}, tw`flex-row items-center gap-1.5`]}>
-               <Download size={12} color="#EF4444" style={tw`opacity-60`} />
+               <Download size={12} color="#EF4444" style={{ opacity: 0.6 }} />
                <Text style={tw`text-red-400/60 font-bold text-[10px] uppercase tracking-widest`}>Download JSON</Text>
              </Pressable>
              <Pressable onPress={onClear} style={({pressed}) => [{opacity: pressed ? 0.5 : 1}]}>

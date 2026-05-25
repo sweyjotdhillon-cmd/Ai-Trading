@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import { View, Text, Pressable, ActivityIndicator } from 'react-native';
 import tw from 'twrnc';
 import { motion } from 'motion/react';
 import { Brain, CheckCircle, AlertTriangle, XCircle, Terminal, Check, Zap, Sparkles } from 'lucide-react';
+import { LossAutopsyModal } from '../LossAutopsyModal';
 
 interface Props {
   analysis: any;
@@ -36,6 +38,8 @@ export function LiveAnalysisResult({
   autoGradeRawOutcome, autoGradeConfidence, handleRegrade, setConfirmedOutcome,
   setAutoGradeStatus, handleReset, buttonHoverProps, buttonTapProps, springProps
 }: Props) {
+  const [isAutopsyOpen, setIsAutopsyOpen] = useState(false);
+
   if (!analysis) return null;
 
   return (
@@ -213,7 +217,115 @@ export function LiveAnalysisResult({
         </View>
       )}
 
-      {analysis.judge.tradeDetails?.techniquesUsed && (
+      {/* 5-Batch Technique Scoring Engine Panel (User Requirement) */}
+      {analysis.judge?.techniquesEvaluation && (
+        <View style={tw`mb-4 bg-[#121620]/85 p-4 rounded-xl border border-dashed border-[#D9B382]/35`}>
+          <View style={tw`flex-row justify-between items-center mb-3 border-b border-white/10 pb-2`}>
+            <View style={tw`flex-row items-center gap-1.5`}>
+              <CheckCircle size={14} color="#22C55E" />
+              <Text style={tw`text-[10px] font-black text-white uppercase tracking-wider`}>
+                Verification Engine (Min 10 Verified: {analysis.judge.techniquesEvaluation.minimumReached ? "✅ YES" : "❌ NO"})
+              </Text>
+            </View>
+            <View style={tw`bg-[#22C55E]/10 px-2 py-0.5 rounded`}>
+              <Text style={tw`text-[9px] font-black text-[#22C55E] uppercase`}>
+                {analysis.judge.techniquesEvaluation.totalTechniques} Active Techniques
+              </Text>
+            </View>
+          </View>
+
+          {/* Cases and cumulative score tallies */}
+          <View style={tw`flex-row justify-around items-center mb-3.5 bg-black/40 p-2.5 rounded-lg border border-white/5`}>
+            <View style={tw`items-center`}>
+              <Text style={tw`text-[9px] font-bold text-[#8B95B0] uppercase mb-1`}>🐶 Bulldog Case (Bull)</Text>
+              <Text style={tw`text-green-400 font-extrabold text-sm`}>
+                +{analysis.judge.techniquesEvaluation.bulldogPoints.toFixed(1)} Points
+              </Text>
+              <Text style={tw`text-[8px] text-[#8B95B0] italic`}>Dynamic weighting (Min 3 pts)</Text>
+            </View>
+            <View style={tw`w-[1px] h-8 bg-white/10`} />
+            <View style={tw`items-center`}>
+              <Text style={tw`text-[9px] font-bold text-[#8B95B0] uppercase mb-1`}>👁️ Peer Case (Bear)</Text>
+              <Text style={tw`text-red-400 font-extrabold text-sm`}>
+                +{analysis.judge.techniquesEvaluation.peerPoints.toFixed(1)} Points
+              </Text>
+              <Text style={tw`text-[8px] text-[#8B95B0] italic`}>Dynamic weighting (Min 3 pts)</Text>
+            </View>
+          </View>
+
+          <Text style={tw`text-[9px] font-bold text-[#D9B382] uppercase tracking-wider mb-2`}>
+            10-Point Technical Verification Matrix
+          </Text>
+
+          <View style={tw`mb-3 bg-black/25 p-3 rounded-lg border border-green-500/10`}>
+            <View style={tw`flex-row justify-between items-center mb-2 border-b border-green-500/10 pb-1`}>
+              <Text style={tw`text-[10px] font-bold text-green-400 uppercase`}>
+                🐶 Bulldog Case Techniques (Bullish)
+              </Text>
+              <Text style={tw`text-[8px] text-[#8B95B0]`}>
+                10 techniques evaluated
+              </Text>
+            </View>
+
+            {analysis.judge.techniquesEvaluation.bullList?.map((tech: any, tIdx: number) => (
+              <View key={tIdx} style={tw`mb-2`}>
+                <View style={tw`flex-row justify-between items-center`}>
+                  <View style={tw`flex-row items-center gap-1.5 flex-1 mr-2`}>
+                    <Text style={tw`text-[9px] font-bold text-white`}>• {tech.name}</Text>
+                    <View style={tw`bg-green-500/10 px-1 py-0.2 rounded`}>
+                      <Text style={tw`text-[7px] font-bold text-green-300`}>Bullish Base</Text>
+                    </View>
+                  </View>
+                  <View style={tw`flex-row items-center gap-1`}>
+                    <Text style={tw`text-[9px] font-bold text-[#22C55E]`}>
+                      +{tech.pointsEarned.toFixed(1)} pts
+                    </Text>
+                    <Text style={tw`text-[9px]`}>✅</Text>
+                  </View>
+                </View>
+                <Text style={tw`text-[8px] text-gray-400 pl-3 leading-3 mt-0.5`}>
+                  Process: {tech.process}
+                </Text>
+              </View>
+            ))}
+          </View>
+
+          <View style={tw`mb-2.5 bg-black/25 p-3 rounded-lg border border-red-500/10`}>
+            <View style={tw`flex-row justify-between items-center mb-2 border-b border-red-500/10 pb-1`}>
+              <Text style={tw`text-[10px] font-bold text-red-400 uppercase`}>
+                👁️ Peer Case Techniques (Bearish)
+              </Text>
+              <Text style={tw`text-[8px] text-[#8B95B0]`}>
+                10 techniques evaluated
+              </Text>
+            </View>
+
+            {analysis.judge.techniquesEvaluation.bearList?.map((tech: any, tIdx: number) => (
+              <View key={tIdx} style={tw`mb-2`}>
+                <View style={tw`flex-row justify-between items-center`}>
+                  <View style={tw`flex-row items-center gap-1.5 flex-1 mr-2`}>
+                    <Text style={tw`text-[9px] font-bold text-white`}>• {tech.name}</Text>
+                    <View style={tw`bg-red-500/10 px-1 py-0.2 rounded`}>
+                      <Text style={tw`text-[7px] font-bold text-red-300`}>Bearish Base</Text>
+                    </View>
+                  </View>
+                  <View style={tw`flex-row items-center gap-1`}>
+                    <Text style={tw`text-[9px] font-bold text-[#EF4444]`}>
+                      +{tech.pointsEarned.toFixed(1)} pts
+                    </Text>
+                    <Text style={tw`text-[9px]`}>✅</Text>
+                  </View>
+                </View>
+                <Text style={tw`text-[8px] text-gray-400 pl-3 leading-3 mt-0.5`}>
+                  Process: {tech.process}
+                </Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      )}
+
+      {analysis.judge.tradeDetails?.techniquesUsed && !analysis.judge?.techniquesEvaluation && (
         <View style={tw`mb-4`}>
            <Text style={tw`text-[10px] font-black text-[#8B95B0] uppercase tracking-widest mb-2`}>Technique Recognition (User Uploaded: {analysis.techUsedCount})</Text>
            <View style={tw`bg-black bg-opacity-20 p-4 rounded-xl border border-[#D9B382] border-opacity-20 `}>
@@ -300,7 +412,7 @@ export function LiveAnalysisResult({
                   <Pressable
                     onPress={() => {
                       console.log('RUN LOSS AUTOPSY manual button clicked!');
-                      setMode('bulk');
+                      setIsAutopsyOpen(true);
                     }}
                     style={({ pressed }) => [tw`bg-red-600 h-10 px-6 rounded-xl flex-row items-center justify-center shadow-xl mb-4`, { opacity: pressed ? 0.7 : 1 }]}
                   >
@@ -340,19 +452,31 @@ export function LiveAnalysisResult({
 
           {/* Slice preview — visual confirmation that the crop did what user expected */}
           {(testModeLeftSlice || testModeRightSlice) && (
-            <View style={tw`flex-row gap-2 mb-4 justify-center`}>
-              {testModeLeftSlice && (
-                <View style={tw`items-center`}>
-                  <Text style={tw`text-white text-opacity-60 text-[9px] uppercase mb-1`}>Analyzed (Past)</Text>
-                  <img src={testModeLeftSlice} style={{ height: 60, borderRadius: 6, border: '1px solid rgba(217,179,130,0.4)' }} />
-                </View>
-              )}
-              {testModeRightSlice && (
-                <View style={tw`items-center`}>
-                  <Text style={tw`text-yellow-400 text-[9px] uppercase mb-1`}>Outcome Window</Text>
-                  <img src={testModeRightSlice} style={{ height: 60, borderRadius: 6, border: '1px solid rgba(239,68,68,0.5)' }} />
-                </View>
-              )}
+            <View style={tw`mt-2 mb-6`}>
+              <View style={tw`flex-row items-end justify-center relative`}>
+                {testModeLeftSlice && (
+                  <View style={tw`items-center`}>
+                    <Text style={tw`text-white text-opacity-60 text-[9px] uppercase mb-2`}>Analyzed (Past)</Text>
+                    <img src={testModeLeftSlice} style={{ height: 60, borderTopLeftRadius: 6, borderBottomLeftRadius: 6, border: '2px solid rgba(217,179,130,0.4)', borderRightWidth: 0 }} />
+                  </View>
+                )}
+                
+                {testModeLeftSlice && testModeRightSlice && (
+                  <View style={tw`h-[60px] w-[0px] relative items-center justify-center z-10`}>
+                    <View style={tw`absolute top-[-20px] bottom-[-10] w-[2px] border-l-2 border-dashed border-[#38bdf8] opacity-100 z-10`} />
+                    <View style={tw`bg-[#0f172a] border border-[#38bdf8] px-1.5 py-0.5 rounded-full z-20 shadow-lg`}>
+                        <Text style={tw`text-[#38bdf8] text-[7px] font-black uppercase tracking-widest leading-none`}>Analysis Line</Text>
+                    </View>
+                  </View>
+                )}
+
+                {testModeRightSlice && (
+                  <View style={tw`items-center`}>
+                    <Text style={tw`text-yellow-400 text-[9px] uppercase mb-2`}>Outcome</Text>
+                    <img src={testModeRightSlice} style={{ height: 60, borderTopRightRadius: 6, borderBottomRightRadius: 6, border: '2px solid rgba(239,68,68,0.5)', borderLeftWidth: 0 }} />
+                  </View>
+                )}
+              </View>
             </View>
           )}
 
@@ -433,7 +557,7 @@ export function LiveAnalysisResult({
                 <Pressable
                   onPress={() => {
                     console.log('RUN LOSS AUTOPSY button clicked!');
-                    setMode('bulk');
+                    setIsAutopsyOpen(true);
                   }}
                   style={({ pressed }) => [tw`bg-red-600 h-10 px-6 rounded-xl flex-row items-center justify-center shadow-xl mb-2`, { opacity: pressed ? 0.7 : 1 }]}
                 >
@@ -489,6 +613,14 @@ export function LiveAnalysisResult({
           <Text style={tw`text-white font-black uppercase tracking-[2px] text-sm`}>Start New Analysis</Text>
         </motion.div>
       </Pressable>
+
+      <LossAutopsyModal
+        isOpen={isAutopsyOpen}
+        onClose={() => setIsAutopsyOpen(false)}
+        analysisData={analysis}
+        tradeSignal={analysis.direction === 'UP' ? 'CALL' : 'PUT'}
+        prefilledResultImage={analysis.finalImageForAnalysis}
+      />
     </motion.div>
   );
 }
