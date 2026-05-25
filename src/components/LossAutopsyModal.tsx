@@ -197,6 +197,7 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, p
 
       // Opposing Side Extraction
       const cases = judge.cases || { bull: { j1: 0, j2: 0, j3: 0 }, bear: { j1: 0, j2: 0, j3: 0 } };
+      const margin = Number(judge.margin || Math.abs(bullTotal - bearTotal));
       let opposingSideData: any = null;
       if (tradeSignal === 'CALL') {
         // Opponent is BEAR

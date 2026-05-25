@@ -1,6 +1,7 @@
 let msgCounter = 0;
 import { dataUrlToImageData } from './imageUtils';
 import { loadCalibration } from '../vision/colorCalibration';
+import { buildPipelineResult } from '../vision/pipeline';
 
 let worker: Worker | null = null;
 type Listener = (payload: any) => void;
@@ -146,44 +147,52 @@ export async function runSingleAnalysis(params: {
     const durM = parseDurationToMinutes(params.investmentDuration);
 
     if (params.isManifestCheck) {
-      const payloadPromise = new Promise<any>((resolve, reject) => {
-        messageResolvers.set(msgId, { resolve, reject });
-        try {
-          w.postMessage({
-            type: 'ANALYZE',
-            msgId,
-            imageData: imgData,
-            isManifestCheck: true,
-            investmentDurationMinutes: durM,
-          });
-        } catch (e: any) {
-          messageResolvers.delete(msgId);
-          reject(e);
+      try {
+        const pipe = buildPipelineResult(imgData);
+        const ohlc = pipe.ohlcSeries || [];
+        
+        let actualDir: 'UP' | 'DOWN' | 'FLAT' | null = null;
+        if (ohlc.length > 0) {
+          const cutoff = Math.max(1, Math.floor(durM / tfM));
+          if (ohlc.length > cutoff) {
+             // Look back entry compared to exit
+             const exitNode = ohlc[ohlc.length - 1];
+             const entryNode = ohlc[ohlc.length - 1 - cutoff];
+             if (exitNode.close > entryNode.close) {
+               actualDir = 'UP';
+             } else if (exitNode.close < entryNode.close) {
+               actualDir = 'DOWN';
+             } else {
+               actualDir = 'FLAT';
+             }
+          } else {
+             const lastCandle = ohlc[ohlc.length - 1];
+             if (lastCandle.close > lastCandle.open) {
+               actualDir = 'UP';
+             } else if (lastCandle.close < lastCandle.open) {
+               actualDir = 'DOWN';
+             } else {
+               actualDir = 'FLAT';
+             }
+          }
         }
-        params.signal.addEventListener('abort', () => {
-          messageResolvers.delete(msgId);
-          reject(new Error('Aborted'));
-        });
-      });
-
-      const payload = await payloadPromise;
-      if (payload.type === 'ERROR') {
-        throw new Error(payload.message || 'Error running fast manifest check');
+        
+        return {
+          analysis: {},
+          direction: 'NO_TRADE',
+          actualDirection: actualDir,
+          outcome: 'NEUTRAL',
+          confidence: 0,
+          reason: 'Fast manifest check completed',
+          testModeRightSlice: null,
+          finalImageForAnalysis: imageDataUrl,
+          entryAnchorBase64: null,
+          rawOutcome: 'FAST_CHECK',
+          frameStable: true
+        };
+      } catch (e: any) {
+        throw new Error(e.message || 'Error running fast manifest check');
       }
-
-      return {
-        analysis: {},
-        direction: 'NO_TRADE',
-        actualDirection: payload.actualDirection,
-        outcome: 'NEUTRAL',
-        confidence: 0,
-        reason: 'Fast manifest check completed',
-        testModeRightSlice: null,
-        finalImageForAnalysis: imageDataUrl,
-        entryAnchorBase64: null,
-        rawOutcome: 'FAST_CHECK',
-        frameStable: true
-      };
     }
 
     const payloadPromise = new Promise<any>((resolve, reject) => {

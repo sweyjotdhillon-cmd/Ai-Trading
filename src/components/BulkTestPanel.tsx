@@ -188,16 +188,24 @@ export function BulkTestPanel({
     if ((Platform.OS as string) === 'web') {
       const handleGlobalDragOver = (e: any) => e.preventDefault();
       const handleGlobalDrop = (e: any) => e.preventDefault();
+      const handleBeforeUnload = (e: any) => {
+        if (isQueueRunning) {
+           e.preventDefault();
+           e.returnValue = 'Bulk test is running. Are you sure you want to leave?';
+        }
+      };
 
       window.addEventListener('dragover', handleGlobalDragOver, { passive: false });
       window.addEventListener('drop', handleGlobalDrop, { passive: false });
+      window.addEventListener('beforeunload', handleBeforeUnload);
 
       return () => {
         window.removeEventListener('dragover', handleGlobalDragOver);
         window.removeEventListener('drop', handleGlobalDrop);
+        window.removeEventListener('beforeunload', handleBeforeUnload);
       };
     }
-  }, []);
+  }, [isQueueRunning]);
 
   useEffect(() => {
     if (isQueueRunning && !isPaused) {
@@ -306,7 +314,7 @@ export function BulkTestPanel({
     setIsPaused(false);
     abortControllerRef.current = new AbortController();
 
-    const CONCURRENCY_LIMIT = queue.length > 0 ? queue.length : 1;
+    const CONCURRENCY_LIMIT = 1; // Safely process one by one to avoid Canvas/Worker memory crashes
     let currentIndex = 0;
     const workerLoop = async () => {
       while (currentIndex < queue.length) {

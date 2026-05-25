@@ -119,6 +119,34 @@ export function evaluateSignal(
 
   if (ohlcSeries.length < 30) return defaultNoTrade;
 
+  // --- Apply Heikin Ashi Smoothing to reduce Open/Close confusion ---
+  // A "Japanese candlestick moving average" (Heikin Ashi) makes trends clearer
+  const haSeries = new Array(ohlcSeries.length);
+  haSeries[0] = {
+    ...ohlcSeries[0],
+    open: ohlcSeries[0].open,
+    close: (ohlcSeries[0].open + ohlcSeries[0].high + ohlcSeries[0].low + ohlcSeries[0].close) / 4,
+  };
+  
+  for (let i = 1; i < ohlcSeries.length; i++) {
+    const prevHA = haSeries[i - 1];
+    const curr = ohlcSeries[i];
+    
+    const haOpen = (prevHA.open + prevHA.close) / 2;
+    const haClose = (curr.open + curr.high + curr.low + curr.close) / 4;
+    const haHigh = Math.max(curr.high, haOpen, haClose);
+    const haLow = Math.min(curr.low, haOpen, haClose);
+    
+    haSeries[i] = {
+      ...curr,
+      open: haOpen,
+      high: haHigh,
+      low: haLow,
+      close: haClose,
+    };
+  }
+  ohlcSeries = haSeries;
+
   let isBypass = false;
   const activeList: any[] = [...(techniquesList || [])];
   if (activeList.length > 0) {
@@ -219,10 +247,11 @@ export function evaluateSignal(
 
   // 5. Volatility Regime
   // Removed redeclared skeptic multiplier
-  const regime = calculateVolatilityRegime(atrVals);
-  if (regime === 'HIGH') {
+  const regimeValuesForMathEngine = ohlcSeries.map((c, i) => ({ ...c, prevClose: i > 0 ? ohlcSeries[i-1].close : c.open }));
+  const regime = calculateVolatilityRegime(regimeValuesForMathEngine);
+  if (regime.status === 'EXPLOSIVE_SKIP') {
      skepticMultiplier *= 0.7; // Reduce confidence in high vol
-  } else if (regime === 'LOW') {
+  } else if (regime.status === 'DEAD_SKIP') {
      // Compression, breakout imminent. We don't reduce confidence, maybe boost breakout signals.
      if (Math.abs(currentZScore) > 2.0) skepticMultiplier *= 1.2;
   }
@@ -234,7 +263,7 @@ export function evaluateSignal(
 
   // DO NOT TRADE CHECKLIST (Hard blocks)
   let hardBlockReason = '';
-  if (regime === 'HIGH' && hurst < 0.45) hardBlockReason = 'High Volatility + Mean Reverting';
+  if (regime.status === 'EXPLOSIVE_SKIP' && hurst < 0.45) hardBlockReason = 'High Volatility + Mean Reverting';
   if (atrVals[last] < 0.0001) hardBlockReason = 'Zero Volatility';
   if (microMom === 0 && Math.abs(currentZScore) < 0.5) hardBlockReason = 'Complete Indecision';
   // (We no longer return early here, we let it flow so UI elements populate)
@@ -766,8 +795,8 @@ export function evaluateSignal(
   }
 
   // --- Step 7: Formatted Report ---
-  const wrapText = (text: string, width: number) => {
-    if (text.length <= width) return text.padEnd(width);
+  const wrapText = (text: string, width: number): string[] => {
+    if (text.length <= width) return [text.padEnd(width)];
     const words = text.split(' ');
     const lines = [];
     let currentLine = '';

@@ -463,7 +463,7 @@ export function LiveAnalysisResult({
                 
                 {testModeLeftSlice && testModeRightSlice && (
                   <View style={tw`h-[60px] w-[0px] relative items-center justify-center z-10`}>
-                    <View style={tw`absolute top-[-20px] bottom-[-10] w-[2px] border-l-2 border-dashed border-[#38bdf8] opacity-100 z-10`} />
+                    <View style={tw`absolute top-[-20px] bottom-[-10px] w-[2px] border-l-2 border-dashed border-[#38bdf8] opacity-100 z-10`} />
                     <View style={tw`bg-[#0f172a] border border-[#38bdf8] px-1.5 py-0.5 rounded-full z-20 shadow-lg`}>
                         <Text style={tw`text-[#38bdf8] text-[7px] font-black uppercase tracking-widest leading-none`}>Analysis Line</Text>
                     </View>

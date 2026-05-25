@@ -62,12 +62,11 @@ self.onmessage = async (e: MessageEvent) => {
         const ohlc = pipe.ohlcSeries || [];
         const n = Number(data.investmentDurationMinutes) || 5;
         let actualDirection: 'UP' | 'DOWN' | 'FLAT' | 'UNKNOWN' = 'UNKNOWN';
-        if (ohlc.length > n + 1) {
-          const entryClose = ohlc[ohlc.length - n - 1].close;
-          const exitClose = ohlc[ohlc.length - 1].close;
-          if (exitClose > entryClose) {
+        if (ohlc.length > 0) {
+          const lastCandle = ohlc[ohlc.length - 1];
+          if (lastCandle.close > lastCandle.open) {
             actualDirection = 'UP';
-          } else if (exitClose < entryClose) {
+          } else if (lastCandle.close < lastCandle.open) {
             actualDirection = 'DOWN';
           } else {
             actualDirection = 'FLAT';

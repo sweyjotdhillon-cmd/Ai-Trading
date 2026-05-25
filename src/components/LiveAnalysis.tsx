@@ -83,14 +83,25 @@ function pseudoRandom() {
 
 
 export function LiveAnalysis() {
-  const [stockName, setStockName] = useState('Bitcoin');
-  const [graphTimeframe, setGraphTimeframe] = useState('3 minutes');
+  const getInitialState = () => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('chartlens_current_analysis');
+        if (saved) return JSON.parse(saved);
+      } catch(e) {}
+    }
+    return {};
+  };
+  const initialState = getInitialState();
+
+  const [stockName, setStockName] = useState(initialState.stockName || 'Bitcoin');
+  const [graphTimeframe, setGraphTimeframe] = useState(initialState.graphTimeframe || '3 minutes');
   const [loading, setLoading] = useState(false);
   const [isBusy, setIsBusy] = useState(false);
-  const [analysisStep, setAnalysisStep] = useState<string | null>(null);
-  const [analysis, setAnalysis] = useState<any | null>(null);
-  const [mode, setMode] = useState<'live' | 'test' | 'bulk'>('live');
-  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [analysisStep, setAnalysisStep] = useState<string | null>(initialState.analysisStep || null);
+  const [analysis, setAnalysis] = useState<any | null>(initialState.analysis || null);
+  const [mode, setMode] = useState<'live' | 'test' | 'bulk'>(initialState.mode || 'live');
+  const [selectedImage, setSelectedImage] = useState<string | null>(initialState.selectedImage || null);
   const [calibrationFrame, setCalibrationFrame] = useState<ImageData | null>(null);
   const [isStable, setIsStable] = useState(false);
   
@@ -192,16 +203,16 @@ export function LiveAnalysis() {
 
   // Technique Files
   const [techniquesList, setTechniquesList] = useState<string[]>([]);
-  const [techFileName, setTechFileName] = useState<string | null>(null);
+  const [techFileName, setTechFileName] = useState<string | null>(initialState.techFileName || null);
 
-  const [confirmedOutcome, setConfirmedOutcome] = useState<'WIN' | 'LOSS' | null>(null);
+  const [confirmedOutcome, setConfirmedOutcome] = useState<'WIN' | 'LOSS' | null>(initialState.confirmedOutcome || null);
 
-  const [autoGradeStatus, setAutoGradeStatus] = useState<'idle' | 'grading' | 'done' | 'failed'>('idle');
-  const [testModeLeftSlice, setTestModeLeftSlice] = useState<string | null>(null);
-  const [testModeRightSlice, setTestModeRightSlice] = useState<string | null>(null);
-  const [autoGradeReason, setAutoGradeReason] = useState<string>('');
-  const [autoGradeConfidence, setAutoGradeConfidence] = useState<number>(0);
-  const [autoGradeRawOutcome, setAutoGradeRawOutcome] = useState<string>('');
+  const [autoGradeStatus, setAutoGradeStatus] = useState<'idle' | 'grading' | 'done' | 'failed'>(initialState.autoGradeStatus || 'idle');
+  const [testModeLeftSlice, setTestModeLeftSlice] = useState<string | null>(initialState.testModeLeftSlice || null);
+  const [testModeRightSlice, setTestModeRightSlice] = useState<string | null>(initialState.testModeRightSlice || null);
+  const [autoGradeReason, setAutoGradeReason] = useState<string>(initialState.autoGradeReason || '');
+  const [autoGradeConfidence, setAutoGradeConfidence] = useState<number>(initialState.autoGradeConfidence || 0);
+  const [autoGradeRawOutcome, setAutoGradeRawOutcome] = useState<string>(initialState.autoGradeRawOutcome || '');
   const actualDirection: 'UP' | 'DOWN' | null =
     confirmedOutcome === 'WIN' ? 'UP' : confirmedOutcome === 'LOSS' ? 'DOWN' : null;
   const [statsData, setStatsData] = useState<any[]>(() => {
@@ -216,6 +227,31 @@ export function LiveAnalysis() {
     return [];
   });
   const [sessionIndex] = useState<number>(() => Math.floor(pseudoRandom() * 1000));
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      if (analysis || selectedImage) {
+        localStorage.setItem('chartlens_current_analysis', JSON.stringify({
+          stockName,
+          graphTimeframe,
+          analysisStep,
+          analysis,
+          mode,
+          selectedImage,
+          techFileName,
+          confirmedOutcome,
+          autoGradeStatus,
+          testModeLeftSlice,
+          testModeRightSlice,
+          autoGradeReason,
+          autoGradeConfidence,
+          autoGradeRawOutcome
+        }));
+      } else {
+        localStorage.removeItem('chartlens_current_analysis');
+      }
+    }
+  }, [stockName, graphTimeframe, analysisStep, analysis, mode, selectedImage, techFileName, confirmedOutcome, autoGradeStatus, testModeLeftSlice, testModeRightSlice, autoGradeReason, autoGradeConfidence, autoGradeRawOutcome]);
 
   const fileInputRef = useRef<any>(null);
   const techInputRef = useRef<any>(null);
