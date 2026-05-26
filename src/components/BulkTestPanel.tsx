@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, Pressable, ScrollView, Platform } from 'react-native';
 import tw from 'twrnc';
 import { motion } from 'motion/react';
-import { FileJson, UploadCloud, Play, AlertTriangle, Activity, X } from 'lucide-react';
+import { FileJson, UploadCloud, Play, Activity, X } from 'lucide-react';
 import { BatchManifest, BatchManifestEntry, validateBatchManifest } from '../types/batchManifest';
 
 import { BatchAutopsyReport } from './BatchAutopsyReport';
@@ -201,7 +201,9 @@ export function BulkTestPanel({
     try {
       const saved = localStorage.getItem('aistudios_bulk_queue');
       if (saved) return JSON.parse(saved);
-    } catch(e) {}
+    } catch(e) {
+      console.warn("Failed to parse bulk queue from localStorage", e);
+    }
     return [];
   });
   const [autopsyingBatch, setAutopsyingBatch] = useState(false);
