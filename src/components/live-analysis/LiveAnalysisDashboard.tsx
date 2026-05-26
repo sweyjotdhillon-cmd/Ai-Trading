@@ -82,7 +82,7 @@ export function LiveAnalysisDashboard({
       <motion.div whileHover={cardHoverProps} style={tw`bg-[#121419] rounded-2xl border border-white border-opacity-10 p-4 shadow-2xl mb-4 z-100`}>
          <View style={tw`mb-4`}>
             <View style={tw`flex-row justify-between items-center mb-2`}>
-              <Text style={tw`text-[8px] font-black text-[#4B5570] uppercase tracking-widest`}>Asset Selection</Text>
+              <Text style={tw`text-[8px] font-black text-[#94A3B8] uppercase tracking-widest`}>Asset Selection</Text>
             </View>
             <View style={tw`flex-row flex-wrap gap-1.5`}>
               {symbols.map((s) => (

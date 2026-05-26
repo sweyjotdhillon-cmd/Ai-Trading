@@ -29,6 +29,7 @@ interface Props {
   buttonHoverProps: any;
   buttonTapProps: any;
   springProps: any;
+  appWideHallucinationFlag?: boolean;
 }
 
 export function LiveAnalysisResult({
@@ -36,7 +37,8 @@ export function LiveAnalysisResult({
   confirmedOutcome, saveToStats, setMode, tradingDirection, actualDirection,
   testModeLeftSlice, testModeRightSlice, autoGradeStatus, autoGradeReason,
   autoGradeRawOutcome, autoGradeConfidence, handleRegrade, setConfirmedOutcome,
-  setAutoGradeStatus, handleReset, buttonHoverProps, buttonTapProps, springProps
+  setAutoGradeStatus, handleReset, buttonHoverProps, buttonTapProps, springProps,
+  appWideHallucinationFlag
 }: Props) {
   const [isAutopsyOpen, setIsAutopsyOpen] = useState(false);
 
@@ -224,7 +226,7 @@ export function LiveAnalysisResult({
             <View style={tw`flex-row items-center gap-1.5`}>
               <CheckCircle size={14} color="#22C55E" />
               <Text style={tw`text-[10px] font-black text-white uppercase tracking-wider`}>
-                Verification Engine (Min 10 Verified: {analysis.judge.techniquesEvaluation.minimumReached ? "✅ YES" : "❌ NO"})
+                Verification Engine (Status: {analysis.judge.techniquesEvaluation.totalTechniques > 0 ? "✅ ACTIVE" : "❌ INACTIVE"})
               </Text>
             </View>
             <View style={tw`bg-[#22C55E]/10 px-2 py-0.5 rounded`}>
@@ -234,27 +236,61 @@ export function LiveAnalysisResult({
             </View>
           </View>
 
+          {/* Zero Hallucination Integrity Checker Status Indicator */}
+          <View style={tw`mb-3 p-2 rounded-lg border flex-row items-center justify-between ${
+            (analysis.judge?.hallucinationDetected || appWideHallucinationFlag) 
+              ? 'bg-red-500/10 border-red-500/30' 
+              : 'bg-green-500/5 border-green-500/20'
+          }`}>
+            <View style={tw`flex-row items-center gap-1.5`}>
+              <View style={tw`w-1.5 h-1.5 rounded-full ${
+                (analysis.judge?.hallucinationDetected || appWideHallucinationFlag) ? 'bg-red-500 animate-pulse' : 'bg-green-500'
+              }`} />
+              <Text style={tw`text-[9px] font-black text-white uppercase tracking-wider`}>
+                {(analysis.judge?.hallucinationDetected || appWideHallucinationFlag) ? 'INTEGRITY ALERT' : 'PRO INTEGRITY VERIFIER'}
+              </Text>
+            </View>
+            <View style={tw`flex-row gap-1.5`}>
+              <View style={tw`px-1.5 py-0.5 rounded flex-row gap-1 items-center ${
+                (analysis.judge?.hallucinationDetected || appWideHallucinationFlag) ? 'bg-red-500/15' : 'bg-green-500/10'
+              }`}>
+                <Text style={tw`text-[7px] font-black ${(analysis.judge?.hallucinationDetected || appWideHallucinationFlag) ? 'text-red-400' : 'text-green-400'}`}>
+                  {(analysis.judge?.hallucinationDetected || appWideHallucinationFlag) ? 'ANOMALIES DETECTED' : 'HALLUCINATIONS: 0%'}
+                </Text>
+              </View>
+              <View style={tw`bg-[#D9B382]/10 px-1.5 py-0.5 rounded`}>
+                <Text style={tw`text-[7px] font-black text-[#D9B382]`}>
+                  {(analysis.judge?.hallucinationDetected || appWideHallucinationFlag) ? 'SAFETY VETO IN EFFECT' : 'CALIBRATION: OK'}
+                </Text>
+              </View>
+            </View>
+          </View>
+
           {/* Cases and cumulative score tallies */}
           <View style={tw`flex-row justify-around items-center mb-3.5 bg-black/40 p-2.5 rounded-lg border border-white/5`}>
             <View style={tw`items-center`}>
               <Text style={tw`text-[9px] font-bold text-[#8B95B0] uppercase mb-1`}>🐶 Bulldog Case (Bull)</Text>
               <Text style={tw`text-green-400 font-extrabold text-sm`}>
-                +{analysis.judge.techniquesEvaluation.bulldogPoints.toFixed(1)} Points
+                +{analysis.judge.techniquesEvaluation.bulldogPoints.toFixed(1)} Pts
               </Text>
-              <Text style={tw`text-[8px] text-[#8B95B0] italic`}>Dynamic weighting (Min 3 pts)</Text>
+              <Text style={tw`text-[8px] text-[#8B95B0] italic mt-1 text-center`}>
+                User Evaluated (Main)
+              </Text>
             </View>
             <View style={tw`w-[1px] h-8 bg-white/10`} />
             <View style={tw`items-center`}>
               <Text style={tw`text-[9px] font-bold text-[#8B95B0] uppercase mb-1`}>👁️ Peer Case (Bear)</Text>
               <Text style={tw`text-red-400 font-extrabold text-sm`}>
-                +{analysis.judge.techniquesEvaluation.peerPoints.toFixed(1)} Points
+                +{analysis.judge.techniquesEvaluation.peerPoints.toFixed(1)} Pts
               </Text>
-              <Text style={tw`text-[8px] text-[#8B95B0] italic`}>Dynamic weighting (Min 3 pts)</Text>
+              <Text style={tw`text-[8px] text-[#8B95B0] italic mt-1 text-center`}>
+                User Evaluated (Main)
+              </Text>
             </View>
           </View>
 
           <Text style={tw`text-[9px] font-bold text-[#D9B382] uppercase tracking-wider mb-2`}>
-            10-Point Technical Verification Matrix
+            Technical Verification Matrix
           </Text>
 
           <View style={tw`mb-3 bg-black/25 p-3 rounded-lg border border-green-500/10`}>
@@ -263,31 +299,35 @@ export function LiveAnalysisResult({
                 🐶 Bulldog Case Techniques (Bullish)
               </Text>
               <Text style={tw`text-[8px] text-[#8B95B0]`}>
-                10 techniques evaluated
+                {analysis.judge.techniquesEvaluation.bullList?.length || 0} evaluated
               </Text>
             </View>
 
-            {analysis.judge.techniquesEvaluation.bullList?.map((tech: any, tIdx: number) => (
+            {analysis.judge.techniquesEvaluation.bullList?.map((tech: any, tIdx: number) => {
+              const isRepo = tech.name.includes('(Repo)');
+              return (
               <View key={tIdx} style={tw`mb-2`}>
                 <View style={tw`flex-row justify-between items-center`}>
                   <View style={tw`flex-row items-center gap-1.5 flex-1 mr-2`}>
-                    <Text style={tw`text-[9px] font-bold text-white`}>• {tech.name}</Text>
-                    <View style={tw`bg-green-500/10 px-1 py-0.2 rounded`}>
-                      <Text style={tw`text-[7px] font-bold text-green-300`}>Bullish Base</Text>
+                    <Text style={tw`text-[9px] font-bold ${tech.matched ? 'text-white' : 'text-gray-400'}`}>• {tech.name}</Text>
+                    <View style={tw`${tech.matched ? 'bg-green-500/10' : 'bg-gray-500/10'} px-1 py-0.2 rounded`}>
+                      <Text style={tw`text-[7px] font-bold ${tech.matched ? 'text-green-300' : 'text-gray-400'}`}>
+                        Bullish {isRepo ? 'Repo' : 'User'}
+                      </Text>
                     </View>
                   </View>
                   <View style={tw`flex-row items-center gap-1`}>
-                    <Text style={tw`text-[9px] font-bold text-[#22C55E]`}>
-                      +{tech.pointsEarned.toFixed(1)} pts
+                    <Text style={tw`text-[9px] font-bold ${tech.matched ? 'text-[#22C55E]' : 'text-gray-500'}`}>
+                      {tech.matched ? `+${tech.pointsEarned.toFixed(1)} pts` : '0.0 pts'}
                     </Text>
-                    <Text style={tw`text-[9px]`}>✅</Text>
+                    <Text style={tw`text-[9px] font-black`}>{tech.matched ? '✅' : '⚪'}</Text>
                   </View>
                 </View>
-                <Text style={tw`text-[8px] text-gray-400 pl-3 leading-3 mt-0.5`}>
+                <Text style={tw`text-[8px] ${tech.matched ? 'text-gray-300 font-bold' : 'text-gray-500'} pl-3 leading-3 mt-0.5`}>
                   Process: {tech.process}
                 </Text>
               </View>
-            ))}
+            )})}
           </View>
 
           <View style={tw`mb-2.5 bg-black/25 p-3 rounded-lg border border-red-500/10`}>
@@ -296,38 +336,42 @@ export function LiveAnalysisResult({
                 👁️ Peer Case Techniques (Bearish)
               </Text>
               <Text style={tw`text-[8px] text-[#8B95B0]`}>
-                10 techniques evaluated
+                {analysis.judge.techniquesEvaluation.bearList?.length || 0} evaluated
               </Text>
             </View>
-
-            {analysis.judge.techniquesEvaluation.bearList?.map((tech: any, tIdx: number) => (
+ 
+            {analysis.judge.techniquesEvaluation.bearList?.map((tech: any, tIdx: number) => {
+              const isRepo = tech.name.includes('(Repo)');
+              return (
               <View key={tIdx} style={tw`mb-2`}>
                 <View style={tw`flex-row justify-between items-center`}>
                   <View style={tw`flex-row items-center gap-1.5 flex-1 mr-2`}>
-                    <Text style={tw`text-[9px] font-bold text-white`}>• {tech.name}</Text>
-                    <View style={tw`bg-red-500/10 px-1 py-0.2 rounded`}>
-                      <Text style={tw`text-[7px] font-bold text-red-300`}>Bearish Base</Text>
+                    <Text style={tw`text-[9px] font-bold ${tech.matched ? 'text-white' : 'text-gray-400'}`}>• {tech.name}</Text>
+                    <View style={tw`${tech.matched ? 'bg-red-500/10' : 'bg-gray-500/10'} px-1 py-0.2 rounded`}>
+                      <Text style={tw`text-[7px] font-bold ${tech.matched ? 'text-red-300' : 'text-gray-400'}`}>
+                        Bearish {isRepo ? 'Repo' : 'User'}
+                      </Text>
                     </View>
                   </View>
                   <View style={tw`flex-row items-center gap-1`}>
-                    <Text style={tw`text-[9px] font-bold text-[#EF4444]`}>
-                      +{tech.pointsEarned.toFixed(1)} pts
+                    <Text style={tw`text-[9px] font-bold ${tech.matched ? 'text-[#EF4444]' : 'text-gray-500'}`}>
+                      {tech.matched ? `+${tech.pointsEarned.toFixed(1)} pts` : '0.0 pts'}
                     </Text>
-                    <Text style={tw`text-[9px]`}>✅</Text>
+                    <Text style={tw`text-[9px] font-black`}>{tech.matched ? '✅' : '⚪'}</Text>
                   </View>
                 </View>
-                <Text style={tw`text-[8px] text-gray-400 pl-3 leading-3 mt-0.5`}>
+                <Text style={tw`text-[8px] ${tech.matched ? 'text-gray-300 font-bold' : 'text-gray-500'} pl-3 leading-3 mt-0.5`}>
                   Process: {tech.process}
                 </Text>
               </View>
-            ))}
+            )})}
           </View>
         </View>
       )}
 
-      {analysis.judge.tradeDetails?.techniquesUsed && !analysis.judge?.techniquesEvaluation && (
+      {analysis.judge.tradeDetails?.techniquesUsed && (
         <View style={tw`mb-4`}>
-           <Text style={tw`text-[10px] font-black text-[#8B95B0] uppercase tracking-widest mb-2`}>Technique Recognition (User Uploaded: {analysis.techUsedCount})</Text>
+           <Text style={tw`text-[10px] font-black text-[#8B95B0] uppercase tracking-widest mb-2`}>Technique Recognition (User Specific: {analysis.techUsedCount})</Text>
            <View style={tw`bg-black bg-opacity-20 p-4 rounded-xl border border-[#D9B382] border-opacity-20 `}>
               <Text style={tw`text-white text-xs leading-5 font-bold italic text-[#D9B382]`}>{analysis.judge.tradeDetails.techniquesUsed}</Text>
            </View>
@@ -338,7 +382,40 @@ export function LiveAnalysisResult({
         <View style={tw`mb-8`}>
            <Text style={tw`text-[10px] font-black text-[#8B95B0] uppercase tracking-widest mb-2`}>Technique Recognition (Repo Detected: {analysis.judge.tradeDetails?.repoPatternCount})</Text>
            <View style={tw`bg-black bg-opacity-20 p-4 rounded-xl border border-purple-500/20 `}>
-              <Text style={tw`text-white text-xs leading-5 font-bold italic text-purple-400`}>{analysis.judge.tradeDetails.repoPatternsDetected}</Text>
+              <Text style={tw`text-white text-xs leading-5 font-bold italic text-purple-400 mb-3`}>{analysis.judge.tradeDetails.repoPatternsDetected}</Text>
+              
+              <View style={tw`bg-purple-900/10 p-3 rounded-lg border border-purple-500/10`}>
+                 <Text style={tw`text-[9px] font-bold ${analysis.judge.tradeDetails?.techniqueMode !== 'USER' ? 'text-purple-400' : 'text-[#8B95B0]'} mb-2 uppercase tracking-wider`}>
+                    {analysis.judge.tradeDetails?.techniqueMode !== 'USER' ? 'Active Repo Contribution' : 'Hypothetical Repo Impact (Imagination Only)'}
+                 </Text>
+                 <View style={tw`flex-row justify-between mb-1`}>
+                    <Text style={tw`text-[10px] text-gray-400`}>Repo Bulldog (Bull) Points:</Text>
+                    <Text style={tw`text-[10px] font-bold text-green-400`}>+{(analysis.judge.techniquesEvaluation?.repoBulldogPoints || 0).toFixed(1)} pts</Text>
+                 </View>
+                 <View style={tw`flex-row justify-between mb-2`}>
+                    <Text style={tw`text-[10px] text-gray-400`}>Repo Peer (Bear) Points:</Text>
+                    <Text style={tw`text-[10px] font-bold text-red-400`}>+{(analysis.judge.techniquesEvaluation?.repoPeerPoints || 0).toFixed(1)} pts</Text>
+                 </View>
+                 {analysis.judge.tradeDetails?.techniqueMode === 'USER' && (
+                    <>
+                       <View style={tw`flex-row justify-between pt-2 border-t border-purple-500/10`}>
+                          <Text style={tw`text-[10px] font-bold text-gray-400`}>If combined with Technical Result:</Text>
+                          <Text style={tw`text-[10px] font-bold text-gray-300`}>
+                             Bull: {((analysis.judge.techniquesEvaluation?.bulldogPoints || 0) + (analysis.judge.techniquesEvaluation?.repoBulldogPoints || 0)).toFixed(1)} | 
+                             Bear: {((analysis.judge.techniquesEvaluation?.peerPoints || 0) + (analysis.judge.techniquesEvaluation?.repoPeerPoints || 0)).toFixed(1)}
+                          </Text>
+                       </View>
+                       <Text style={tw`text-[8px] text-gray-500 italic mt-2`}>
+                         * In USER mode, these points are segregated and do not affect the main signal calculation.
+                       </Text>
+                    </>
+                 )}
+                 {analysis.judge.tradeDetails?.techniqueMode !== 'USER' && (
+                     <Text style={tw`text-[8px] text-gray-500 italic mt-2`}>
+                         * These points are fully integrated into the technical result above.
+                     </Text>
+                 )}
+              </View>
            </View>
         </View>
       )}
@@ -451,29 +528,92 @@ export function LiveAnalysisResult({
           )}
 
           {/* Slice preview — visual confirmation that the crop did what user expected */}
-          {(testModeLeftSlice || testModeRightSlice) && (
-            <View style={tw`mt-2 mb-6`}>
-              <View style={tw`flex-row items-end justify-center relative`}>
+          {mode === 'test' && (testModeLeftSlice || testModeRightSlice) && (
+            <View style={tw`mt-4 mb-6`}>
+              <View style={tw`flex-row justify-center relative w-full h-[300px]`}>
                 {testModeLeftSlice && (
-                  <View style={tw`items-center`}>
-                    <Text style={tw`text-white text-opacity-60 text-[9px] uppercase mb-2`}>Analyzed (Past)</Text>
-                    <img src={testModeLeftSlice} style={{ height: 60, borderTopLeftRadius: 6, borderBottomLeftRadius: 6, border: '2px solid rgba(217,179,130,0.4)', borderRightWidth: 0 }} />
+                  <View style={tw`flex-auto pr-[1px] relative h-full flex flex-col`}>
+                    <Text style={tw`text-white text-opacity-60 text-xs font-bold text-center uppercase mb-2 absolute -top-6 w-full`}>Analyzed (Past)</Text>
+                    <img src={testModeLeftSlice} style={{ width: '100%', height: '100%', objectFit: 'cover', borderTopLeftRadius: 6, borderBottomLeftRadius: 6, border: '2px solid rgba(217,179,130,0.4)', borderRightWidth: 0, display: 'block' }} />
                   </View>
                 )}
                 
                 {testModeLeftSlice && testModeRightSlice && (
-                  <View style={tw`h-[60px] w-[0px] relative items-center justify-center z-10`}>
-                    <View style={tw`absolute top-[-20px] bottom-[-10px] w-[2px] border-l-2 border-dashed border-[#38bdf8] opacity-100 z-10`} />
-                    <View style={tw`bg-[#0f172a] border border-[#38bdf8] px-1.5 py-0.5 rounded-full z-20 shadow-lg`}>
-                        <Text style={tw`text-[#38bdf8] text-[7px] font-black uppercase tracking-widest leading-none`}>Analysis Line</Text>
+                  <View style={tw`w-[0px] relative items-center justify-center z-20`}>
+                    <View style={tw`absolute top-0 bottom-0 w-[2px] border-l-2 border-dashed border-[#38bdf8] opacity-100 z-10`} />
+                    <View style={tw`absolute top-1/2 -translate-y-1/2 bg-[#0f172a] border border-[#38bdf8] px-2 py-1 rounded-full z-20 shadow-lg whitespace-nowrap`}>
+                        <Text style={tw`text-[#38bdf8] text-[9px] font-black uppercase tracking-widest leading-none`}>Analysis Line</Text>
                     </View>
                   </View>
                 )}
 
                 {testModeRightSlice && (
-                  <View style={tw`items-center`}>
-                    <Text style={tw`text-yellow-400 text-[9px] uppercase mb-2`}>Outcome</Text>
-                    <img src={testModeRightSlice} style={{ height: 60, borderTopRightRadius: 6, borderBottomRightRadius: 6, border: '2px solid rgba(239,68,68,0.5)', borderLeftWidth: 0 }} />
+                  <View style={tw`flex-1 pl-[1px] relative h-full flex flex-col`}>
+                    <Text style={tw`text-yellow-400 text-xs font-bold text-center uppercase mb-2 absolute -top-6 w-full`}>Outcome</Text>
+                    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+                      <img src={testModeRightSlice} style={{ width: '100%', height: '100%', objectFit: 'cover', borderTopRightRadius: 6, borderBottomRightRadius: 6, border: '2px solid rgba(239,68,68,0.5)', borderLeftWidth: 0, display: 'block' }} />
+                      
+                      {analysis?.judge?.winner && analysis.judge.winner !== 'NO_TRADE' && analysis.judge.winner !== 'NONE' && (
+                         <svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 10 }}>
+                            <defs>
+                              <filter id="glow">
+                                <feGaussianBlur stdDeviation="2.5" result="coloredBlur"/>
+                                <feMerge>
+                                  <feMergeNode in="coloredBlur"/>
+                                  <feMergeNode in="SourceGraphic"/>
+                                </feMerge>
+                              </filter>
+                            </defs>
+                            <line
+                               x1="0%"
+                               y1="50%"
+                               x2="75%"
+                               y2={analysis.judge.winner === 'BULL' ? '20%' : '80%'}
+                               stroke={analysis.judge.winner === 'BULL' ? '#4ade80' : '#f87171'}
+                               strokeWidth="5"
+                               strokeDasharray="10,8"
+                               filter="url(#glow)"
+                            />
+                            <circle cx="75%" cy={analysis.judge.winner === 'BULL' ? '20%' : '80%'} r="10" fill={analysis.judge.winner === 'BULL' ? '#4ade80' : '#f87171'} filter="url(#glow)" />
+                            <circle cx="75%" cy={analysis.judge.winner === 'BULL' ? '20%' : '80%'} r="4" fill="#000" />
+                            
+                            {/* Text backgrounds for clarity */}
+                            <rect
+                               x="50%"
+                               y={analysis.judge.winner === 'BULL' ? '4%' : '80%'}
+                               width="50%"
+                               height="30px"
+                               fill="rgba(0,0,0,0.8)"
+                               rx="6"
+                               stroke={analysis.judge.winner === 'BULL' ? '#4ade80' : '#f87171'}
+                               strokeWidth="1"
+                            />
+                            
+                            <text
+                               x="75%"
+                               y={analysis.judge.winner === 'BULL' ? '12%' : '88%'}
+                               fill={analysis.judge.winner === 'BULL' ? '#4ade80' : '#f87171'}
+                               fontSize="16"
+                               fontWeight="900"
+                               textAnchor="middle"
+                            >
+                               PREDICTED {analysis.judge.winner === 'BULL' ? 'UP' : 'DOWN'}
+                            </text>
+                            
+                            <rect
+                               x="55%"
+                               y={analysis.judge.winner === 'BULL' ? '25%' : '63%'}
+                               width="40%"
+                               height="22px"
+                               fill="rgba(0,0,0,0.7)"
+                               rx="4"
+                            />
+                            <text x="75%" y={analysis.judge.winner === 'BULL' ? '29%' : '67%'} fill="white" fontSize="11" fontWeight="bold" textAnchor="middle">
+                               {analysis.judge.winner === 'BULL' ? 'Target Reached' : 'Support Broken'}
+                            </text>
+                         </svg>
+                      )}
+                    </div>
                   </View>
                 )}
               </View>

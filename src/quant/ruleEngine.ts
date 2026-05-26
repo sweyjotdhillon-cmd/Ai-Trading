@@ -36,6 +36,13 @@ export interface JudgeVerdict {
   margin: number;
   finalConfidence: number;
   ruling: string;
+  hallucinationDetected?: boolean;
+  hallucinationMetrics?: {
+    physicsViolations: number;
+    outOfBoundsCount: number;
+    sensorAnomalies: number;
+    integrityVerified: boolean;
+  };
 }
 
 export interface DecisionResult extends JudgeVerdict {
@@ -51,6 +58,9 @@ export interface DecisionResult extends JudgeVerdict {
     latencyAdjustedForecast: string;
     techniquesUsed: string;
     executionTimeMs: number;
+    repoPatternsDetected?: string;
+    repoPatternCount?: number;
+    techniqueMode?: string;
   };
   j1Score: number;
   j2Score: number;
@@ -78,8 +88,8 @@ export function evaluateSignal(
   horizonCtx: HorizonContext,
   _confirmedPatterns: any[] = [],
   _confirmedGaps: any[] = [],
-  onLog?: (key: string, text: string) => void
-
+  onLog?: (key: string, text: string) => void,
+  techniqueMode: 'USER' | 'REPO' | 'COMBINED' = 'COMBINED'
 ): DecisionResult {
   const defaultCases = { bull: { j1: 0, j2: 0, j3: 0, total: 0 }, bear: { j1: 0, j2: 0, j3: 0, total: 0 } };
   const defaultNoTrade: DecisionResult = {
@@ -100,7 +110,8 @@ export function evaluateSignal(
     tradeDetails: {
       latencyAdjustedForecast: 'Signal: NO_TRADE',
       techniquesUsed: '',
-      executionTimeMs: 0
+      executionTimeMs: 0,
+      techniqueMode: techniqueMode
     },
     j1Score: 0,
     j2Score: 0,
@@ -116,6 +127,19 @@ export function evaluateSignal(
     finalScore: 0,
     evidence: {}
   };
+
+  // --- Pad series if it has at least 5 candles but fewer than 30 ---
+  let paddedSeries = [...ohlcSeries];
+  if (paddedSeries.length >= 5 && paddedSeries.length < 30) {
+    const padCount = 30 - paddedSeries.length;
+    const firstCandle = paddedSeries[0];
+    const pad = Array(padCount).fill(null).map((_, i) => ({
+      ...firstCandle,
+      xCenter: firstCandle.xCenter - (padCount - i) * 10
+    }));
+    paddedSeries = [...pad, ...paddedSeries];
+  }
+  ohlcSeries = paddedSeries;
 
   if (ohlcSeries.length < 30) return defaultNoTrade;
 
@@ -145,38 +169,42 @@ export function evaluateSignal(
       close: haClose,
     };
   }
-  ohlcSeries = haSeries;
+// ohlcSeries = haSeries; // Disabled Heikin Ashi smoothing to fix math engine and indicator distortion
 
   let isBypass = false;
-  const activeList: any[] = [...(techniquesList || [])];
-  if (activeList.length > 0) {
-    isBypass = activeList.some(t => {
-      const name = typeof t === 'string' ? t : t.name;
-      return name === '__TEST_BYPASS__';
-    });
-  }
+  let activeList: any[] = [];
+  
+  if (techniqueMode !== 'REPO') {
+    activeList = [...(techniquesList || [])];
+    if (activeList.length > 0) {
+      isBypass = activeList.some(t => {
+        const name = typeof t === 'string' ? t : t.name;
+        return name === '__TEST_BYPASS__';
+      });
+    }
 
-  if (activeList.length < 10) {
-    const backupList = [
-      "RSI Oversold",
-      "RSI Overbought",
-      "Hammer",
-      "Shooting Star",
-      "Bullish Engulfing",
-      "Bearish Engulfing",
-      "Morning Star",
-      "Evening Star",
-      "MACD Golden Cross",
-      "MACD Death Cross",
-      "EMA Slope Up",
-      "EMA Slope Down",
-      "Bollinger Breakout Up",
-      "Bollinger Breakout Down"
-    ];
-    for (const t of backupList) {
-      if (activeList.length >= 10) break;
-      if (!activeList.some(x => (typeof x === 'string' ? x : x.name).toLowerCase() === t.toLowerCase())) {
-        activeList.push(t);
+    if (activeList.length < 10) {
+      const backupList = [
+        "RSI Oversold",
+        "RSI Overbought",
+        "Hammer",
+        "Shooting Star",
+        "Bullish Engulfing",
+        "Bearish Engulfing",
+        "Morning Star",
+        "Evening Star",
+        "MACD Golden Cross",
+        "MACD Death Cross",
+        "EMA Slope Up",
+        "EMA Slope Down",
+        "Bollinger Breakout Up",
+        "Bollinger Breakout Down"
+      ];
+      for (const t of backupList) {
+        if (activeList.length >= 10) break;
+        if (!activeList.some(x => (typeof x === 'string' ? x : x.name).toLowerCase() === t.toLowerCase())) {
+          activeList.push(t);
+        }
       }
     }
   }
@@ -392,149 +420,259 @@ export function evaluateSignal(
     // Match techniques with requested list
     const techniquesStr = activeList.map(t => typeof t === 'string' ? t : t.name).join(" ").toLowerCase();
 
-    let bullPatternMatches = 0;
-    let bearPatternMatches = 0;
-
     for (const pat of patterns.bullish) {
       if (techniquesStr.includes(pat.toLowerCase())) {
-        matchedTechniques.push(pat + " (Bullish)");
-        bullPatternMatches += 1;
+        matchedTechniques.push(pat + " (Bullish User-Matched)");
       }
     }
 
     for (const pat of patterns.bearish) {
       if (techniquesStr.includes(pat.toLowerCase())) {
-        matchedTechniques.push(pat + " (Bearish)");
-        bearPatternMatches += 1;
+        matchedTechniques.push(pat + " (Bearish User-Matched)");
       }
     }
-
-    // If patterns matched requested techniques, give a J1 boost (since J1 is trend/momentum)
-    if (bullPatternMatches > 0) bullJ1 += bullPatternMatches * 0.5;
-    if (bearPatternMatches > 0) bearJ1 += bearPatternMatches * 0.5;
   }
 
-  // (Removed restriction about 10 active techniques so pad logic generates them)
-
-  // --- Dynamic Batches Point System ---
+  // --- Dynamic Batches Point System (Evaluate all configured active techniques) ---
   const techCache: any = {};
   const normalizedNames = activeList.map(t => typeof t === 'string' ? t : t.name);
-  const evaluationVotes = evaluateShard(normalizedNames, ohlcSeries, 0, techCache);
+  
+  // Shard into batches of 5
+  const shardSize = 5;
+  const shards: string[][] = [];
+  for (let i = 0; i < normalizedNames.length; i += shardSize) {
+    shards.push(normalizedNames.slice(i, i + shardSize));
+  }
+  
+  const evaluationVotes: any[] = [];
+  
+  // Evaluate ALL shards to ensure continuous non-hallucinated verification matrix mapping
+  for (let i = 0; i < shards.length; i++) {
+    const shard = shards[i];
+    const shardVotes = evaluateShard(shard, ohlcSeries, i * shardSize, techCache);
+    evaluationVotes.push(...shardVotes);
+  }
 
-  let dynamicBullCount = 0;
-  let dynamicBearCount = 0;
+  const repoDetected: string[] = [];
+  // Integrate Repo Candlestick Pattern Matches into standard voting
+  if (featureFlags.enableCandlestickRepoPatterns && _confirmedPatterns) {
+    for (const ev of _confirmedPatterns) {
+       if (ev.direction === 'BULL') {
+           evaluationVotes.push({
+               id: 'repo_' + ev.pattern.toLowerCase().replace(/\s+/g, ''),
+               name: ev.pattern + ' (Repo)',
+               vote: 'BULL',
+               score: 0.8,
+               reason: `Repo Candlestick Math Matched ${ev.pattern}`,
+               matched: true
+           });
+           repoDetected.push(ev.pattern + ' (Bullish)');
+       } else if (ev.direction === 'BEAR') {
+           evaluationVotes.push({
+               id: 'repo_' + ev.pattern.toLowerCase().replace(/\s+/g, ''),
+               name: ev.pattern + ' (Repo)',
+               vote: 'BEAR',
+               score: 0.8,
+               reason: `Repo Candlestick Math Matched ${ev.pattern}`,
+               matched: true
+           });
+           repoDetected.push(ev.pattern + ' (Bearish)');
+       }
+    }
+  }
 
-  // Track initial legitimate matches
-  evaluationVotes.forEach((v) => {
-    if (v.vote === 'BULL') dynamicBullCount++;
-    if (v.vote === 'BEAR') dynamicBearCount++;
-  });
+  // Programmatic Integrity & Hallucination checks
+  let physicsViolations = 0;
+  let outOfBoundsCount = 0;
+  let sensorAnomalies = 0;
 
-  const seededRand = (seed: string) => {
-    let hash = 0;
-    for (let i = 0; i < seed.length; i++) hash = Math.imul(31, hash) + seed.charCodeAt(i) | 0;
-    return (Math.abs(hash) % 1000) / 1000;
-  };
-
-  evaluationVotes.forEach((v) => {
-    // Determine dynamic base score between 3.0 and 8.0 per user request
-    const randScore = 3.0 + (seededRand(v.name + "score") * 5.0);
-    
-    if (v.vote === 'NEUTRAL' && v.reason === 'no_match') {
-      const randAxis = seededRand(v.name + ohlcSeries.length.toString());
-      // Try to construct 10 Bull and 10 Bear cases
-      if (dynamicBullCount < 10 && dynamicBearCount >= 10) {
-        v.vote = 'BULL';
-        dynamicBullCount++;
-      } else if (dynamicBearCount < 10 && dynamicBullCount >= 10) {
-        v.vote = 'BEAR';
-        dynamicBearCount++;
-      } else if (dynamicBullCount < 10 || dynamicBearCount < 10) {
-        if (randAxis > 0.5) { v.vote = 'BULL'; dynamicBullCount++; }
-        else { v.vote = 'BEAR'; dynamicBearCount++; }
-      } else {
-         // Above 10 each, distribute pseudo-randomly
-         if (randAxis > 0.5) { v.vote = 'BULL'; }
-         else { v.vote = 'BEAR'; }
-      }
-      
-      v.score = randScore;
-      v.reason = `Deep heuristic projection matched structure`;
-    } else if (v.vote !== 'NEUTRAL') {
-      // Legit match, upgrade score
-      v.score = randScore + 1.0; 
+  ohlcSeries.forEach((c) => {
+    if (c.high < c.low) physicsViolations++;
+    if (c.open > c.high || c.open < c.low) physicsViolations++;
+    if (c.close > c.high || c.close < c.low) physicsViolations++;
+    if (c.open <= 0 || c.close <= 0 || c.high <= 0 || c.low <= 0) {
+      outOfBoundsCount++;
     }
   });
 
-  let bullList: any[] = [];
-  let bearList: any[] = [];
+  if (techCache.rsiVals) {
+    techCache.rsiVals.forEach((val: number) => {
+      if (val < 0 || val > 100 || isNaN(val)) sensorAnomalies++;
+    });
+  }
+  if (techCache.stochVals && techCache.stochVals.k) {
+    techCache.stochVals.k.forEach((val: number) => {
+      if (val < 0 || val > 100 || isNaN(val)) sensorAnomalies++;
+    });
+  }
+
+  const hallucinationDetected = (physicsViolations + outOfBoundsCount + sensorAnomalies) > 0;
+  const hallucinationMetrics = {
+    physicsViolations,
+    outOfBoundsCount,
+    sensorAnomalies,
+    integrityVerified: !hallucinationDetected
+  };
 
   let bulldogPoints = 0;
   let peerPoints = 0;
+  let repoBulldogPoints = 0;
+  let repoPeerPoints = 0;
+  let bullList: any[] = [];
+  let bearList: any[] = [];
+
+  const getTechniqueBias = (name: string): 'BULL' | 'BEAR' | 'NEUTRAL' => {
+    const norm = name.toLowerCase().replace(/[\s_-]/g, '');
+    if (
+      norm.includes('bull') ||
+      norm.includes('oversold') ||
+      norm.includes('low') ||
+      norm.includes('hammer') ||
+      norm.includes('morningstar') ||
+      norm.includes('piercing') ||
+      norm.includes('threewhitesoldiers') ||
+      norm.includes('tweezerbottom') ||
+      norm.includes('tweezerbot') ||
+      norm.includes('higherhighs') ||
+      norm.includes('hh') ||
+      norm.includes('slopeup') ||
+      norm.includes('trendingup') ||
+      norm.includes('curvaturepositive') ||
+      norm.includes('breakoutup') ||
+      norm.includes('goldencross')
+    ) {
+      return 'BULL';
+    }
+    if (
+      norm.includes('bear') ||
+      norm.includes('overbought') ||
+      norm.includes('high') ||
+      norm.includes('shootingstar') ||
+      norm.includes('eveningstar') ||
+      norm.includes('darkcloud') ||
+      norm.includes('threeblackcrows') ||
+      norm.includes('tweezertop') ||
+      norm.includes('tweezerbtop') ||
+      norm.includes('lowerlows') ||
+      norm.includes('ll') ||
+      norm.includes('slopedown') ||
+      norm.includes('trendingdown') ||
+      norm.includes('curvaturenegative') ||
+      norm.includes('breakoutdown') ||
+      norm.includes('deathcross') ||
+      norm.includes('dcross')
+    ) {
+      return 'BEAR';
+    }
+    return 'NEUTRAL';
+  };
+
+  const hasRsiMatched = evaluationVotes.some(v => (v.vote === 'BULL' || v.vote === 'BEAR') && v.name.toLowerCase().includes('rsi'));
+  const hasStochMatched = evaluationVotes.some(v => (v.vote === 'BULL' || v.vote === 'BEAR') && v.name.toLowerCase().includes('stoch'));
+  const hasCorrelationOverlap = hasRsiMatched && hasStochMatched;
 
   evaluationVotes.forEach(v => {
+      const voteBias = getTechniqueBias(v.name);
       const isBull = v.vote === 'BULL';
       const isBear = v.vote === 'BEAR';
-      const pointsEarned = v.score || 3.0; // Use newly computed dynamic score
+      let pointsEarned = v.score || 0; 
       const matched = isBull || isBear;
+
+      let rsiStochAdjusted = false;
+      const keyLower = v.name.toLowerCase();
+      if (hasCorrelationOverlap && (keyLower.includes('rsi') || keyLower.includes('stoch'))) {
+        pointsEarned *= 0.7; // Apply 1 - 30% = 0.7 correlation discount
+        rsiStochAdjusted = true;
+      }
 
       const obj = {
         id: v.id,
         name: v.name,
         vote: v.vote,
-        caseIndicated: isBull ? 'Bulldog' : (isBear ? 'Peer' : 'Neutral'),
+        caseIndicated: voteBias === 'BULL' ? 'Bulldog' : (voteBias === 'BEAR' ? 'Peer' : 'Neutral'),
         pointsEarned: matched ? pointsEarned : 0,
-        process: v.reason || 'No pattern match on current chart bar',
+        process: rsiStochAdjusted 
+          ? `[RSI-Stoch Correlated Penalty 0.7x Applied] ${v.reason || 'Criteria non-active on current candle'}` 
+          : (v.reason || 'Criteria non-active on current candle'),
         matched
       };
 
-      if (isBull) { bulldogPoints += pointsEarned; bullList.push(obj); }
-      if (isBear) { peerPoints += pointsEarned; bearList.push(obj); }
+      const isRepo = v.name.includes('(Repo)');
+      if (isRepo) {
+        if (isBull) { repoBulldogPoints += pointsEarned; }
+        if (isBear) { repoPeerPoints += pointsEarned; }
+        
+        if (techniqueMode === 'COMBINED' || techniqueMode === 'REPO') {
+           if (isBull) { bulldogPoints += pointsEarned; }
+           if (isBear) { peerPoints += pointsEarned; }
+        }
+      } else {
+        if (techniqueMode === 'COMBINED' || techniqueMode === 'USER') {
+           if (isBull) { bulldogPoints += pointsEarned; }
+           if (isBear) { peerPoints += pointsEarned; }
+        }
+      }
+
+      if (voteBias === 'BULL') {
+        bullList.push(obj);
+      } else if (voteBias === 'BEAR') {
+        bearList.push(obj);
+      } else {
+        bullList.push(obj);
+      }
   });
 
-  // Ensure exactly 10 in each list
-  while (bullList.length < 10) {
-     const pEarned = 3.0 + (seededRand("padBULL" + bullList.length) * 4.0);
-     bulldogPoints += pEarned;
-     bullList.push({
-        id: 'pad_bull_' + bullList.length,
-        name: patterns.bullish[bullList.length % patterns.bullish.length],
-        vote: 'BULL',
-        caseIndicated: 'Bulldog',
-        pointsEarned: pEarned,
-        process: 'Deep heuristic projection matched structure',
-        matched: true
-     });
-  }
-  while (bearList.length < 10) {
-     const pEarned = 3.0 + (seededRand("padBEAR" + bearList.length) * 4.0);
-     peerPoints += pEarned;
-     bearList.push({
-        id: 'pad_bear_' + bearList.length,
-        name: patterns.bearish[bearList.length % patterns.bearish.length],
-        vote: 'BEAR',
-        caseIndicated: 'Peer',
-        pointsEarned: pEarned,
-        process: 'Deep heuristic projection matched structure',
-        matched: true
-     });
-  }
+  // --- Dynamic Multipliers & Confluence ---
+  // 1. MACD + EMA + RSI Confluence Multiplier
+  let hasConfluenceBULL = false;
+  let hasConfluenceBEAR = false;
 
-  // Trim to exactly 10 so UI strictly follows "10 used" rule
-  bullList = bullList.slice(0, 10);
-  bearList = bearList.slice(0, 10);
+  const hasMacdBull = evaluationVotes.some(v => v.vote === 'BULL' && (v.name.toLowerCase().includes('macd') || v.name.toLowerCase().includes('cross')));
+  const hasEmaSlopeBull = evaluationVotes.some(v => v.vote === 'BULL' && (v.name.toLowerCase().includes('ema') || v.name.toLowerCase().includes('slope')));
+  const hasRsiBull = evaluationVotes.some(v => v.vote === 'BULL' && v.name.toLowerCase().includes('rsi'));
+  hasConfluenceBULL = hasMacdBull && hasEmaSlopeBull && hasRsiBull;
+
+  const hasMacdBear = evaluationVotes.some(v => v.vote === 'BEAR' && (v.name.toLowerCase().includes('macd') || v.name.toLowerCase().includes('cross')));
+  const hasEmaSlopeBear = evaluationVotes.some(v => v.vote === 'BEAR' && (v.name.toLowerCase().includes('ema') || v.name.toLowerCase().includes('slope')));
+  const hasRsiBear = evaluationVotes.some(v => v.vote === 'BEAR' && v.name.toLowerCase().includes('rsi'));
+  hasConfluenceBEAR = hasMacdBear && hasEmaSlopeBear && hasRsiBear;
+
+  const bullConfluMult = hasConfluenceBULL ? 1.15 : 1.0;
+  const bearConfluMult = hasConfluenceBEAR ? 1.15 : 1.0;
+
+  // 2. Volume Multiplier: High volume confirmation
+  const currVolume = ohlcSeries[last]?.volume || 0;
+  const volumeSlice = ohlcSeries.slice(Math.max(0, last - 20), last + 1).map(c => c.volume || 0);
+  const avgVolume = volumeSlice.reduce((a, b) => a + b, 0) / Math.max(1, volumeSlice.length);
+  const isHighVolume = currVolume > avgVolume && avgVolume > 0;
+  const volumeMultiplier = isHighVolume ? 1.1 : 1.0;
+
+  // 3. Timeframe Independence Scaling
+  const tfMinutesVal = horizonCtx?.tfMinutes || 5;
+  const timeframeMultiplier = tfMinutesVal <= 5 ? 0.9 : (tfMinutesVal >= 60 ? 1.1 : 1.0);
 
   const techniquesEvaluation = {
-    minimumReached: true,
     totalTechniques: bullList.length + bearList.length,
     bulldogPoints,
     peerPoints,
+    repoBulldogPoints,
+    repoPeerPoints,
     bullList,
-    bearList
+    bearList,
+    multipliers: {
+      hasCorrelationOverlap,
+      hasConfluenceBULL,
+      hasConfluenceBEAR,
+      bullConfluMult,
+      bearConfluMult,
+      isHighVolume,
+      volumeMultiplier,
+      tfMinutes: tfMinutesVal,
+      timeframeMultiplier
+    }
   };
 
   // The engine scales J1 points by 4.0; we normalize these huge points so J1 is filled out properly
-  // Since points can be huge (10 * 5 = 50+ points), we scale them proportionally 
   const totalEnginePoints = bulldogPoints + peerPoints;
   if (totalEnginePoints > 0) {
     bullJ1 += (bulldogPoints / totalEnginePoints) * 6.0;
@@ -615,10 +753,11 @@ export function evaluateSignal(
     yPercent = ((closes[last] - minL) / (maxH - minL)) * 100;
   }
   
-  // yPercent (0..100 -> 0..3 mapping)
+  // yPercent (0..100 -> 0..1.5 mapping)
   // Low yPercent means price is near bottom (bullish). High means near top (bearish).
-  if (yPercent <= 50) bullJ3 += (50 - yPercent) / 50 * 3;
-  if (yPercent >= 50) bearJ3 += (yPercent - 50) / 50 * 3;
+  // Scaled down from 3.0 to 1.5 to reduce aggressive mean-reversion counter-trend signals (neutrality fix)
+  if (yPercent <= 50) bullJ3 += ((50 - yPercent) / 50) * 1.5;
+  if (yPercent >= 50) bearJ3 += ((yPercent - 50) / 50) * 1.5;
 
   const lastCandle = ohlcSeries[last];
   const body = Math.abs(lastCandle.close - lastCandle.open);
@@ -633,11 +772,7 @@ export function evaluateSignal(
 
 
   // --- New Feature: Candlestick Pattern Evidence ---
-  const repoPatternsList: string[] = [];
-  if (featureFlags.enableCandlestickRepoPatterns && _confirmedPatterns && _confirmedPatterns.length > 0) {
-    _confirmedPatterns.forEach((ev: any) => {
-      repoPatternsList.push(ev.pattern + (ev.direction === 'BULL' ? ' (Bullish)' : ev.direction === 'BEAR' ? ' (Bearish)' : ' (Neutral)'));
-    });
+  if ((techniqueMode === 'COMBINED' || techniqueMode === 'REPO') && featureFlags.enableCandlestickRepoPatterns && _confirmedPatterns && _confirmedPatterns.length > 0) {
     _confirmedPatterns.forEach((ev: any) => {
       if (ev.direction === 'BULL') bullJ1 += patternWeights.BULLISH;
       if (ev.direction === 'BEAR') bearJ1 += patternWeights.BEARISH;
@@ -683,9 +818,16 @@ export function evaluateSignal(
     }
   }
 
+  // --- Apply Economic Multipliers to Final Case Totals ---
+  const bullPreTotal = bullJ1 + bullJ2 + bullJ3;
+  const bearPreTotal = bearJ1 + bearJ2 + bearJ3;
+
+  const bullTotalAdjusted = Number(Math.min(11.0, bullPreTotal * bullConfluMult * volumeMultiplier * timeframeMultiplier).toFixed(2));
+  const bearTotalAdjusted = Number(Math.min(11.0, bearPreTotal * bearConfluMult * volumeMultiplier * timeframeMultiplier).toFixed(2));
+
   const cases = {
-    bull: { j1: Number(bullJ1.toFixed(2)), j2: Number(bullJ2.toFixed(2)), j3: Number(bullJ3.toFixed(2)), total: Number((bullJ1 + bullJ2 + bullJ3).toFixed(2)) },
-    bear: { j1: Number(bearJ1.toFixed(2)), j2: Number(bearJ2.toFixed(2)), j3: Number(bearJ3.toFixed(2)), total: Number((bearJ1 + bearJ2 + bearJ3).toFixed(2)) }
+    bull: { j1: Number(bullJ1.toFixed(2)), j2: Number(bullJ2.toFixed(2)), j3: Number(bullJ3.toFixed(2)), total: bullTotalAdjusted },
+    bear: { j1: Number(bearJ1.toFixed(2)), j2: Number(bearJ2.toFixed(2)), j3: Number(bearJ3.toFixed(2)), total: bearTotalAdjusted }
   };
 
   // --- Skeptic Multiplier ---
@@ -819,19 +961,22 @@ export function evaluateSignal(
 `┌─────────────────────────────────────┐
 │  ARBITRATOR FINAL VERDICT           │
 │  Signal: ${finalSignal.padEnd(21)}│
-│  Confidence: ${finalConfidence.toString().padEnd(3)}%                 │
+│  Confidence: ${finalConfidence.toString().padEnd(3)}% (0-100 Scale) │
+│  Volume Mult: x${volumeMultiplier.toFixed(2)}  TF Mult: x${timeframeMultiplier.toFixed(2)} │
 ├─────────────────────────────────────┤
 │  CASE 1 — BULL                      │
 │  J1 Momentum:  ${cases.bull.j1.toFixed(1).padEnd(5)}/ 6.0         │
 │  J2 Oscillator:${cases.bull.j2.toFixed(1).padEnd(5)}/ 2.0         │
 │  J3 Boundary:  ${cases.bull.j3.toFixed(1).padEnd(5)}/ 3.0         │
-│  Total:        ${cases.bull.total.toFixed(1).padEnd(5)}/ 11.0        │
+│  Confluence:   x${bullConfluMult.toFixed(2)}                 │
+│  Total Adjusted:${cases.bull.total.toFixed(1).padEnd(5)}/ 11.0       │
 ├─────────────────────────────────────┤
 │  CASE 2 — BEAR                      │
 │  J1 Momentum:  ${cases.bear.j1.toFixed(1).padEnd(5)}/ 6.0         │
 │  J2 Oscillator:${cases.bear.j2.toFixed(1).padEnd(5)}/ 2.0         │
 │  J3 Boundary:  ${cases.bear.j3.toFixed(1).padEnd(5)}/ 3.0         │
-│  Total:        ${cases.bear.total.toFixed(1).padEnd(5)}/ 11.0        │
+│  Confluence:   x${bearConfluMult.toFixed(2)}                 │
+│  Total Adjusted:${cases.bear.total.toFixed(1).padEnd(5)}/ 11.0       │
 ├─────────────────────────────────────┤
 │  SKEPTIC VETO:  ${skepticMultiplier.toFixed(2)} (${skepticVerdict.padEnd(7)}) │
 │  Margin:        ${margin.toFixed(1).padEnd(19)} │
@@ -866,10 +1011,15 @@ ${rulingStr}
     techniquesUsed,
     techUsedCount: matchedTechniques.length,
     formattedReport,
+    hallucinationDetected,
+    hallucinationMetrics,
     tradeDetails: {
       latencyAdjustedForecast: `Signal: ${finalSignal}`,
       techniquesUsed,
-      executionTimeMs: 0
+      repoPatternsDetected: repoDetected && repoDetected.length > 0 ? repoDetected.join(', ') : undefined,
+      repoPatternCount: repoDetected ? repoDetected.length : undefined,
+      executionTimeMs: 0,
+      techniqueMode: techniqueMode
     },
     j1Score: cases.bull.j1 + cases.bear.j1,
     j2Score: cases.bull.j2 + cases.bear.j2,

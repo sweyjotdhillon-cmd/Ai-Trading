@@ -60,6 +60,8 @@ export function BulkTestPanel({
   const [generationProgress, setGenerationProgress] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
+  const [existingManifest, setExistingManifest] = useState<BatchManifest | null>(null);
+  const existingManifestRef = useRef<HTMLInputElement>(null);
   
   const handleDragOver = (e: React.DragEvent) => e.preventDefault();
   
@@ -79,37 +81,47 @@ export function BulkTestPanel({
   };
 
   const handleGenerateManifest = async () => {
-    if (images.length === 0) return;
+    if (images.length === 0 && !existingManifest) return;
     
     setIsGenerating(true);
     setGenerationProgress(`Analyzing ${images.length} images...`);
     
     const entries: BatchManifestEntry[] = [];
+    if (existingManifest && existingManifest.entries) {
+      entries.push(...existingManifest.entries);
+    }
     
     try {
-      setGenerationProgress('Extracting & profiling candle histories in parallel...');
-      const results = await Promise.all(images.map(async (file) => {
-        const imageData = await new Promise<string>((resolve, reject) => {
+      setGenerationProgress(`Extracting & profiling candle histories (0/${images.length})...`);
+      const results: BatchManifestEntry[] = [];
+      const MAX_PAYLOAD_KB = 500; // Limit payload to keep JSON small
+      
+      for (let i = 0; i < images.length; i++) {
+        const file = images[i];
+        setGenerationProgress(`Extracting history (${i + 1}/${images.length})...`);
+        
+        let imageData = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
           reader.onload = () => resolve(reader.result as string);
           reader.onerror = reject;
           reader.readAsDataURL(file);
         });
 
-        // Run Single deterministic analysis using the real testMode (cropping target window out of canvas, evaluating entry/exit bounds)
+        // Run Single deterministic analysis using the real testMode
         let detectedOutcome: 'UP' | 'DOWN' | 'UNKNOWN' = 'UNKNOWN';
         try {
           const result = await runSingleAnalysis({
             imageDataUrl: imageData,
             stock: stockName,
             graphTimeframe: graphTimeframe,
-            investmentDuration: buildDuration, // '3m' or '5m' selected by user
+            investmentDuration: buildDuration, 
             investmentAmount: '100',
             profitabilityPercent: '85',
             techniquesList: techniquesList,
+            techniqueMode: techniqueMode,
             encryptedSystemTokens,
             signal: new AbortController().signal,
-            isManifestCheck: true // Highly optimized fast manifest-check pathway for lightning-fast speeds
+            isManifestCheck: true 
           });
           
           if (result && (result.actualDirection === 'UP' || result.actualDirection === 'DOWN')) {
@@ -119,17 +131,17 @@ export function BulkTestPanel({
           console.warn(`Analysis failed on manifest build for ${file.name}:`, err);
         }
 
-        return {
+        results.push({
           imageFilename: file.name,
           expectedOutcome: detectedOutcome,
-          imageData,
+          imageData: imageData,
           stock: stockName,
           graphTimeframe: graphTimeframe,
           investmentDuration: buildDuration,
           investmentAmount: Number(investmentAmount) || 100,
           profitabilityPercent: Number(profitabilityPercent) || 85
-        };
-      }));
+        });
+      }
 
       entries.push(...results);
 
@@ -157,14 +169,45 @@ export function BulkTestPanel({
     } finally {
       setIsGenerating(false);
       setGenerationProgress('');
+      setImages([]); // clear images after build
+      setExistingManifest(null); // clear existing manifest after build
     }
   };
 
+  const loadExistingManifest = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const text = evt.target?.result as string;
+        const parsed = JSON.parse(text) as BatchManifest;
+        if (!parsed.entries || !Array.isArray(parsed.entries)) {
+          throw new Error("Invalid manifest format");
+        }
+        setExistingManifest(parsed);
+        showBulkNotice(`Loaded existing manifest with ${parsed.entries.length} entries. New images will be appended.`, 'success');
+      } catch (err: any) {
+        showBulkNotice("Failed to parse manifest JSON: " + err.message, 'error');
+      }
+      if (existingManifestRef.current) existingManifestRef.current.value = "";
+    };
+    reader.readAsText(file);
+  };
+
   // Tab 2 State
-  const [queue, setQueue] = useState<BatchRun[]>([]);
+  const [queue, setQueue] = useState<BatchRun[]>(() => {
+    try {
+      const saved = localStorage.getItem('aistudios_bulk_queue');
+      if (saved) return JSON.parse(saved);
+    } catch(e) {}
+    return [];
+  });
   const [autopsyingBatch, setAutopsyingBatch] = useState(false);
   const [masterSummary, setMasterSummary] = useState<MasterAutopsySummary | null>(null);
   const [manifestErrors, setManifestErrors] = useState<string[]>([]);
+  const [techniqueMode, setTechniqueMode] = useState<'USER' | 'REPO' | 'COMBINED'>('COMBINED');
   const [bulkNotice, setBulkNotice] = useState<{ text: string; type: 'success' | 'info' | 'error' } | null>(null);
 
   const showBulkNotice = (text: string, type: 'success' | 'info' | 'error' = 'info') => {
@@ -183,6 +226,26 @@ export function BulkTestPanel({
   const { requestLock, releaseLock } = useWakeLock();
   
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    // Only save the non-blob parts of the queue
+    if (queue.length > 0) {
+      try {
+        const lightweightQueue = queue.map(q => ({
+          entry: { ...q.entry, imageData: undefined },
+          status: q.status,
+          result: q.result,
+          error: q.error,
+          earlyDirection: q.earlyDirection,
+        }));
+        localStorage.setItem('aistudios_bulk_queue', JSON.stringify(lightweightQueue));
+      } catch (e) {
+        console.warn('Failed to save batch results to localStorage:', e);
+      }
+    } else {
+      localStorage.removeItem('aistudios_bulk_queue');
+    }
+  }, [queue]);
 
   useEffect(() => {
     if ((Platform.OS as string) === 'web') {
@@ -216,35 +279,11 @@ export function BulkTestPanel({
   }, [isQueueRunning, isPaused, requestLock, releaseLock]);
 
   useEffect(() => {
-    // Attempt hydration from sessionStorage
-    try {
-      const existing = sessionStorage.getItem('bulk_queue_state');
-      if (existing) {
-         setQueue(JSON.parse(existing));
-         setTab('run'); // switch to run tab if we have a persisted session
-      }
-    } catch { /* ignore */ }
+    // SessionStorage removed because large image data exceeds 5MB quota and causes silent crashes/reloads
   }, []);
 
   useEffect(() => {
-    if (queue.length > 0) {
-       try {
-         sessionStorage.setItem('bulk_queue_state', JSON.stringify(queue.map(q => {
-            const persistItem = { ...q, file: undefined };
-            if (persistItem.result) {
-              persistItem.result = {
-                ...persistItem.result,
-                finalImageForAnalysis: '',
-                testModeRightSlice: '',
-                entryAnchorBase64: ''
-              };
-            }
-            return persistItem;
-         })));
-       } catch {
-         console.warn("Could not save bulk queue state to session storage (QuotaExceeded).");
-       }
-    }
+    // Do not attempt to persist the queue to sessionStorage to avoid QuotaExceededError
   }, [queue]);
 
   const loadManifest = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -261,7 +300,8 @@ export function BulkTestPanel({
         } else {
           setManifestErrors([]);
           const manifest = json as BatchManifest;
-          setQueue(manifest.entries.map(entry => ({
+          const shuffledEntries = [...manifest.entries].sort(() => Math.random() - 0.5);
+          setQueue(shuffledEntries.map(entry => ({
             entry,
             status: 'Pending'
           })));
@@ -314,7 +354,7 @@ export function BulkTestPanel({
     setIsPaused(false);
     abortControllerRef.current = new AbortController();
 
-    const CONCURRENCY_LIMIT = 1; // Safely process one by one to avoid Canvas/Worker memory crashes
+    const CONCURRENCY_LIMIT = Math.min(5, queue.length > 0 ? queue.length : 1); // 5 concurrent to be fast but avoid memory crash
     let currentIndex = 0;
     const workerLoop = async () => {
       while (currentIndex < queue.length) {
@@ -356,6 +396,7 @@ export function BulkTestPanel({
             investmentAmount: item.entry.investmentAmount ? String(item.entry.investmentAmount) : investmentAmount,
             profitabilityPercent: item.entry.profitabilityPercent ? String(item.entry.profitabilityPercent) : profitabilityPercent,
             techniquesList: item.entry.techniqueOverrides || techniquesList,
+            techniqueMode: techniqueMode,
             encryptedSystemTokens,
             signal: abortControllerRef.current!.signal,
             isTestMode: true,
@@ -498,7 +539,6 @@ export function BulkTestPanel({
     if (isQueueRunning) return;
     setQueue([]);
     setManifestErrors([]);
-    sessionStorage.removeItem('bulk_queue_state');
   };
 
   return (
@@ -522,29 +562,23 @@ export function BulkTestPanel({
       <View style={tw`p-6`}>
         {bulkNotice && (
           <View style={[
-            tw`mb-4 p-4 rounded-xl flex-row items-center justify-between border`,
-            bulkNotice.type === 'success' ? tw`bg-green-500/10 border-green-500/30` :
-            bulkNotice.type === 'error' ? tw`bg-red-500/10 border-red-500/30` :
-            tw`bg-zinc-500/10 border-zinc-500/30`
+            tw`mb-4 p-4 rounded-xl flex-row items-center justify-between border-2`,
+            bulkNotice.type === 'success' ? tw`bg-[#22c55e] border-[#16a34a]` :
+            bulkNotice.type === 'error' ? tw`bg-[#ef4444] border-[#dc2626]` :
+            tw`bg-[#f59e0b] border-[#d97706]`
           ]}>
             <View style={tw`flex-row items-center flex-1 mr-3`}>
               <View style={[
-                tw`w-2 h-2 rounded-full mr-2.5`,
-                bulkNotice.type === 'success' ? tw`bg-green-400` :
-                bulkNotice.type === 'error' ? tw`bg-red-400` :
-                tw`bg-zinc-400`
+                tw`w-2 h-2 rounded-full mr-2.5 bg-black bg-opacity-50`,
               ]} />
               <Text style={[
-                tw`text-xs font-medium`,
-                bulkNotice.type === 'success' ? tw`text-green-200` :
-                bulkNotice.type === 'error' ? tw`text-red-200` :
-                tw`text-zinc-200`
+                tw`text-sm font-black text-black`,
               ]}>
                 {bulkNotice.text}
               </Text>
             </View>
-            <Pressable onPress={() => setBulkNotice(null)} style={tw`p-1 bg-white/5 rounded-full`}>
-              <X size={12} color="#A1A1AA" />
+            <Pressable onPress={() => setBulkNotice(null)} style={tw`p-1.5 bg-black/20 rounded-full`}>
+              <X size={14} color="#000" />
             </Pressable>
           </View>
         )}
@@ -577,15 +611,20 @@ export function BulkTestPanel({
               <Text style={tw`text-white font-black text-sm uppercase tracking-widest mb-2`}>
                 Drag & Drop or Click to Upload
               </Text>
-              <Text style={tw`text-white text-[10px] text-opacity-40 uppercase font-bold tracking-widest mb-3 text-center`}>
+              <Text style={tw`text-white text-[10px] text-opacity-70 uppercase font-bold tracking-widest mb-3 text-center`}>
                 Max Recommended Batch Size: Unlimited (Offline Engine)
               </Text>
-              <Text style={tw`text-white text-opacity-50 text-xs text-center px-4`}>
+              <Text style={tw`text-white text-opacity-80 text-xs text-center px-4`}>
                 Drop chart screenshots here to generate a matching JSON manifest sequence.
               </Text>
               {images.length > 0 && (
-                <View style={tw`mt-4 bg-[#D9B382] bg-opacity-10 py-1 px-3 rounded-md`}>
-                  <Text style={tw`text-[#D9B382] font-black text-[10px]`}>{images.length} IMAGES LOADED</Text>
+                <View style={tw`mt-4 bg-[#D9B382] py-2 px-4 rounded-md`}>
+                  <Text style={tw`text-[#1A1308] font-black text-[11px]`}>{images.length} IMAGES LOADED</Text>
+                </View>
+              )}
+              {existingManifest && existingManifest.entries && (
+                <View style={tw`mt-2 bg-[#D9B382] py-2 px-4 rounded-md`}>
+                  <Text style={tw`text-[#1A1308] font-black text-[11px]`}>{existingManifest.entries.length} PREVIOUS MANIFEST ENTRIES LOADED</Text>
                 </View>
               )}
 
@@ -618,15 +657,20 @@ export function BulkTestPanel({
               <Text style={tw`text-white font-black text-sm uppercase tracking-widest mb-2`}>
                 Drag & Drop or Click to Upload
               </Text>
-              <Text style={tw`text-white text-[10px] text-opacity-40 uppercase font-bold tracking-widest mb-3 text-center`}>
+              <Text style={tw`text-white text-[10px] text-opacity-70 uppercase font-bold tracking-widest mb-3 text-center`}>
                 Max Recommended Batch Size: Unlimited (Offline Engine)
               </Text>
-              <Text style={tw`text-white text-opacity-50 text-xs text-center px-4`}>
+              <Text style={tw`text-white text-opacity-80 text-xs text-center px-4`}>
                 Drop chart screenshots here to generate a matching JSON manifest sequence.
               </Text>
               {images.length > 0 && (
-                <View style={tw`mt-4 bg-[#D9B382] bg-opacity-10 py-1 px-3 rounded-md`}>
-                  <Text style={tw`text-[#D9B382] font-black text-[10px]`}>{images.length} IMAGES LOADED</Text>
+                <View style={tw`mt-4 bg-[#D9B382] py-2 px-4 rounded-md`}>
+                  <Text style={tw`text-[#1A1308] font-black text-[11px]`}>{images.length} IMAGES LOADED</Text>
+                </View>
+              )}
+              {existingManifest && existingManifest.entries && (
+                <View style={tw`mt-2 bg-[#D9B382] py-2 px-4 rounded-md`}>
+                  <Text style={tw`text-[#1A1308] font-black text-[11px]`}>{existingManifest.entries.length} PREVIOUS MANIFEST ENTRIES LOADED</Text>
                 </View>
               )}
 
@@ -634,8 +678,22 @@ export function BulkTestPanel({
             )}
 
 
+            <View style={tw`flex-row justify-between items-center bg-black bg-opacity-20 border border-white border-opacity-10 rounded-xl p-4`}>
+              <View>
+                <Text style={tw`text-white font-bold text-[10px] uppercase tracking-widest`}>Append to Existing</Text>
+                <Text style={tw`text-white text-opacity-70 text-[9px] uppercase tracking-widest mt-1`}>Upload JSON to merge</Text>
+              </View>
+              <Pressable 
+                onPress={() => existingManifestRef.current?.click()}
+                style={({pressed}) => [tw`bg-white/5 border border-white/10 px-3 py-2 rounded-lg`, { opacity: pressed ? 0.7 : 1 }]}
+              >
+                <Text style={tw`text-[#D9B382] text-[10px] font-black tracking-widest`}>LOAD JSON</Text>
+              </Pressable>
+            </View>
+            <input type="file" ref={existingManifestRef} accept=".json,application/json" onChange={loadExistingManifest} style={{display: 'none'}} />
+
             <View style={tw`pt-4 border-t border-white border-opacity-10`}>
-               <Text style={tw`text-[10px] font-black text-[#4B5570] uppercase tracking-wider mb-2 text-center`}>Investment Duration (Cut Target Window)</Text>
+               <Text style={tw`text-[10px] font-black text-[#94a3b8] uppercase tracking-wider mb-2 text-center`}>Investment Duration (Cut Target Window)</Text>
                <View style={tw`flex-row gap-2`}>
                   <Pressable
                     onPress={() => setBuildDuration('3m')}
@@ -654,9 +712,9 @@ export function BulkTestPanel({
 
             <View style={tw`pt-4`}>
               {isGenerating ? (
-                <View style={tw`items-center justify-center gap-2 h-14 bg-[#D9B382]/10 border border-[#D9B382]/30 rounded-xl px-4 flex-row`}>
-                  <Activity size={16} color="#D9B382" className="animate-spin" />
-                  <Text style={tw`text-[#D9B382] font-black text-[10px] uppercase tracking-widest`}>
+                <View style={tw`items-center justify-center gap-2 h-14 bg-[#D9B382] rounded-xl px-4 flex-row`}>
+                  <Activity size={16} color="#1A1308" className="animate-spin" />
+                  <Text style={tw`text-[#1A1308] font-black text-xs uppercase tracking-widest`}>
                     {generationProgress}
                   </Text>
                 </View>
@@ -664,8 +722,8 @@ export function BulkTestPanel({
                 <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
                   <Pressable 
                     onPress={handleGenerateManifest}
-                    disabled={images.length === 0}
-                    style={tw`flex-row items-center justify-center bg-[#D9B382] ${images.length === 0 ? 'opacity-50' : 'opacity-100'} h-12 rounded-xl px-6`}
+                    disabled={images.length === 0 && !existingManifest}
+                    style={tw`flex-row items-center justify-center bg-[#D9B382] ${(images.length === 0 && !existingManifest) ? 'opacity-50' : 'opacity-100'} h-12 rounded-xl px-6`}
                   >
                     <FileJson size={16} color="#1A1308" />
                     <Text style={tw`text-[#1A1308] font-black text-xs uppercase tracking-widest ml-2`}>
@@ -701,19 +759,31 @@ export function BulkTestPanel({
                     )}
                   </View>
 
-                  {/* Missing images check */}
-                  {queue.some(q => !q.file && !q.entry.imageData) && !isQueueRunning && (
-                    <View style={tw`bg-orange-500/10 border border-orange-500/30 rounded-xl p-4 flex-row items-center`}>
-                      <AlertTriangle size={16} color="#F97316" />
-                      <View style={tw`ml-3 flex-1`}>
-                        <Text style={tw`text-orange-400 font-bold text-xs mb-1`}>Missing image references</Text>
-                        <Text style={tw`text-white text-opacity-70 text-[10px]`}>Please select the images that map to the manifest.</Text>
-                      </View>
-                      <input type="file" multiple accept="image/*" onChange={loadRunImages} className="text-white text-xs opacity-0 absolute inset-0 cursor-pointer" />
-                      <View style={tw`bg-orange-500/20 px-3 py-1.5 rounded pr-4`}>
-                        <Text style={tw`text-orange-400 font-bold text-xs`}>Browse Images</Text>
-                      </View>
-                    </View>
+                  {/* Missing images check UI removed as requested */}
+                  {!isQueueRunning && (
+                     <View style={tw`mb-2`}>
+                       <Text style={tw`text-white font-black text-[10px] uppercase tracking-widest mb-2`}>Analysis Technique Mode</Text>
+                       <View style={tw`flex-row gap-2`}>
+                          <Pressable 
+                            onPress={() => setTechniqueMode('USER')}
+                            style={tw`flex-1 py-2 rounded-lg items-center border ${techniqueMode === 'USER' ? 'bg-[#D9B382]/20 border-[#D9B382]' : 'bg-black/20 border-white/10'}`}
+                          >
+                             <Text style={tw`text-[10px] font-bold ${techniqueMode === 'USER' ? 'text-[#D9B382]' : 'text-gray-400'}`}>USER ONLY</Text>
+                          </Pressable>
+                          <Pressable 
+                            onPress={() => setTechniqueMode('REPO')}
+                            style={tw`flex-1 py-2 rounded-lg items-center border ${techniqueMode === 'REPO' ? 'bg-[#D9B382]/20 border-[#D9B382]' : 'bg-black/20 border-white/10'}`}
+                          >
+                             <Text style={tw`text-[10px] font-bold ${techniqueMode === 'REPO' ? 'text-[#D9B382]' : 'text-gray-400'}`}>REPO ONLY</Text>
+                          </Pressable>
+                          <Pressable 
+                            onPress={() => setTechniqueMode('COMBINED')}
+                            style={tw`flex-1 py-2 rounded-lg items-center border ${techniqueMode === 'COMBINED' ? 'bg-[#D9B382]/20 border-[#D9B382]' : 'bg-black/20 border-white/10'}`}
+                          >
+                             <Text style={tw`text-[10px] font-bold ${techniqueMode === 'COMBINED' ? 'text-[#D9B382]' : 'text-gray-400'}`}>COMBINED</Text>
+                          </Pressable>
+                       </View>
+                     </View>
                   )}
 
                   <ScrollView style={tw`max-h-64 border border-white border-opacity-10 rounded-xl bg-black bg-opacity-20`}>
@@ -791,6 +861,20 @@ export function BulkTestPanel({
                                <Text style={tw`text-white text-opacity-70 text-[9px]`}>
                                  {item.result.reason || "Outcome confirmed visually via test bounds."}
                                </Text>
+                               {item.result.judge?.tradeDetails?.repoPatternsDetected && (
+                                  <View style={tw`mt-2 pt-2 border-t border-white/5`}>
+                                     <Text style={tw`font-bold text-[9px] mb-1 uppercase tracking-widest ${item.result.judge.tradeDetails.techniqueMode !== 'USER' ? 'text-purple-400' : 'text-gray-400'}`}>
+                                        {item.result.judge.tradeDetails.techniqueMode !== 'USER' ? 'Repo Active Output' : 'Imaginary Repo Math'}
+                                     </Text>
+                                     <Text style={tw`text-purple-400 text-opacity-80 text-[8px] italic font-bold mb-1`}>
+                                        Target: {item.result.judge.tradeDetails.repoPatternsDetected}
+                                     </Text>
+                                     <Text style={tw`text-gray-400 text-[8px]`}>
+                                        Bull Points: +{(item.result.judge.techniquesEvaluation?.repoBulldogPoints || 0).toFixed(1)} | 
+                                        Bear Points: +{(item.result.judge.techniquesEvaluation?.repoPeerPoints || 0).toFixed(1)}
+                                     </Text>
+                                  </View>
+                               )}
                             </View>
                           </View>
                         )}

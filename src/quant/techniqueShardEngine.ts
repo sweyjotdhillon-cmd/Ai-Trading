@@ -115,56 +115,68 @@ export function evaluateShard(
         if (res.match) { vote = 'NEUTRAL'; score = res.score; reason = 'doji geometry'; }
         break;
       }
-      case 'bullishengulfing': {
+      case 'bullishengulfing':
+      case 'bullishengulfingpattern': {
         const res = isEngulfing(ohlc);
         if (res.bullish) { vote = 'BULL'; score = res.score; reason = 'bullish engulfing'; }
         break;
       }
-      case 'bearishengulfing': {
+      case 'bearishengulfing':
+      case 'bearishengulfingpattern': {
         const res = isEngulfing(ohlc);
         if (res.bearish) { vote = 'BEAR'; score = res.score; reason = 'bearish engulfing'; }
         break;
       }
-      case 'morningstar': {
+      case 'morningstar':
+      case 'morningstarpattern': {
         const res = isMorningStar(ohlc);
         if (res.match) { vote = 'BULL'; score = res.score; reason = 'morning star pattern'; }
         break;
       }
-      case 'eveningstar': {
+      case 'eveningstar':
+      case 'eveningstarpattern': {
         const res = isEveningStar(ohlc);
         if (res.match) { vote = 'BEAR'; score = res.score; reason = 'evening star pattern'; }
         break;
       }
       case 'bullishmarubozu':
-      case 'marubozubull': {
+      case 'marubozubull':
+      case 'bullishmarubozupattern': {
         const res = isMarubozu(ohlc);
         if (res.bullish) { vote = 'BULL'; score = res.score; reason = 'bullish marubozu'; }
         break;
       }
       case 'bearishmarubozu':
-      case 'marubozubear': {
+      case 'marubozubear':
+      case 'bearishmarubozupattern': {
         const res = isMarubozu(ohlc);
         if (res.bearish) { vote = 'BEAR'; score = res.score; reason = 'bearish marubozu'; }
         break;
       }
       case 'piercingline':
-      case 'piercing': {
+      case 'piercing':
+      case 'bullishpiercingline': {
         const res = isPiercingLine(ohlc);
         if (res.match) { vote = 'BULL'; score = res.score; reason = 'piercing line geometry'; }
         break;
       }
       case 'darkcloudcover':
-      case 'darkcloud': {
+      case 'darkcloud':
+      case 'bearishdarkcloudcover': {
         const res = isDarkCloudCover(ohlc);
         if (res.match) { vote = 'BEAR'; score = res.score; reason = 'dark cloud cover geometry'; }
         break;
       }
-      case 'threewhitesoldiers': {
+      case 'threewhitesoldiers':
+      case 'threewhitesoldierspattern':
+      case 'bullishthreewhitesoldiers': {
         const res = isThreeWhiteSoldiers(ohlc);
         if (res.match) { vote = 'BULL'; score = res.score; reason = 'three white soldiers'; }
         break;
       }
-      case 'threeblackcrows': {
+      case 'threeblackcrows':
+      case 'threeblackcrowspattern':
+      case 'bearishthreeblackcrows': {
         const res = isThreeBlackCrows(ohlc);
         if (res.match) { vote = 'BEAR'; score = res.score; reason = 'three black crows'; }
         break;
@@ -290,20 +302,32 @@ export function evaluateShard(
       case 'macdcross':
       case 'macdgoldencross': {
         const macdData = getMACD();
-        if (macdData.macd[last] > macdData.signal[last] && macdData.macd[last - 1] <= macdData.signal[last - 1]) {
+        const hasCrossCurrent = macdData.macd[last] > macdData.signal[last] && macdData.macd[last - 1] <= macdData.signal[last - 1];
+        const hasCrossPrevious = macdData.macd[last] > macdData.signal[last] && macdData.macd[last - 1] > macdData.signal[last - 1] && macdData.macd[last - 2] <= macdData.signal[last - 2];
+        if (hasCrossCurrent || hasCrossPrevious) {
             vote = 'BULL';
-            score = 0.8;
-            reason = 'MACD crossed above signal';
+            const histVal = Math.abs(macdData.hist[last] || 0);
+            const histSlice = macdData.hist.slice(Math.max(0, last - 20), last + 1).map(Math.abs);
+            const avgHist = histSlice.reduce((a: number, b: number) => a + b, 0) / Math.max(1, histSlice.length);
+            const strengthMultiplier = avgHist > 0 ? (histVal / avgHist) : 1.0;
+            score = Math.min(1.0, Math.max(0.3, 0.6 * strengthMultiplier));
+            reason = `MACD crossed above signal (${hasCrossCurrent ? 'current' : '2-candle confirm'}, hist strength x${strengthMultiplier.toFixed(2)})`;
         }
         break;
       }
       case 'macddcross':
       case 'macddeathcross': {
         const macdData = getMACD();
-        if (macdData.macd[last] < macdData.signal[last] && macdData.macd[last - 1] >= macdData.signal[last - 1]) {
+        const hasCrossCurrent = macdData.macd[last] < macdData.signal[last] && macdData.macd[last - 1] >= macdData.signal[last - 1];
+        const hasCrossPrevious = macdData.macd[last] < macdData.signal[last] && macdData.macd[last - 1] < macdData.signal[last - 1] && macdData.macd[last - 2] >= macdData.signal[last - 2];
+        if (hasCrossCurrent || hasCrossPrevious) {
             vote = 'BEAR';
-            score = 0.8;
-            reason = 'MACD crossed below signal';
+            const histVal = Math.abs(macdData.hist[last] || 0);
+            const histSlice = macdData.hist.slice(Math.max(0, last - 20), last + 1).map(Math.abs);
+            const avgHist = histSlice.reduce((a: number, b: number) => a + b, 0) / Math.max(1, histSlice.length);
+            const strengthMultiplier = avgHist > 0 ? (histVal / avgHist) : 1.0;
+            score = Math.min(1.0, Math.max(0.3, 0.6 * strengthMultiplier));
+            reason = `MACD crossed below signal (${hasCrossCurrent ? 'current' : '2-candle confirm'}, hist strength x${strengthMultiplier.toFixed(2)})`;
         }
         break;
       }
@@ -330,8 +354,12 @@ export function evaluateShard(
         const slope = getEmaSlope();
         if (slope[last] > 0 && slope[last - 1] > 0 && slope[last - 2] > 0) {
             vote = 'BULL';
-            score = 0.7;
-            reason = 'EMA slope positive 3 bars';
+            const slopeVal = Math.abs(slope[last]);
+            const slopeSlice = slope.slice(Math.max(0, last - 20), last + 1).map(Math.abs);
+            const avgSlope = slopeSlice.reduce((a: number, b: number) => a + b, 0) / Math.max(1, slopeSlice.length);
+            const steepness = avgSlope > 0 ? (slopeVal / avgSlope) : 1.0;
+            score = Math.min(1.0, Math.max(0.3, 0.6 * steepness));
+            reason = `EMA slope positive (steepness x${steepness.toFixed(2)})`;
         }
         break;
       }
@@ -340,8 +368,12 @@ export function evaluateShard(
         const slope = getEmaSlope();
         if (slope[last] < 0 && slope[last - 1] < 0 && slope[last - 2] < 0) {
             vote = 'BEAR';
-            score = 0.7;
-            reason = 'EMA slope negative 3 bars';
+            const slopeVal = Math.abs(slope[last]);
+            const slopeSlice = slope.slice(Math.max(0, last - 20), last + 1).map(Math.abs);
+            const avgSlope = slopeSlice.reduce((a: number, b: number) => a + b, 0) / Math.max(1, slopeSlice.length);
+            const steepness = avgSlope > 0 ? (slopeVal / avgSlope) : 1.0;
+            score = Math.min(1.0, Math.max(0.3, 0.6 * steepness));
+            reason = `EMA slope negative (steepness x${steepness.toFixed(2)})`;
         }
         break;
       }
@@ -408,6 +440,45 @@ export function evaluateShard(
             reason = 'Close below BB lower band';
         }
         break;
+      }
+      default: {
+        break;
+      }
+    }
+
+    if (vote === 'NEUTRAL' || reason === 'no_match') {
+      if (key === 'rsioversold' || key === 'rsilow') {
+        const rsiArr = getRSI();
+        reason = `RSI=${rsiArr[last]?.toFixed(1)} (Standby - needs <30)`;
+      } else if (key === 'rsioverbought' || key === 'rsihigh') {
+        const rsiArr = getRSI();
+        reason = `RSI=${rsiArr[last]?.toFixed(1)} (Standby - needs >70)`;
+      } else if (key === 'stochoversold' || key === 'stochlow') {
+        const stoch = getStoch();
+        reason = `StochK=${stoch.k[last]?.toFixed(1)} (Standby - needs <20)`;
+      } else if (key === 'stochoverbought' || key === 'stochhigh') {
+        const stoch = getStoch();
+        reason = `StochK=${stoch.k[last]?.toFixed(1)} (Standby - needs >80)`;
+      } else if (key === 'emaslopeup' || key === 'ematrendingup') {
+        const slope = getEmaSlope();
+        reason = `Slope=${slope[last]?.toFixed(3)} (Standby - needs constant slope >0)`;
+      } else if (key === 'emaslopedown' || key === 'ematrendingdown') {
+        const slope = getEmaSlope();
+        reason = `Slope=${slope[last]?.toFixed(3)} (Standby - needs constant slope <0)`;
+      } else if (key === 'bollingerbreakoutup') {
+        const bb = getBollinger();
+        reason = `Close=${closes[last]?.toFixed(1)} (Standby - needs Close > ${bb.upper[last]?.toFixed(1)})`;
+      } else if (key === 'bollingerbreakoutdown') {
+        const bb = getBollinger();
+        reason = `Close=${closes[last]?.toFixed(1)} (Standby - needs Close < ${bb.lower[last]?.toFixed(1)})`;
+      } else if (key === 'macdcross' || key === 'macdgoldencross') {
+        const macdData = getMACD();
+        reason = `MACD=${macdData.macd[last]?.toFixed(2)}, Signal=${macdData.signal[last]?.toFixed(2)} (Standby - needs golden cross)`;
+      } else if (key === 'macddcross' || key === 'macddeathcross') {
+        const macdData = getMACD();
+        reason = `MACD=${macdData.macd[last]?.toFixed(2)}, Signal=${macdData.signal[last]?.toFixed(2)} (Standby - needs death cross)`;
+      } else {
+        reason = `Pattern check standby (Criteria inactive on current candle)`;
       }
     }
 

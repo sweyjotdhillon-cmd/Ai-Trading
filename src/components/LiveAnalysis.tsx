@@ -88,7 +88,9 @@ export function LiveAnalysis() {
       try {
         const saved = localStorage.getItem('chartlens_current_analysis');
         if (saved) return JSON.parse(saved);
-      } catch(e) {}
+      } catch (e) {
+        console.warn("Could not retrieve initial state", e);
+      }
     }
     return {};
   };
@@ -104,6 +106,7 @@ export function LiveAnalysis() {
   const [selectedImage, setSelectedImage] = useState<string | null>(initialState.selectedImage || null);
   const [calibrationFrame, setCalibrationFrame] = useState<ImageData | null>(null);
   const [isStable, setIsStable] = useState(false);
+  const [appWideHallucinationFlag, setAppWideHallucinationFlag] = useState(false);
   
   const { requestLock, releaseLock } = useWakeLock();
 
@@ -230,25 +233,29 @@ export function LiveAnalysis() {
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      if (analysis || selectedImage) {
-        localStorage.setItem('chartlens_current_analysis', JSON.stringify({
-          stockName,
-          graphTimeframe,
-          analysisStep,
-          analysis,
-          mode,
-          selectedImage,
-          techFileName,
-          confirmedOutcome,
-          autoGradeStatus,
-          testModeLeftSlice,
-          testModeRightSlice,
-          autoGradeReason,
-          autoGradeConfidence,
-          autoGradeRawOutcome
-        }));
-      } else {
-        localStorage.removeItem('chartlens_current_analysis');
+      try {
+        if (analysis || selectedImage) {
+          localStorage.setItem('chartlens_current_analysis', JSON.stringify({
+            stockName,
+            graphTimeframe,
+            analysisStep,
+            analysis,
+            mode,
+            selectedImage,
+            techFileName,
+            confirmedOutcome,
+            autoGradeStatus,
+            testModeLeftSlice,
+            testModeRightSlice,
+            autoGradeReason,
+            autoGradeConfidence,
+            autoGradeRawOutcome
+          }));
+        } else {
+          localStorage.removeItem('chartlens_current_analysis');
+        }
+      } catch (err) {
+        console.warn("Could not save to localStorage: QuotaExceeded");
       }
     }
   }, [stockName, graphTimeframe, analysisStep, analysis, mode, selectedImage, techFileName, confirmedOutcome, autoGradeStatus, testModeLeftSlice, testModeRightSlice, autoGradeReason, autoGradeConfidence, autoGradeRawOutcome]);
@@ -329,7 +336,7 @@ export function LiveAnalysis() {
 
 
 
-  const drawPipFrame = (signal: 'ANALYZING' | 'CALL' | 'PUT' | 'NO_TRADE' | 'IDLE', confidence: number = 0, subText: string = '') => { const canvas = pipCanvasRef.current; if (!canvas) return; const ctx = canvas.getContext('2d'); if (!ctx) return; const W = 480, H = 270; ctx.clearRect(0, 0, W, H); const bgColors: Record<string, string> = { ANALYZING: '#0d0d14', CALL: '#021a0b', PUT: '#1a0202', NO_TRADE: '#141008', IDLE: '#0d0d14' }; ctx.fillStyle = bgColors[signal] ?? '#0d0d14'; ctx.fillRect(0, 0, W, H); const accentColors: Record<string, string> = { ANALYZING: '#D9B382', CALL: '#22C55E', PUT: '#EF4444', NO_TRADE: '#F59E0B', IDLE: '#4B5570' }; const accent = accentColors[signal] ?? '#4B5570'; ctx.fillStyle = accent; ctx.fillRect(0, 0, W, 4); ctx.strokeStyle = 'rgba(255,255,255,0.03)'; ctx.lineWidth = 1; for (let x = 0; x < W; x += 30) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); } for (let y = 0; y < H; y += 30) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); } ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'left'; ctx.fillText('AI TRADING · PRO TERMINAL', 16, 26); if (signal === 'ANALYZING') { ctx.fillStyle = '#D9B382'; ctx.beginPath(); ctx.arc(W - 20, 20, 5, 0, Math.PI * 2); ctx.fill(); } const signalLabels: Record<string, string> = { ANALYZING: 'ANALYZING...', CALL: 'CALL  ▲', PUT: 'PUT   ▼', NO_TRADE: 'NO TRADE', IDLE: 'STANDBY' }; const label = signalLabels[signal] ?? signal; ctx.font = 'bold 64px Arial'; ctx.textAlign = 'center'; ctx.fillStyle = accent; ctx.shadowColor = accent; ctx.shadowBlur = signal === 'ANALYZING' ? 0 : 20; ctx.fillText(label, W / 2, 165); ctx.shadowBlur = 0; if ((signal === 'CALL' || signal === 'PUT') && confidence > 0) { const barW = 280, barH = 6; const barX = (W - barW) / 2, barY = 190; ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.beginPath(); (ctx as any).roundRect(barX, barY, barW, barH, 3); ctx.fill(); ctx.fillStyle = accent; ctx.beginPath(); (ctx as any).roundRect(barX, barY, barW * (confidence / 100), barH, 3); ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = 'bold 13px monospace'; ctx.fillText(`${confidence}% CONFIDENCE`, W / 2, 218); } if (subText) { ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.font = '12px monospace'; ctx.fillText(subText, W / 2, 245); } ctx.fillStyle = 'rgba(255,255,255,0.15)'; ctx.font = '10px monospace'; ctx.fillText('Switch back to broker when ready', W / 2, H - 10); };
+  const drawPipFrame = (signal: 'ANALYZING' | 'CALL' | 'PUT' | 'NO_TRADE' | 'IDLE', confidence: number = 0, subText: string = '') => { const canvas = pipCanvasRef.current; if (!canvas) return; const ctx = canvas.getContext('2d'); if (!ctx) return; const W = 480, H = 270; ctx.clearRect(0, 0, W, H); const bgColors: Record<string, string> = { ANALYZING: '#0d0d14', CALL: '#021a0b', PUT: '#1a0202', NO_TRADE: '#141008', IDLE: '#0d0d14' }; ctx.fillStyle = bgColors[signal] ?? '#0d0d14'; ctx.fillRect(0, 0, W, H); const accentColors: Record<string, string> = { ANALYZING: '#D9B382', CALL: '#22C55E', PUT: '#EF4444', NO_TRADE: '#F59E0B', IDLE: '#94A3B8' }; const accent = accentColors[signal] ?? '#4B5570'; ctx.fillStyle = accent; ctx.fillRect(0, 0, W, 4); ctx.strokeStyle = 'rgba(255,255,255,0.03)'; ctx.lineWidth = 1; for (let x = 0; x < W; x += 30) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); } for (let y = 0; y < H; y += 30) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); } ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'left'; ctx.fillText('AI TRADING · PRO TERMINAL', 16, 26); if (signal === 'ANALYZING') { ctx.fillStyle = '#D9B382'; ctx.beginPath(); ctx.arc(W - 20, 20, 5, 0, Math.PI * 2); ctx.fill(); } const signalLabels: Record<string, string> = { ANALYZING: 'ANALYZING...', CALL: 'CALL  ▲', PUT: 'PUT   ▼', NO_TRADE: 'NO TRADE', IDLE: 'STANDBY' }; const label = signalLabels[signal] ?? signal; ctx.font = 'bold 64px Arial'; ctx.textAlign = 'center'; ctx.fillStyle = accent; ctx.shadowColor = accent; ctx.shadowBlur = signal === 'ANALYZING' ? 0 : 20; ctx.fillText(label, W / 2, 165); ctx.shadowBlur = 0; if ((signal === 'CALL' || signal === 'PUT') && confidence > 0) { const barW = 280, barH = 6; const barX = (W - barW) / 2, barY = 190; ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.beginPath(); (ctx as any).roundRect(barX, barY, barW, barH, 3); ctx.fill(); ctx.fillStyle = accent; ctx.beginPath(); (ctx as any).roundRect(barX, barY, barW * (confidence / 100), barH, 3); ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = 'bold 13px monospace'; ctx.fillText(`${confidence}% CONFIDENCE`, W / 2, 218); } if (subText) { ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.font = '12px monospace'; ctx.fillText(subText, W / 2, 245); } ctx.fillStyle = 'rgba(255,255,255,0.15)'; ctx.font = '10px monospace'; ctx.fillText('Switch back to broker when ready', W / 2, H - 10); };
 
   const closePip = (exitPip = true) => { if (pipAnimFrameRef.current) { cancelAnimationFrame(pipAnimFrameRef.current); pipAnimFrameRef.current = null; } if (exitPip && document.pictureInPictureElement) { document.exitPictureInPicture().catch(() => {}); } pipStreamRef.current?.getTracks().forEach(t => t.stop()); pipStreamRef.current = null; if (pipVideoRef.current) { pipVideoRef.current.pause(); if (document.body.contains(pipVideoRef.current)) { document.body.removeChild(pipVideoRef.current); } pipVideoRef.current = null; } pipCanvasRef.current = null; setPipActive(false); setPipSignal('IDLE'); setPipConfidence(0); };
 
@@ -666,33 +673,55 @@ export function LiveAnalysis() {
 
     let finalImageToAnalyze = selectedImage;
 
-    if (mode === 'live' && isCameraActive && videoRef.current) {
-      // ── Existing camera capture (DO NOT CHANGE) ───────────────────────────────
-      if (Platform.OS === 'web') {
-        const canvas = document.createElement('canvas');
-        canvas.width = videoRef.current.videoWidth || 640;
-        canvas.height = videoRef.current.videoHeight || 480;
-        const ctx = canvas.getContext('2d');
-        ctx?.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
-        finalImageToAnalyze = canvas.toDataURL('image/jpeg');
-      }
-    }
-
-
-
-    if (!finalImageToAnalyze) {
-      const msg = 'Please start the camera or upload a chart image first.';
-      setTimeout(() => showNotice(msg, 'error'), 300);
-      setIsBusy(false);
-      return;
-    }
-
     setTimeout(() => {
       (async () => {
         let controller: AbortController | undefined;
         let timeoutId: any;
         try {
           setLoading(true);
+          setAnalysisError(null);
+
+          if (mode === 'live' && isCameraActive && videoRef.current) {
+            // Update terminal logs progressively to show camera stabilization & verification
+            setJudgeLogs({
+              judge1: { text: "STANDBY", status: 'idle' },
+              judge2: { text: "STANDBY", status: 'idle' },
+              judge3: { text: "STANDBY", status: 'idle' },
+              judge4: { text: "STANDBY", status: 'idle' },
+              system: { text: "CHECKING SYSTEM CAMERA... VERIFYING ANCHOR SECTORS...", status: 'analyzing' }
+            });
+            await new Promise(r => setTimeout(r, 850));
+
+            setJudgeLogs(prev => ({
+              ...prev,
+              system: { text: "STABILIZING BRIGHTNESS SENSORS... WARMING SHUTTER MATRIX...", status: 'analyzing' }
+            }));
+            await new Promise(r => setTimeout(r, 850));
+
+            setJudgeLogs(prev => ({
+              ...prev,
+              system: { text: "LOCKING ON GRAPH CO-ORDINATES... GRABBING HD CAPTURE...", status: 'analyzing' }
+            }));
+            await new Promise(r => setTimeout(r, 800));
+
+            // Grab frame AFTER exposure adjustment is completed
+            if (videoRef.current) {
+              const canvas = document.createElement('canvas');
+              canvas.width = videoRef.current.videoWidth || 640;
+              canvas.height = videoRef.current.videoHeight || 480;
+              const ctx = canvas.getContext('2d');
+              ctx?.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+              finalImageToAnalyze = canvas.toDataURL('image/jpeg');
+            }
+          }
+
+          if (!finalImageToAnalyze) {
+            const msg = 'Please start the camera or upload a chart image first.';
+            setTimeout(() => showNotice(msg, 'error'), 300);
+            setLoading(false);
+            setIsBusy(false);
+            return;
+          }
 
           controller = new AbortController();
 
@@ -717,6 +746,10 @@ export function LiveAnalysis() {
           clearTimeout(timeoutId);
 
           setAnalysis(result.analysis);
+          if (result.analysis?.judge?.evidence?.hallucinationDetected || result.analysis?.judge?.hallucinationDetected) {
+            setAppWideHallucinationFlag(true);
+            (window as any).appWideHallucinationDetected = true;
+          }
 
           if (mode === 'test') {
              if (result.testModeRightSlice) {
@@ -1030,6 +1063,7 @@ export function LiveAnalysis() {
           confirmedOutcome={confirmedOutcome}
           saveToStats={saveToStats}
           setMode={setMode}
+          appWideHallucinationFlag={appWideHallucinationFlag}
           tradingDirection={tradingDirection}
           actualDirection={actualDirection}
           testModeLeftSlice={testModeLeftSlice}

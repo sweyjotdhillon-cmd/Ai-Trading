@@ -3,68 +3,73 @@ import { dataUrlToImageData } from './imageUtils';
 import { loadCalibration } from '../vision/colorCalibration';
 import { buildPipelineResult } from '../vision/pipeline';
 
-let worker: Worker | null = null;
+const WORKER_POOL_SIZE = typeof navigator !== 'undefined' && navigator.hardwareConcurrency ? Math.max(1, Math.min(8, navigator.hardwareConcurrency)) : 4;
+const workers: Worker[] = [];
+let currentWorkerIndex = 0;
+
 type Listener = (payload: any) => void;
 const messageResolvers = new Map<string, { resolve: (val: any) => void, reject: (err: any) => void }>();
 const stableListeners = new Set<Listener>();
 
-
 const progressListeners = new Map<string, (step: string) => void>();
 const judgeLogListeners = new Map<string, (logs: any) => void>();
 
-function getWorker() {
-  if (!worker) {
-    worker = new Worker(new URL('../workers/analysisWorker.ts', import.meta.url), { type: 'module' });
-    
-    // Automatically load stored calibration and set on worker to prevent NO_CALIBRATION state during offline/batch checks
-    const cal = loadCalibration();
-    if (cal) {
-      worker.postMessage({
-        type: 'CALIBRATE',
-        payload: { bullColor: cal.bull, bearColor: cal.bear }
-      });
-    }
+function getWorker(): Worker {
+  if (workers.length === 0) {
+    for (let i = 0; i < WORKER_POOL_SIZE; i++) {
+      const w = new Worker(new URL('../workers/analysisWorker.ts', import.meta.url), { type: 'module' });
+      
+      const cal = loadCalibration();
+      if (cal) {
+        w.postMessage({
+          type: 'CALIBRATE',
+          payload: { bullColor: cal.bull, bearColor: cal.bear }
+        });
+      }
 
-    worker.onmessage = (e: MessageEvent) => {
-      const { ok, stage, ms, payload } = e.data;
+      w.onmessage = (e: MessageEvent) => {
+        const { ok, stage, ms, payload } = e.data;
+        if (!ok) {
+          console.error(`Worker Fault [${stage}] ${ms.toFixed(1)}ms:`, payload.message);
+          if (payload.msgId) {
+            const res = messageResolvers.get(payload.msgId);
+            if (res) {
+              res.resolve({ type: 'ERROR', message: payload.message });
+              messageResolvers.delete(payload.msgId);
+            }
+          }
+          return;
+        }
 
-      if (!ok) {
-        console.error(`Worker Fault [${stage}] ${ms.toFixed(1)}ms:`, payload.message);
-        if (payload.msgId) {
+        const { type } = payload;
+        if (type === 'FRAME_RESULT' && payload.msgId) {
           const res = messageResolvers.get(payload.msgId);
           if (res) {
-            res.resolve({ type: 'ERROR', message: payload.message });
+            res.resolve(payload);
             messageResolvers.delete(payload.msgId);
+            progressListeners.delete(payload.msgId);
+            judgeLogListeners.delete(payload.msgId);
+          }
+        } else if (type === 'JUDGE_LOG' && payload.msgId) {
+          const listener = judgeLogListeners.get(payload.msgId);
+          if (listener) listener(payload.logs);
+        } else if (type === 'STABLE_SIGNAL') {
+          stableListeners.forEach(l => l(payload));
+        } else if (type === 'PROGRESS' && payload.msgId) {
+          const listener = progressListeners.get(payload.msgId);
+          if (listener) {
+            listener(payload.step);
           }
         }
-        return;
-      }
-
-      const { type } = payload;
-      if (type === 'FRAME_RESULT' && payload.msgId) {
-        const res = messageResolvers.get(payload.msgId);
-        if (res) {
-          res.resolve(payload);
-          messageResolvers.delete(payload.msgId);
-          progressListeners.delete(payload.msgId);
-          judgeLogListeners.delete(payload.msgId);
-        }
-      } else if (type === 'JUDGE_LOG' && payload.msgId) {
-        const listener = judgeLogListeners.get(payload.msgId);
-        if (listener) listener(payload.logs);
-      } else if (type === 'STABLE_SIGNAL') {
-        stableListeners.forEach(l => l(payload));
-      } else if (type === 'PROGRESS' && payload.msgId) {
-        const listener = progressListeners.get(payload.msgId);
-        if (listener) {
-          listener(payload.step);
-        }
-      }
-    };
+      };
+      workers.push(w);
+    }
   }
-  return worker;
+  
+  const selectedWorker = workers[currentWorkerIndex];
+  currentWorkerIndex = (currentWorkerIndex + 1) % WORKER_POOL_SIZE;
+  return selectedWorker;
 }
-
 
 export function onStableSignal(cb: Listener) {
   stableListeners.add(cb);
@@ -72,11 +77,19 @@ export function onStableSignal(cb: Listener) {
 }
 
 export function resetWorkerStability() {
-  getWorker().postMessage({ type: 'RESET' });
+  if (workers.length > 0) {
+    workers.forEach(w => w.postMessage({ type: 'RESET' }));
+  } else {
+    getWorker().postMessage({ type: 'RESET' });
+  }
 }
 
 export function calibrateWorker(bullColor: any, bearColor: any) {
-  getWorker().postMessage({ type: 'CALIBRATE', payload: { bullColor, bearColor } });
+  if (workers.length > 0) {
+    workers.forEach(w => w.postMessage({ type: 'CALIBRATE', payload: { bullColor, bearColor } }));
+  } else {
+    getWorker().postMessage({ type: 'CALIBRATE', payload: { bullColor, bearColor } });
+  }
 }
 
 function generateId() {
@@ -99,6 +112,7 @@ export async function runSingleAnalysis(params: {
   onJudgeLogs?: (logs: any) => void;
   isTestMode?: boolean;
   isManifestCheck?: boolean;
+  techniqueMode?: 'USER' | 'REPO' | 'COMBINED';
   onDirectionFound?: (direction: 'UP' | 'DOWN' | 'NO_TRADE') => void;
 }): Promise<{
   analysis: any;
@@ -195,6 +209,10 @@ export async function runSingleAnalysis(params: {
       }
     }
 
+    if (params.isTestMode || params.isManifestCheck) {
+      w.postMessage({ type: 'RESET' });
+    }
+
     const payloadPromise = new Promise<any>((resolve, reject) => {
   messageResolvers.set(msgId, { resolve, reject });
   try {
@@ -205,6 +223,8 @@ export async function runSingleAnalysis(params: {
       graphTimeframeMinutes: tfM,
       investmentDurationMinutes: durM,
       techniquesList: params.techniquesList,
+      techniqueMode: params.techniqueMode,
+      isTestMode: params.isTestMode,
     });
   } catch (e: any) {
     messageResolvers.delete(msgId);
@@ -248,10 +268,50 @@ export async function runSingleAnalysis(params: {
   }
   
   if (meta.reason === 'NO_CALIBRATION' || meta.candlesLength === 0) {
+    const errorText = meta.candlesLength === 0 
+      ? "No candles detected. Position chart clearly in camera view." 
+      : "Calibration required: Tap 'Calibrate Colors' before running analysis.";
     if (onJudgeLogs) {
-      onJudgeLogs({ system: { text: "Calibration required: Tap 'Calibrate Colors' before running analysis.", status: 'error' } });
+      onJudgeLogs({ 
+        judge1: { text: "STANDBY", status: 'idle' },
+        judge2: { text: "STANDBY", status: 'idle' },
+        judge3: { text: "STANDBY", status: 'idle' },
+        judge4: { text: "STANDBY", status: 'idle' },
+        system: { text: errorText, status: 'idle' } 
+      });
     }
-    throw new Error("Calibration required: Tap 'Calibrate Colors' before running analysis.");
+    return {
+      analysis: {
+        judge: { 
+          winner: 'NO_TRADE', 
+          decision: 'WEAK', 
+          finalConfidence: 0, 
+          j1Score: 0, 
+          j2Score: 0, 
+          j3Score: 0, 
+          j4Score: 100, 
+          ruling: `NO_TRADE — ${errorText}`, 
+          totalScore: 0, 
+          tradeDetails: { 
+            latencyAdjustedForecast: 'Signal: NO_TRADE', 
+            techniquesUsed: '', 
+            executionTimeMs: performance.now() - t0 
+          },
+          formattedReport: `┌─────────────────────────────────────┐\n│  ARBITRATOR FINAL VERDICT           │\n│  Signal: NO_TRADE                   │\n│  Confidence: 0%                     │\n├─────────────────────────────────────┤\n│  RULING:                            │\n│  NO_TRADE — No candles detected     │\n│  in feed.                           │\n└─────────────────────────────────────┘`
+        },
+        bull: { reasoning: 'N/A' }, bear: { reasoning: 'N/A' }, skeptic: { riskVerdict: 'WEAK' }, techUsedCount: 0
+      },
+      direction: 'NO_TRADE', 
+      outcome: 'NEUTRAL', 
+      confidence: 0, 
+      reason: errorText,
+      testModeRightSlice: null, 
+      finalImageForAnalysis: imageDataUrl, 
+      entryAnchorBase64: null, 
+      rawOutcome: 'NO_CANDLES_DETECTED', 
+      frameStable: false,
+      actualDirection: null
+    };
   }
   
   // Predict outcome if testMode
@@ -267,7 +327,9 @@ export async function runSingleAnalysis(params: {
   let candlesCut: number | undefined;
 
   if (isTestMode && meta.candlesLength && meta.candlesLength > 10) {
-    const nCut = parseInt(params.investmentDuration) || 5;
+    const tfM = parseDurationToMinutes(params.graphTimeframe) || 1;
+    const durM = parseDurationToMinutes(params.investmentDuration) || 5;
+    const nCut = Math.max(1, Math.ceil(durM / tfM));
     candlesCut = nCut;
     const cropRatio = nCut / meta.candlesLength;
     
@@ -303,6 +365,10 @@ export async function runSingleAnalysis(params: {
         const leftImgData = await dataUrlToImageData(finalImageForAnalysis);
 
 
+        if (params.isTestMode || params.isManifestCheck) {
+          w.postMessage({ type: 'RESET' });
+        }
+        
         const payloadPromise2 = new Promise<any>((resolve, reject) => {
           messageResolvers.set(msgId, { resolve, reject });
           try {
@@ -313,6 +379,8 @@ export async function runSingleAnalysis(params: {
               graphTimeframeMinutes: tfM,
               investmentDurationMinutes: durM,
               techniquesList: params.techniquesList,
+              techniqueMode: params.techniqueMode,
+              isTestMode: params.isTestMode,
             });
           } catch (e: any) {
             reject(e);
@@ -341,11 +409,11 @@ export async function runSingleAnalysis(params: {
                actualDirection = 'FLAT';
              }
 
-             if (actualDirection === 'FLAT' || finalDecision.winner === 'NO_TRADE') {
+             if (actualDirection === 'FLAT' || finalDecision.signal === 'NO_TRADE') {
                  outcome = 'NEUTRAL';
-             } else if (finalDecision.winner === 'BULL') {
+             } else if (finalDecision.signal === 'CALL') {
                  outcome = actualDirection === 'UP' ? 'WIN' : 'LOSS';
-             } else if (finalDecision.winner === 'BEAR') {
+             } else if (finalDecision.signal === 'PUT') {
                  outcome = actualDirection === 'DOWN' ? 'WIN' : 'LOSS';
              }
            }
@@ -353,7 +421,7 @@ export async function runSingleAnalysis(params: {
     }
   }
 
-  const mappedDirection = finalDecision.winner === 'BULL' ? 'UP' : (finalDecision.winner === 'BEAR' ? 'DOWN' : 'NO_TRADE');
+  const mappedDirection = finalDecision.signal === 'CALL' ? 'UP' : (finalDecision.signal === 'PUT' ? 'DOWN' : 'NO_TRADE');
 
   const cases = finalDecision.cases || { bull: { j1: 0, j2: 0, j3: 0, total: 0 }, bear: { j1: 0, j2: 0, j3: 0, total: 0 } };
   const J1 = cases.bull.j1 + cases.bear.j1;
@@ -377,8 +445,8 @@ export async function runSingleAnalysis(params: {
     analysis: {
       judge: {
         cases: cases,
-        winner: finalDecision.winner,
-        decision: finalDecision.winner === 'NO_TRADE' ? 'WEAK' : 'STRONG SIGNAL',
+        winner: finalDecision.winner, margin: finalDecision.margin, skepticMultiplier: finalDecision.skepticMultiplier,
+        decision: finalDecision.signal === 'NO_TRADE' ? 'WEAK' : 'STRONG SIGNAL',
         finalConfidence: finalDecision.finalConfidence,
         j1Score: J1,
         j2Score: J2,

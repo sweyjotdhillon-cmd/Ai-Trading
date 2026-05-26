@@ -28,7 +28,10 @@ export const compressImage = (base64Str: string, maxWidth: number, maxHeight: nu
         return;
       }
       ctx.drawImage(img, 0, 0, width, height);
-      resolve(canvas.toDataURL('image/jpeg', quality));
+      const dataUrl = canvas.toDataURL('image/jpeg', quality);
+      canvas.width = 0;
+      canvas.height = 0;
+      resolve(dataUrl);
     };
     img.onerror = (e) => reject(e);
   });
@@ -333,7 +336,10 @@ export function dataUrlToImageData(dataUrl: string): Promise<ImageData> {
       const ctx = canvas.getContext('2d');
       if (!ctx) return reject(new Error("No 2d context"));
       ctx.drawImage(img, 0, 0, width, height);
-      resolve(ctx.getImageData(0, 0, width, height));
+      const imgData = ctx.getImageData(0, 0, width, height);
+      canvas.width = 0;
+      canvas.height = 0;
+      resolve(imgData);
     };
     img.onerror = () => reject(new Error("Failed to load calibration image"));
     img.src = dataUrl;
