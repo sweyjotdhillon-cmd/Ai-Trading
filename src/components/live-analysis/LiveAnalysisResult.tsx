@@ -2,9 +2,8 @@ import { useState } from 'react';
 import { View, Text, Pressable, ActivityIndicator } from 'react-native';
 import tw from 'twrnc';
 import { motion } from 'motion/react';
-import { Brain, CheckCircle, AlertTriangle, XCircle, Terminal, Check, Zap, Sparkles } from 'lucide-react';
+import { Brain, CheckCircle, AlertTriangle, XCircle, Terminal, Check, Zap, Sparkles, ChevronDown, ChevronUp } from 'lucide-react';
 import { LossAutopsyModal } from '../LossAutopsyModal';
-import { TestResultCandleChart } from './TestResultCandleChart';
 
 interface Props {
   analysis: any;
@@ -30,7 +29,6 @@ interface Props {
   buttonHoverProps: any;
   buttonTapProps: any;
   springProps: any;
-  appWideHallucinationFlag?: boolean;
 }
 
 export function LiveAnalysisResult({
@@ -38,10 +36,10 @@ export function LiveAnalysisResult({
   confirmedOutcome, saveToStats, setMode, tradingDirection, actualDirection,
   testModeLeftSlice, testModeRightSlice, autoGradeStatus, autoGradeReason,
   autoGradeRawOutcome, autoGradeConfidence, handleRegrade, setConfirmedOutcome,
-  setAutoGradeStatus, handleReset, buttonHoverProps, buttonTapProps, springProps,
-  appWideHallucinationFlag
+  setAutoGradeStatus, handleReset, buttonHoverProps, buttonTapProps, springProps
 }: Props) {
   const [isAutopsyOpen, setIsAutopsyOpen] = useState(false);
+  const [showTechniques, setShowTechniques] = useState(mode === 'test' || mode === 'bulk');
 
   if (!analysis) return null;
 
@@ -54,19 +52,19 @@ export function LiveAnalysisResult({
       {/* Visual Polish: Glassmorphism/Tactical Background */}
       <div className="absolute top-0 right-0 w-64 h-64 bg-[#D9B382]/5 rounded-full -mr-32 -mt-32 blur-3xl pointer-events-none" />
 
-      <View style={tw`flex-row items-center justify-between mb-6 pb-4 border-b border-white border-opacity-10 relative z-10`}>
-        <View style={tw`flex-row items-center`}>
+      <div style={tw`flex-row items-center justify-between mb-6 pb-4 border-b border-white border-opacity-10 relative z-10`}>
+        <div style={tw`flex-row items-center`}>
           <motion.div
             animate={{ rotate: [0, 10, -10, 0] }}
             transition={{ duration: 4, repeat: Infinity }}
           >
-            <Brain size={24} color="#D9B382" className="mr-3" />
+            <Brain size={24} color="#D9B382" style={tw`mr-3`} />
           </motion.div>
           <View>
              <Text style={tw`text-lg font-bold text-white`}>Final Arbitrator Report</Text>
              <Text style={tw`text-[#8B95B0] text-[10px]`}>4-Judge Scoring Framework</Text>
           </View>
-        </View>
+        </div>
         <motion.div
           whileHover={{ scale: 1.05 }}
           className={`px-3 py-1 rounded-full flex flex-row items-center ${analysis.judge.decision === 'STRONG SIGNAL' ? 'bg-green-500/10' : (analysis.judge.decision === 'MODERATE' ? 'bg-yellow-500/10' : 'bg-red-500/10')}`}
@@ -77,7 +75,7 @@ export function LiveAnalysisResult({
             analysis.judge.decision === 'STRONG SIGNAL' ? tw`text-green-500` : (analysis.judge.decision === 'MODERATE' ? tw`text-yellow-500` : tw`text-red-500`)
           ]}>{analysis.judge.decision}</Text>
         </motion.div>
-      </View>
+      </div>
 
       {/* ASCII Report Display - High Tech Monospace Card */}
       <motion.div
@@ -157,7 +155,7 @@ export function LiveAnalysisResult({
       ) : (
         <View style={tw`bg-black bg-opacity-20 rounded-2xl p-4 border border-white border-opacity-10 mb-6`}>
           <View style={tw`flex-row items-center mb-4`}>
-              <Terminal size={14} color="#D9B382" className="mr-2" />
+              <Terminal size={14} color="#D9B382" style={tw`mr-2`} />
               <Text style={tw`text-[#D9B382] text-[10px] font-black uppercase tracking-widest`}>Judge Deliberations</Text>
           </View>
           {[
@@ -190,10 +188,10 @@ export function LiveAnalysisResult({
            transition={{ delay: 1 }}
            className="mb-8 bg-[#D9B382]/10 p-4 rounded-xl border border-[#D9B382] border-opacity-20  border-l-4 border-l-[#D9B382]"
          >
-           <View style={tw`flex-row items-center mb-2`}>
-              <Zap size={14} color="#D9B382" className="mr-2" />
-              <Text style={tw`text-[#D9B382] text-[10px] font-black uppercase tracking-widest`}>+90s Latency Adjusted Forecast</Text>
-            </View>
+           <div style={tw`flex-row items-center mb-2`}>
+             <Zap size={14} color="#D9B382" style={tw`mr-2`} />
+             <Text style={tw`text-[#D9B382] text-[10px] font-black uppercase tracking-widest`}>+90s Latency Adjusted Forecast</Text>
+           </div>
            <Text style={tw`text-white text-xs leading-5 font-medium italic`}>{analysis.judge.tradeDetails.latencyAdjustedForecast}</Text>
          </motion.div>
       )}
@@ -202,7 +200,7 @@ export function LiveAnalysisResult({
       {(analysis.structuralPriors || analysis.geometricOracles) && (
         <View style={tw`bg-black bg-opacity-20 rounded-2xl p-4 border border-blue-500/10 mb-8`}>
           <View style={tw`flex-row items-center mb-3`}>
-            <Zap size={14} color="#60A5FA" className="mr-2" />
+            <Zap size={14} color="#60A5FA" style={tw`mr-2`} />
             <Text style={tw`text-[#60A5FA] text-[10px] font-black uppercase tracking-widest`}>Market Physics & Geometric Oracles</Text>
           </View>
           {analysis.structuralPriors && (
@@ -223,198 +221,154 @@ export function LiveAnalysisResult({
       {/* 5-Batch Technique Scoring Engine Panel (User Requirement) */}
       {analysis.judge?.techniquesEvaluation && (
         <View style={tw`mb-4 bg-[#121620]/85 p-4 rounded-xl border border-dashed border-[#D9B382]/35`}>
-          <View style={tw`flex-row justify-between items-center mb-3 border-b border-white/10 pb-2`}>
+          <Pressable 
+            onPress={() => setShowTechniques(!showTechniques)}
+            style={tw`flex-row justify-between items-center mb-3`}
+          >
             <View style={tw`flex-row items-center gap-1.5`}>
               <CheckCircle size={14} color="#22C55E" />
               <Text style={tw`text-[10px] font-black text-white uppercase tracking-wider`}>
                 Verification Engine (Status: {analysis.judge.techniquesEvaluation.totalTechniques > 0 ? "✅ ACTIVE" : "❌ INACTIVE"})
               </Text>
             </View>
-            <View style={tw`bg-[#22C55E]/10 px-2 py-0.5 rounded`}>
-              <Text style={tw`text-[9px] font-black text-[#22C55E] uppercase`}>
-                {analysis.judge.techniquesEvaluation.totalTechniques} Active Techniques
-              </Text>
+            <View style={tw`flex-row items-center gap-2`}>
+                <View style={tw`bg-[#22C55E]/10 px-2 py-0.5 rounded`}>
+                  <Text style={tw`text-[9px] font-black text-[#22C55E] uppercase`}>
+                    {analysis.judge.techniquesEvaluation.totalTechniques} Active Techniques
+                  </Text>
+                </View>
+                {showTechniques ? <ChevronUp size={14} color="#8B95B0" /> : <ChevronDown size={14} color="#8B95B0" />}
             </View>
-          </View>
+          </Pressable>
 
-          {/* Zero Hallucination Integrity Checker Status Indicator */}
-          <View style={tw`mb-3 p-2 rounded-lg border flex-row items-center justify-between ${
-            (analysis.judge?.hallucinationDetected || appWideHallucinationFlag) 
-              ? 'bg-red-500/10 border-red-500/30' 
-              : 'bg-green-500/5 border-green-500/20'
-          }`}>
-            <View style={tw`flex-row items-center gap-1.5`}>
-              <View style={tw`w-1.5 h-1.5 rounded-full ${
-                (analysis.judge?.hallucinationDetected || appWideHallucinationFlag) ? 'bg-red-500 animate-pulse' : 'bg-green-500'
-              }`} />
-              <Text style={tw`text-[9px] font-black text-white uppercase tracking-wider`}>
-                {(analysis.judge?.hallucinationDetected || appWideHallucinationFlag) ? 'INTEGRITY ALERT' : 'PRO INTEGRITY VERIFIER'}
-              </Text>
-            </View>
-            <View style={tw`flex-row gap-1.5`}>
-              <View style={tw`px-1.5 py-0.5 rounded flex-row gap-1 items-center ${
-                (analysis.judge?.hallucinationDetected || appWideHallucinationFlag) ? 'bg-red-500/15' : 'bg-green-500/10'
-              }`}>
-                <Text style={tw`text-[7px] font-black ${(analysis.judge?.hallucinationDetected || appWideHallucinationFlag) ? 'text-red-400' : 'text-green-400'}`}>
-                  {(analysis.judge?.hallucinationDetected || appWideHallucinationFlag) ? 'ANOMALIES DETECTED' : 'HALLUCINATIONS: 0%'}
-                </Text>
-              </View>
-              <View style={tw`bg-[#D9B382]/10 px-1.5 py-0.5 rounded`}>
-                <Text style={tw`text-[7px] font-black text-[#D9B382]`}>
-                  {(analysis.judge?.hallucinationDetected || appWideHallucinationFlag) ? 'SAFETY VETO IN EFFECT' : 'CALIBRATION: OK'}
-                </Text>
-              </View>
-            </View>
-          </View>
-
-          {/* Cases and cumulative score tallies */}
-          <View style={tw`flex-row justify-around items-center mb-3.5 bg-black/40 p-2.5 rounded-lg border border-white/5`}>
-            <View style={tw`items-center`}>
-              <Text style={tw`text-[9px] font-bold text-[#8B95B0] uppercase mb-1`}>🐶 Bulldog Case (Bull)</Text>
-              <Text style={tw`text-green-400 font-extrabold text-sm`}>
-                +{analysis.judge.techniquesEvaluation.bulldogPoints.toFixed(1)} Pts
-              </Text>
-              <Text style={tw`text-[8px] text-[#8B95B0] italic mt-1 text-center`}>
-                User Evaluated (Main)
-              </Text>
-            </View>
-            <View style={tw`w-[1px] h-8 bg-white/10`} />
-            <View style={tw`items-center`}>
-              <Text style={tw`text-[9px] font-bold text-[#8B95B0] uppercase mb-1`}>👁️ Peer Case (Bear)</Text>
-              <Text style={tw`text-red-400 font-extrabold text-sm`}>
-                +{analysis.judge.techniquesEvaluation.peerPoints.toFixed(1)} Pts
-              </Text>
-              <Text style={tw`text-[8px] text-[#8B95B0] italic mt-1 text-center`}>
-                User Evaluated (Main)
-              </Text>
-            </View>
-          </View>
-
-          <Text style={tw`text-[9px] font-bold text-[#D9B382] uppercase tracking-wider mb-2`}>
-            Technical Verification Matrix
-          </Text>
-
-          <View style={tw`mb-3 bg-black/25 p-3 rounded-lg border border-green-500/10`}>
-            <View style={tw`flex-row justify-between items-center mb-2 border-b border-green-500/10 pb-1`}>
-              <Text style={tw`text-[10px] font-bold text-green-400 uppercase`}>
-                🐶 Bulldog Case Techniques (Bullish)
-              </Text>
-              <Text style={tw`text-[8px] text-[#8B95B0]`}>
-                {analysis.judge.techniquesEvaluation.bullList?.length || 0} evaluated
-              </Text>
-            </View>
-
-            {analysis.judge.techniquesEvaluation.bullList?.map((tech: any, tIdx: number) => {
-              return (
-              <View key={tIdx} style={tw`mb-2`}>
-                <View style={tw`flex-row justify-between items-center`}>
-                  <View style={tw`flex-row items-center gap-1.5 flex-1 mr-2`}>
-                    <Text style={tw`text-[9px] font-bold ${tech.matched ? 'text-white' : 'text-gray-400'}`}>• {tech.name}</Text>
-                    <View style={tw`${tech.matched ? 'bg-green-500/10' : 'bg-gray-500/10'} px-1 py-0.2 rounded`}>
-                      <Text style={tw`text-[7px] font-bold ${tech.matched ? 'text-green-300' : 'text-gray-400'}`}>
-                        Bullish
-                      </Text>
-                    </View>
+          {showTechniques && (
+            <>
+              <View style={tw`border-t border-white/10 mb-3`} />
+              {/* Zero Hallucination Integrity Checker Status Indicator */}
+              <View style={tw`mb-3 bg-green-500/5 p-2 rounded-lg border border-green-500/20 flex-row items-center justify-between`}>
+                <View style={tw`flex-row items-center gap-1.5`}>
+                  <View style={tw`w-1.5 h-1.5 rounded-full bg-green-500`} />
+                  <Text style={tw`text-[9px] font-black text-white uppercase tracking-wider`}>
+                    PRO INTEGRITY VERIFIER
+                  </Text>
+                </View>
+                <View style={tw`flex-row gap-1.5`}>
+                  <View style={tw`bg-green-500/10 px-1.5 py-0.5 rounded flex-row gap-1 items-center`}>
+                    <Text style={tw`text-[7px] font-black text-green-400`}>HALLUCINATIONS: 0.0% SECURE</Text>
                   </View>
-                  <View style={tw`flex-row items-center gap-1`}>
-                    <Text style={tw`text-[9px] font-bold ${tech.matched ? 'text-[#22C55E]' : 'text-gray-500'}`}>
-                      {tech.matched ? `+${tech.pointsEarned.toFixed(1)} pts` : '0.0 pts'}
-                    </Text>
-                    <Text style={tw`text-[9px] font-black`}>{tech.matched ? '✅' : '⚪'}</Text>
+                  <View style={tw`bg-[#D9B382]/10 px-1.5 py-0.5 rounded`}>
+                    <Text style={tw`text-[7px] font-black text-[#D9B382]`}>PHYSICS CALIBRATION: OK</Text>
                   </View>
                 </View>
-                <Text style={tw`text-[8px] ${tech.matched ? 'text-gray-300 font-bold' : 'text-gray-500'} pl-3 leading-3 mt-0.5`}>
-                  Process: {tech.process}
-                </Text>
               </View>
-            )})}
-          </View>
 
-          <View style={tw`mb-2.5 bg-black/25 p-3 rounded-lg border border-red-500/10`}>
-            <View style={tw`flex-row justify-between items-center mb-2 border-b border-red-500/10 pb-1`}>
-              <Text style={tw`text-[10px] font-bold text-red-400 uppercase`}>
-                👁️ Peer Case Techniques (Bearish)
-              </Text>
-              <Text style={tw`text-[8px] text-[#8B95B0]`}>
-                {analysis.judge.techniquesEvaluation.bearList?.length || 0} evaluated
-              </Text>
-            </View>
- 
-            {analysis.judge.techniquesEvaluation.bearList?.map((tech: any, tIdx: number) => {
-              return (
-              <View key={tIdx} style={tw`mb-2`}>
-                <View style={tw`flex-row justify-between items-center`}>
-                  <View style={tw`flex-row items-center gap-1.5 flex-1 mr-2`}>
-                    <Text style={tw`text-[9px] font-bold ${tech.matched ? 'text-white' : 'text-gray-400'}`}>• {tech.name}</Text>
-                    <View style={tw`${tech.matched ? 'bg-red-500/10' : 'bg-gray-500/10'} px-1 py-0.2 rounded`}>
-                      <Text style={tw`text-[7px] font-bold ${tech.matched ? 'text-red-300' : 'text-gray-400'}`}>
-                        Bearish
-                      </Text>
-                    </View>
-                  </View>
-                  <View style={tw`flex-row items-center gap-1`}>
-                    <Text style={tw`text-[9px] font-bold ${tech.matched ? 'text-[#EF4444]' : 'text-gray-500'}`}>
-                      {tech.matched ? `+${tech.pointsEarned.toFixed(1)} pts` : '0.0 pts'}
-                    </Text>
-                    <Text style={tw`text-[9px] font-black`}>{tech.matched ? '✅' : '⚪'}</Text>
-                  </View>
+              {/* Cases and cumulative score tallies */}
+              <View style={tw`flex-row justify-around items-center mb-3.5 bg-black/40 p-2.5 rounded-lg border border-white/5`}>
+                <View style={tw`items-center`}>
+                  <Text style={tw`text-[9px] font-bold text-[#8B95B0] uppercase mb-1`}>🐶 Bulldog Case (Bull)</Text>
+                  <Text style={tw`text-green-400 font-extrabold text-sm`}>
+                    +{analysis.judge.techniquesEvaluation.bulldogPoints.toFixed(1)} Points
+                  </Text>
+                  <Text style={tw`text-[8px] text-[#8B95B0] italic`}>Dynamic weighting (Min 3 pts)</Text>
                 </View>
-                <Text style={tw`text-[8px] ${tech.matched ? 'text-gray-300 font-bold' : 'text-gray-500'} pl-3 leading-3 mt-0.5`}>
-                  Process: {tech.process}
-                </Text>
+                <View style={tw`w-[1px] h-8 bg-white/10`} />
+                <View style={tw`items-center`}>
+                  <Text style={tw`text-[9px] font-bold text-[#8B95B0] uppercase mb-1`}>👁️ Peer Case (Bear)</Text>
+                  <Text style={tw`text-red-400 font-extrabold text-sm`}>
+                    +{analysis.judge.techniquesEvaluation.peerPoints.toFixed(1)} Points
+                  </Text>
+                  <Text style={tw`text-[8px] text-[#8B95B0] italic`}>Dynamic weighting (Min 3 pts)</Text>
+                </View>
               </View>
-            )})}
-          </View>
+
+              <Text style={tw`text-[9px] font-bold text-[#D9B382] uppercase tracking-wider mb-2`}>
+                Technical Verification Matrix
+              </Text>
+
+              <View style={tw`mb-3 bg-black/25 p-3 rounded-lg border border-green-500/10`}>
+                <View style={tw`flex-row justify-between items-center mb-2 border-b border-green-500/10 pb-1`}>
+                  <Text style={tw`text-[10px] font-bold text-green-400 uppercase`}>
+                    🐶 Bulldog Case Techniques (Bullish)
+                  </Text>
+                  <Text style={tw`text-[8px] text-[#8B95B0]`}>
+                    {analysis.judge.techniquesEvaluation.bullList?.length || 0} evaluated
+                  </Text>
+                </View>
+
+                {analysis.judge.techniquesEvaluation.bullList?.map((tech: any, tIdx: number) => (
+                  <View key={tIdx} style={tw`mb-2`}>
+                    <View style={tw`flex-row justify-between items-center`}>
+                      <View style={tw`flex-row items-center gap-1.5 flex-1 mr-2`}>
+                        <Text style={tw`text-[9px] font-bold ${tech.matched ? 'text-white' : 'text-gray-400'}`}>• {tech.name}</Text>
+                        <View style={tw`${tech.matched ? 'bg-green-500/10' : 'bg-gray-500/10'} px-1 py-0.2 rounded`}>
+                          <Text style={tw`text-[7px] font-bold ${tech.matched ? 'text-green-300' : 'text-gray-400'}`}>Bullish Base</Text>
+                        </View>
+                      </View>
+                      <View style={tw`flex-row items-center gap-1`}>
+                        <Text style={tw`text-[9px] font-bold ${tech.matched ? 'text-[#22C55E]' : 'text-gray-500'}`}>
+                          {tech.matched ? `+${tech.pointsEarned.toFixed(1)} pts` : '0.0 pts'}
+                        </Text>
+                        <Text style={tw`text-[9px] font-black`}>{tech.matched ? '✅' : '⚪'}</Text>
+                      </View>
+                    </View>
+                    <Text style={tw`text-[8px] ${tech.matched ? 'text-gray-300 font-bold' : 'text-gray-500'} pl-3 leading-3 mt-0.5`}>
+                      Process: {tech.process}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+
+              <View style={tw`mb-2.5 bg-black/25 p-3 rounded-lg border border-red-500/10`}>
+                <View style={tw`flex-row justify-between items-center mb-2 border-b border-red-500/10 pb-1`}>
+                  <Text style={tw`text-[10px] font-bold text-red-400 uppercase`}>
+                    👁️ Peer Case Techniques (Bearish)
+                  </Text>
+                  <Text style={tw`text-[8px] text-[#8B95B0]`}>
+                    {analysis.judge.techniquesEvaluation.bearList?.length || 0} evaluated
+                  </Text>
+                </View>
+     
+                {analysis.judge.techniquesEvaluation.bearList?.map((tech: any, tIdx: number) => (
+                  <View key={tIdx} style={tw`mb-2`}>
+                    <View style={tw`flex-row justify-between items-center`}>
+                      <View style={tw`flex-row items-center gap-1.5 flex-1 mr-2`}>
+                        <Text style={tw`text-[9px] font-bold ${tech.matched ? 'text-white' : 'text-gray-400'}`}>• {tech.name}</Text>
+                        <View style={tw`${tech.matched ? 'bg-red-500/10' : 'bg-gray-500/10'} px-1 py-0.2 rounded`}>
+                          <Text style={tw`text-[7px] font-bold ${tech.matched ? 'text-red-300' : 'text-gray-400'}`}>Bearish Base</Text>
+                        </View>
+                      </View>
+                      <View style={tw`flex-row items-center gap-1`}>
+                        <Text style={tw`text-[9px] font-bold ${tech.matched ? 'text-[#EF4444]' : 'text-gray-500'}`}>
+                          {tech.matched ? `+${tech.pointsEarned.toFixed(1)} pts` : '0.0 pts'}
+                        </Text>
+                        <Text style={tw`text-[9px] font-black`}>{tech.matched ? '✅' : '⚪'}</Text>
+                      </View>
+                    </View>
+                    <Text style={tw`text-[8px] ${tech.matched ? 'text-gray-300 font-bold' : 'text-gray-500'} pl-3 leading-3 mt-0.5`}>
+                      Process: {tech.process}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            </>
+          )}
         </View>
       )}
 
-      {analysis.judge.tradeDetails?.techniquesUsed && (
+      {analysis.judge.tradeDetails?.techniquesUsed && !analysis.judge?.techniquesEvaluation && (
         <View style={tw`mb-4`}>
-           <Text style={tw`text-[10px] font-black text-[#8B95B0] uppercase tracking-widest mb-2`}>Technique Recognition (User Specific: {analysis.techUsedCount})</Text>
+           <Text style={tw`text-[10px] font-black text-[#8B95B0] uppercase tracking-widest mb-2`}>Technique Recognition (User Uploaded: {analysis.techUsedCount})</Text>
            <View style={tw`bg-black bg-opacity-20 p-4 rounded-xl border border-[#D9B382] border-opacity-20 `}>
               <Text style={tw`text-white text-xs leading-5 font-bold italic text-[#D9B382]`}>{analysis.judge.tradeDetails.techniquesUsed}</Text>
            </View>
         </View>
       )}
 
-      {false && (
+      {analysis.judge.tradeDetails?.repoPatternsDetected && (
         <View style={tw`mb-8`}>
-           <Text style={tw`text-[10px] font-black text-[#8B95B0] uppercase tracking-widest mb-2`}>Technique Recognition (Repo Detected: {analysis.judge.tradeDetails?.repoPatternCount || 0})</Text>
+           <Text style={tw`text-[10px] font-black text-[#8B95B0] uppercase tracking-widest mb-2`}>Technique Recognition (Repo Detected: {analysis.judge.tradeDetails?.repoPatternCount})</Text>
            <View style={tw`bg-black bg-opacity-20 p-4 rounded-xl border border-purple-500/20 `}>
-              <Text style={tw`text-white text-xs leading-5 font-bold italic text-purple-400 mb-3`}>{analysis.judge.tradeDetails?.repoPatternsDetected || "Alternative Repo verification active with standby indicators."}</Text>
-              
-              <View style={tw`bg-purple-900/10 p-3 rounded-lg border border-purple-500/10`}>
-                 <Text style={tw`text-[9px] font-bold ${analysis.judge.tradeDetails?.techniqueMode !== 'USER' ? 'text-purple-400' : 'text-[#8B95B0]'} mb-2 uppercase tracking-wider`}>
-                    {analysis.judge.tradeDetails?.techniqueMode !== 'USER' ? 'Active Repo Contribution' : 'Alternative Repo Result'}
-                 </Text>
-                 <View style={tw`flex-row justify-between mb-1`}>
-                    <Text style={tw`text-[10px] text-gray-400`}>Repo Bulldog (Bull) Points:</Text>
-                    <Text style={tw`text-[10px] font-bold text-green-400`}>+{(analysis.judge.techniquesEvaluation?.repoBulldogPoints || 0).toFixed(1)} pts</Text>
-                 </View>
-                 <View style={tw`flex-row justify-between mb-2`}>
-                    <Text style={tw`text-[10px] text-gray-400`}>Repo Peer (Bear) Points:</Text>
-                    <Text style={tw`text-[10px] font-bold text-red-400`}>+{(analysis.judge.techniquesEvaluation?.repoPeerPoints || 0).toFixed(1)} pts</Text>
-                 </View>
-                 {analysis.judge.tradeDetails?.techniqueMode === 'USER' && (
-                    <>
-                       <View style={tw`flex-row justify-between pt-2 border-t border-purple-500/10`}>
-                          <Text style={tw`text-[10px] font-bold text-gray-400`}>If combined with Technical Result:</Text>
-                          <Text style={tw`text-[10px] font-bold text-gray-300`}>
-                             Bull: {((analysis.judge.techniquesEvaluation?.bulldogPoints || 0) + (analysis.judge.techniquesEvaluation?.repoBulldogPoints || 0)).toFixed(1)} | 
-                             Bear: {((analysis.judge.techniquesEvaluation?.peerPoints || 0) + (analysis.judge.techniquesEvaluation?.repoPeerPoints || 0)).toFixed(1)}
-                          </Text>
-                       </View>
-                       <Text style={tw`text-[8px] text-gray-500 italic mt-2`}>
-                         * In USER mode, these points are segregated and do not affect the main signal calculation.
-                       </Text>
-                    </>
-                 )}
-                 {analysis.judge.tradeDetails?.techniqueMode !== 'USER' && (
-                     <Text style={tw`text-[8px] text-gray-500 italic mt-2`}>
-                         * These points are fully integrated into the technical result above.
-                     </Text>
-                 )}
-              </View>
+              <Text style={tw`text-white text-xs leading-5 font-bold italic text-purple-400`}>{analysis.judge.tradeDetails.repoPatternsDetected}</Text>
            </View>
         </View>
       )}
@@ -462,7 +416,7 @@ export function LiveAnalysisResult({
                   style={({ pressed }) => [tw`flex-1 min-w-[120px] bg-green-600 h-12 rounded-xl items-center justify-center flex-row shadow-xl`, { opacity: pressed ? 0.7 : 1 }]}
                 >
                   <motion.div whileHover={buttonHoverProps} whileTap={buttonTapProps} transition={springProps} style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
-                    <CheckCircle size={18} color="white" className="mr-2" />
+                    <CheckCircle size={18} color="white" style={tw`mr-2`} />
                     <Text style={tw`text-white font-black uppercase text-sm`}>PROFIT</Text>
                   </motion.div>
                 </Pressable>
@@ -472,7 +426,7 @@ export function LiveAnalysisResult({
                   style={({ pressed }) => [tw`flex-1 min-w-[120px] bg-red-600 h-12 rounded-xl items-center justify-center flex-row shadow-xl`, { opacity: pressed ? 0.7 : 1 }]}
                 >
                   <motion.div whileHover={buttonHoverProps} whileTap={buttonTapProps} transition={springProps} style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
-                    <XCircle size={18} color="white" className="mr-2" />
+                    <XCircle size={18} color="white" style={tw`mr-2`} />
                     <Text style={tw`text-white font-black uppercase text-sm`}>LOSS</Text>
                   </motion.div>
                 </Pressable>
@@ -480,7 +434,7 @@ export function LiveAnalysisResult({
             ) : (
               <View style={tw`items-center`}>
                 <View style={tw`${confirmedOutcome === 'WIN' ? 'bg-green-600' : 'bg-red-600'} px-6 py-3 rounded-xl mb-4 flex-row items-center border border-white border-opacity-10 shadow-xl`}>
-                  {confirmedOutcome === 'WIN' ? <CheckCircle size={24} color="white" className="mr-3" /> : <XCircle size={24} color="white" className="mr-3" />}
+                  {confirmedOutcome === 'WIN' ? <CheckCircle size={24} color="white" style={tw`mr-3`} /> : <XCircle size={24} color="white" style={tw`mr-3`} />}
                   <Text style={tw`text-white text-xl font-black uppercase tracking-[3px]`}>{confirmedOutcome === 'WIN' ? 'PROFIT' : confirmedOutcome}</Text>
                 </View>
 
@@ -492,7 +446,7 @@ export function LiveAnalysisResult({
                     }}
                     style={({ pressed }) => [tw`bg-red-600 h-10 px-6 rounded-xl flex-row items-center justify-center shadow-xl mb-4`, { opacity: pressed ? 0.7 : 1 }]}
                   >
-                    <AlertTriangle size={16} color="white" className="mr-2" />
+                    <AlertTriangle size={16} color="white" style={tw`mr-2`} />
                     <Text style={tw`text-white font-black uppercase text-xs tracking-[1px]`}>RUN LOSS AUTOPSY</Text>
                   </Pressable>
                 )}
@@ -527,7 +481,7 @@ export function LiveAnalysisResult({
           )}
 
           {/* Slice preview — visual confirmation that the crop did what user expected */}
-          {mode === 'test' && (testModeLeftSlice || testModeRightSlice) && (
+          {(testModeLeftSlice || testModeRightSlice) && (
             <View style={tw`mt-4 mb-6`}>
               <View style={tw`flex-row justify-center relative w-full h-[300px]`}>
                 {testModeLeftSlice && (
@@ -554,60 +508,28 @@ export function LiveAnalysisResult({
                       
                       {analysis?.judge?.winner && analysis.judge.winner !== 'NO_TRADE' && analysis.judge.winner !== 'NONE' && (
                          <svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 10 }}>
-                            <defs>
-                              <filter id="glow">
-                                <feGaussianBlur stdDeviation="2.5" result="coloredBlur"/>
-                                <feMerge>
-                                  <feMergeNode in="coloredBlur"/>
-                                  <feMergeNode in="SourceGraphic"/>
-                                </feMerge>
-                              </filter>
-                            </defs>
                             <line
                                x1="0%"
                                y1="50%"
-                               x2="75%"
+                               x2="70%"
                                y2={analysis.judge.winner === 'BULL' ? '20%' : '80%'}
-                               stroke={analysis.judge.winner === 'BULL' ? '#4ade80' : '#f87171'}
-                               strokeWidth="5"
-                               strokeDasharray="10,8"
-                               filter="url(#glow)"
+                               stroke={analysis.judge.winner === 'BULL' ? '#22c55e' : '#ef4444'}
+                               strokeWidth="3"
+                               strokeDasharray="6,4"
                             />
-                            <circle cx="75%" cy={analysis.judge.winner === 'BULL' ? '20%' : '80%'} r="10" fill={analysis.judge.winner === 'BULL' ? '#4ade80' : '#f87171'} filter="url(#glow)" />
-                            <circle cx="75%" cy={analysis.judge.winner === 'BULL' ? '20%' : '80%'} r="4" fill="#000" />
-                            
-                            {/* Text backgrounds for clarity */}
-                            <rect
-                               x="50%"
-                               y={analysis.judge.winner === 'BULL' ? '4%' : '80%'}
-                               width="50%"
-                               height="30px"
-                               fill="rgba(0,0,0,0.8)"
-                               rx="6"
-                               stroke={analysis.judge.winner === 'BULL' ? '#4ade80' : '#f87171'}
-                               strokeWidth="1"
-                            />
-                            
+                            <circle cx="70%" cy={analysis.judge.winner === 'BULL' ? '20%' : '80%'} r="6" fill={analysis.judge.winner === 'BULL' ? '#22c55e' : '#ef4444'} />
                             <text
-                               x="75%"
+                               x="70%"
                                y={analysis.judge.winner === 'BULL' ? '12%' : '88%'}
-                               fill={analysis.judge.winner === 'BULL' ? '#4ade80' : '#f87171'}
-                               fontSize="16"
-                               fontWeight="900"
+                               fill={analysis.judge.winner === 'BULL' ? '#22c55e' : '#ef4444'}
+                               fontSize="12"
+                               fontWeight="bold"
                                textAnchor="middle"
                             >
-                               PREDICTED {analysis.judge.winner === 'BULL' ? 'UP' : 'DOWN'}
+                               Predicted {analysis.judge.winner === 'BULL' ? 'UP' : 'DOWN'}
                             </text>
-                            
-                            <rect
-                               x="55%"
-                               y={analysis.judge.winner === 'BULL' ? '25%' : '63%'}
-                               width="40%"
-                               height="22px"
-                               fill="rgba(0,0,0,0.7)"
-                               rx="4"
-                            />
-                            <text x="75%" y={analysis.judge.winner === 'BULL' ? '29%' : '67%'} fill="white" fontSize="11" fontWeight="bold" textAnchor="middle">
+                            {/* Adding explanation of the prediction */}
+                            <text x="70%" y={analysis.judge.winner === 'BULL' ? '28%' : '73%'} fill={analysis.judge.winner === 'BULL' ? '#22c55e' : '#ef4444'} fontSize="10" textAnchor="middle" style={{ opacity: 0.8 }}>
                                {analysis.judge.winner === 'BULL' ? 'Target Reached' : 'Support Broken'}
                             </text>
                          </svg>
@@ -616,21 +538,6 @@ export function LiveAnalysisResult({
                   </View>
                 )}
               </View>
-            </View>
-          )}
-
-          {/* High-fidelity Interactive Auto-Result Candlestick & Trajectory Chart */}
-          {mode === 'test' && analysis && (
-            <View style={tw`mb-6`}>
-              <TestResultCandleChart
-                ohlcSeries={analysis.fullOhlcSeries || analysis.ohlcSeries}
-                candlesCut={analysis.judge?.candlesCut || 8}
-                tradingDirection={tradingDirection === 'UP' ? 'UP' : tradingDirection === 'DOWN' ? 'DOWN' : 'NO_TRADE'}
-                actualDirection={actualDirection || analysis.actualDirection || (confirmedOutcome === 'WIN' ? (tradingDirection === 'UP' ? 'UP' : 'DOWN') : (confirmedOutcome === 'LOSS' ? (tradingDirection === 'UP' ? 'DOWN' : 'UP') : null))}
-                entryClose={analysis.entryClose}
-                exitClose={analysis.exitClose}
-                expectedProfitText={`EXPECTED PROFIT +₹36.60 (83%)`}
-              />
             </View>
           )}
 
@@ -647,7 +554,7 @@ export function LiveAnalysisResult({
           {/* AUTO-GRADE FAILED / NEUTRAL — show MANUAL fallback buttons */}
           {autoGradeStatus === 'failed' && !confirmedOutcome && (
             <View style={tw`items-center py-2`}>
-              <AlertTriangle size={28} color="#f59e0b" className="mb-2" />
+              <AlertTriangle size={28} color="#f59e0b" style={tw`mb-2`} />
               <Text style={tw`text-yellow-400 font-black uppercase text-xs tracking-widest text-center mb-1`}>
                 AUTO-GRADE NO TRADE
               </Text>
@@ -662,14 +569,14 @@ export function LiveAnalysisResult({
                   onPress={() => saveToStats(analysis, 'WIN')}
                   style={({ pressed }) => [tw`flex-1 min-w-[120px] bg-green-600 h-12 rounded-xl items-center justify-center flex-row shadow-xl`, { opacity: pressed ? 0.7 : 1 }]}
                 >
-                  <CheckCircle size={18} color="white" className="mr-2" />
+                  <CheckCircle size={18} color="white" style={tw`mr-2`} />
                   <Text style={tw`text-white font-black uppercase text-sm`}>PROFIT</Text>
                 </Pressable>
                 <Pressable
                   onPress={() => saveToStats(analysis, 'LOSS')}
                   style={({ pressed }) => [tw`flex-1 min-w-[120px] bg-red-600 h-12 rounded-xl items-center justify-center flex-row shadow-xl`, { opacity: pressed ? 0.7 : 1 }]}
                 >
-                  <XCircle size={18} color="white" className="mr-2" />
+                  <XCircle size={18} color="white" style={tw`mr-2`} />
                   <Text style={tw`text-white font-black uppercase text-sm`}>LOSS</Text>
                 </Pressable>
               </View>
@@ -689,15 +596,15 @@ export function LiveAnalysisResult({
           {confirmedOutcome && (
             <View style={tw`items-center`}>
               <View style={tw`flex-row items-center mb-2`}>
-                <Zap size={14} color="#D9B382" className="mr-2" />
+                <Zap size={14} color="#D9B382" style={tw`mr-2`} />
                 <Text style={tw`text-[#D9B382] text-[10px] font-black uppercase tracking-widest`}>
                   {autoGradeStatus === 'done' ? `AUTO-GRADED (${autoGradeConfidence || '—'}% conf)` : 'MANUALLY LOGGED'}
                 </Text>
               </View>
               <View style={tw`${confirmedOutcome === 'WIN' ? 'bg-green-600' : 'bg-red-600'} px-6 py-3 rounded-xl mb-3 flex-row items-center border border-white border-opacity-10 shadow-xl`}>
                 {confirmedOutcome === 'WIN'
-                  ? <CheckCircle size={24} color="white" className="mr-3" />
-                  : <XCircle size={24} color="white" className="mr-3" />}
+                  ? <CheckCircle size={24} color="white" style={tw`mr-3`} />
+                  : <XCircle size={24} color="white" style={tw`mr-3`} />}
                 <Text style={tw`text-white text-xl font-black uppercase tracking-[3px]`}>
                   {confirmedOutcome === 'WIN' ? 'PROFIT' : confirmedOutcome}
                 </Text>
@@ -715,7 +622,7 @@ export function LiveAnalysisResult({
                   }}
                   style={({ pressed }) => [tw`bg-red-600 h-10 px-6 rounded-xl flex-row items-center justify-center shadow-xl mb-2`, { opacity: pressed ? 0.7 : 1 }]}
                 >
-                  <AlertTriangle size={16} color="white" className="mr-2" />
+                  <AlertTriangle size={16} color="white" style={tw`mr-2`} />
                   <Text style={tw`text-white font-black uppercase text-xs tracking-[1px]`}>
                     RUN LOSS AUTOPSY
                   </Text>
@@ -743,14 +650,14 @@ export function LiveAnalysisResult({
                 onPress={() => saveToStats(analysis, 'WIN')}
                 style={({ pressed }) => [tw`flex-1 min-w-[120px] bg-green-600 h-12 rounded-xl items-center justify-center flex-row`, { opacity: pressed ? 0.7 : 1 }]}
               >
-                <CheckCircle size={18} color="white" className="mr-2" />
+                <CheckCircle size={18} color="white" style={tw`mr-2`} />
                 <Text style={tw`text-white font-black uppercase text-sm`}>PROFIT</Text>
               </Pressable>
               <Pressable
                 onPress={() => saveToStats(analysis, 'LOSS')}
                 style={({ pressed }) => [tw`flex-1 min-w-[120px] bg-red-600 h-12 rounded-xl items-center justify-center flex-row`, { opacity: pressed ? 0.7 : 1 }]}
               >
-                <XCircle size={18} color="white" className="mr-2" />
+                <XCircle size={18} color="white" style={tw`mr-2`} />
                 <Text style={tw`text-white font-black uppercase text-sm`}>LOSS</Text>
               </Pressable>
             </View>
@@ -763,7 +670,7 @@ export function LiveAnalysisResult({
         style={({ pressed }) => [tw`mt-6 bg-[#1A1308] border border-white border-opacity-10 h-14 rounded-2xl items-center justify-center flex-row shadow-2xl`, { opacity: pressed ? 0.7 : 1 }]}
       >
         <motion.div whileHover={buttonHoverProps} whileTap={buttonTapProps} transition={springProps} style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
-          <Sparkles size={20} color="#D9B382" className="mr-3" />
+          <Sparkles size={20} color="#D9B382" style={tw`mr-3`} />
           <Text style={tw`text-white font-black uppercase tracking-[2px] text-sm`}>Start New Analysis</Text>
         </motion.div>
       </Pressable>

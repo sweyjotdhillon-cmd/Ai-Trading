@@ -41,24 +41,13 @@ The repository is modularized strictly into logical domains:
 Operates entirely deterministically on the output of the vision pipeline. The engine evaluates multiple conditions concurrently, outputting a scored prediction based strictly on point-based mathematical models (e.g., Hurst Exponent, Z-Score breakouts, EMA higher-order derivatives).
 
 *   **The Rule Engine (`evaluateSignal` in `src/quant/ruleEngine.ts`)**: The heart of the decision matrix. It requires a parsed OHLC series, horizon context, user-selected techniques, and confirmed patterns.
-*   **Strict 10-Technique Rule (Phase 1, 2, 3, 4 Protocol)**: Enforces strict quantitative constraints to eliminate speculative trade recommendations:
-    *   *Phase 1 Intake Block*: Checks that the technique list has at least `T_total >= 10` items. If custom techniques are uploaded and are fewer than 10, it triggers an immediate hard block.
-    *   *REPO Mode Integration*: In REPO mode, the user's uploaded technique file is parsed and used. If no custom file is uploaded, the active technique list defaults to the 14 standard repository/built-in patterns from the `candlestick` packages. REPO mode strictly filters matches, so only candlestick repository patterns (`isRepo === true`) contribute points to the main Judge case scores (reducing speculative trade recommendations).
-    *   *Zero-Scoring Technique Rule*: To prevent arbitrary indicator point fabrication, if zero active techniques in the selected mode match the price chart data (`totalMatchedCount === 0`), all Judge scores are strictly zeroed out (0/11.0) and the system issues a hard block (`NO_TRADE — No active techniques matched current market conditions`).
-    *   *Phase 2 Batch Matching*: Iterates through techniques in batches of 5. If all options are exhausted and matched techniques with a directional call represent less than 10 (`processed < 10`), a hard block is issued.
-    *   *Phase 4 Gating*: Implements severe risk-reduction blocks that force `NO_TRADE` if `processed < 10`, `totalScore < 7.0`, `margin < 3.0`, or `skipRatio > 0.6`.
-    *   *Multiplicative Confidence Penalties*: Dynamically decays final confidence based on batch consensus drift (reducing score by 20%), non-ideal skip rates (reducing score by 10%), or a high concentration of low-weighted (0.5) matched indicators (reducing score by 15%).
-*   **Alternative Repo Result and Continuous Live Scanning**: In `live` mode, starting the camera automatically initializes continuous background scouting. It scans the feed every 5 seconds, compiling live technical results, applying strict rules, and updating judges and indicators smoothly. If "USER ONLY" technique mode is active, the UI renders the alternative repo result as verification standby.
-*   **Robust Temporal String Parsing**: High-performance duration and timeframe parser (`parseDurationToMinutes`) parses human-friendly inputs like `"30 minutes"`, `"3 min"`, `"2 hours"`, or `"1 day"` seamlessly, preserving temporal scaling alignment (`H` ratio) and removing live analysis timeframe discrepancies.
+*   **Strict 10-Technique Rule**: A minimum of 10 techniques (candlestick patterns/indicators) must be provided in `techniquesList` AND at least 10 must mathematically match the chart data to return a valid prediction. Failure defaults the system to `'NO_TRADE'`. (Exception: Unit tests passing `"__TEST_BYPASS__"` in the techniques list).
 *   **Scoring Rubric (4-Judge Matrix)**:
     *   **Judge 1 (Trend/Momentum)**: Correlates parsed user techniques (e.g., Engulfing, Marubozu) with the underlying trend via `PATTERN_WEIGHTS_BY_HORIZON`.
     *   **Judge 2 (Oscillator Consensus)**: Aggregates RSI divergence, MACD histogram velocity, and Stochastic boundaries for confirmation logic.
     *   **Judge 3 (Boundary/Reversal)**: Employs percentile mapping (`yPercent`) of the current close against local highs/lows combined with wick-to-body ratio analysis.
     *   **Judge 4 (The Skeptic Multiplier)**: A gating penalty. Evaluates high-order derivatives (Z-Scores, Volatility Regimes, ATR, RQA Determinism/Laminarity) and heavily dampens the final confidence score if erratic market chop or explosive skips are detected.
 *   **Hurst Exponent Balancer**: A Hurst Exponent (`rescaledRangeHurst`) dynamically adjusts scoring logic mid-execution, scaling momentum weights upwards during `H > 0.55` (Trending Regimes) and boundary/reversal weights during `H < 0.45` (Mean-Reverting Regimes).
-*   **Mathematical Quantitative Analysis Model (Scientific Integration)**:
-    *   The engine incorporates the six advanced quantitative models detailed in `/RESEARCH_REPORT_3_5_MIN.md` (Hurst Local Mean Reversion, Z-Score Breakout Significance, Higher-Order EMA Derivatives with Jerk warnings, composite Micro-Momentum alignment, ATR-Ratio Volatility Regimes, and Swing peak/valley-based RSI Divergence).
-    *   **Strict Architectural Isolation**: These mathematical analysis indicators operate independently from the user-defined technique analysis scoring code. This isolation prevents any overlapping or value-contamination, ensuring that user-selected techniques and scientific math models work in precise parallel confluence to guide the judges without overriding or "maxing" out each other's custom values.
 *   **Pattern Recognition & Stability**:
     *   **`patternAdapter.ts`**: Extracts raw candlestick geometries using the `candlestick` library against the synthesized OHLC data.
     *   **`patternStability.ts`**: Filters raw patterns across sequential frames to ensure a pattern isn't just a brief flash of noise, upgrading them to 'confirmed' evidence only if they persist.
@@ -171,15 +160,10 @@ Before dispatching to the worker, the Base64 `imageDataUrl` must be parsed back 
 - It posts a strongly-typed message: `{ type: 'ANALYZE', payload: { ... } }`.
 - Crucially, the `techniquesList` is dynamically included in this payload, allowing the backend to process only user-selected trading patterns.
 
-#### 2.3 Bulk Test Mode Slicing (Forward-Testing Simulation) & High-Fidelity Candlestick Charting
-If **Bulk Test Mode** or **Single Test Mode** is active, the image is programmatically bifurcated:
+#### 2.3 Bulk Test Mode Slicing (Forward-Testing Simulation)
+If **Bulk Test Mode** is active, the image is programmatically bifurcated:
 - **Left Slice (Historical Context):** Processed by the pipeline to generate a prediction.
 - **Right Slice (Future Outcome):** Withheld from the pipeline. Kept exclusively for post-analysis grading against the predicted direction. This slicing is achieved via precise canvas `cropRatio()` calculations.
-- **High-Fidelity Auto-Result Chart Rendering (`TestResultCandleChart`)**: In both single test mode and bulk test batch running, the application overlays/displays a custom high-fidelity SVG candlestick chart.
-  - **Unyielding Anatomy Isolation**: Distinctly and mathematically separates/renders bullish candlestick structures (green color, open price at the bottom body edge, close price at the top body edge) and bearish structures (red color, open price at the top body edge, close price at the bottom body edge) using their exact extracted OHLC coordinates.
-  - **Analysis Separator**: Adds a vertical dashed blue "Analysis Line" separating past inputs from future test outcomes.
-  - **Horizontal Reference Anchors**: Overlays dashed horizontal lines identifying Key Support levels (local minima of the past), Resistance levels (local maxima of the past), Entry Close (exact exit of historical window), and Exit Close (exact outcome terminal close), highlighting broken support or reached targets.
-  - **Glowing Predicted Targets**: Renders the projected trajectory pathway with glowing path circles leading to a visual destination target matching binary options CALL/PUT directions.
 
 ---
 
@@ -491,58 +475,3 @@ Instead of needing to upload the exact right edge of the chart manually upon los
 1. `npm run build`
 2. `npm run preview` and open the preview URL, pass Hero intro, launch terminal, ensure LiveAnalysis renders (spinner visible where applicable) without boundary crash.
 3. `npm test`
-
-
-## 13. RECENT UPDATES: Live Mode Glitches, Technique Mode & Renaming Fixes
-
-### What was resolved
-1. **Header Overlap & Bleed Glitch**: 
-   - Modified the standard absolute header style in `App.tsx` from `transparent` to solid background `#0A0B0E`. Included a high-contrast boundary border `rgba(255,255,255,0.06)` at the bottom.
-   - Added `pt-16` padding to the top of the main ScrollView in `LiveAnalysis.tsx` to clear the floating header viewport on mount, making content transition smoothly below the header text without overlap/color bleeding.
-2. **Analysis Technique Mode Selector inside Live Mode**:
-   - Added `techniqueMode` and `setTechniqueMode` state to the main `LiveAnalysis.tsx` component and passed them down to `LiveAnalysisDashboard.tsx` props. 
-   - Rendered a high-contrast choice toggle segment directly inside the Configuration card with options: `USER ONLY`, `REPO ONLY`, and `COMBINED`.
-   - Updated both the *Scout (10s continuous)* and *Main execution* calls of `runSingleAnalysis` inside `LiveAnalysis.tsx` to pass the correct active choice of `techniqueMode` to the quantitative engine.
-3. **Alternative Repo Results display & renaming**:
-   - Renamed `{item.result.judge.tradeDetails.techniqueMode !== 'USER' ? 'Repo Active Output' : 'Imaginary Repo Math'}` to `{item.result.judge.tradeDetails.techniqueMode !== 'USER' ? 'Repo Active Output' : 'Alternative Repo Result'}` inside `BulkTestPanel.tsx`.
-   - Renamed `Hypothetical Repo Impact (Imagination Only)` to `Alternative Repo Result` inside `LiveAnalysisResult.tsx`.
-   - Modified the conditional rendering of the Alternative Repo block so that even if no candlestick patterns are active on the current live candle frame, the results and standby details display completely in the UI when `techniqueMode` is `'USER'`. This avoids blank results and ensures the math matches the user's strict rules accurately.
-
-
-## 14. SYSTEM ADJUNCT: Candlestick Catalyst Laboratory
-To test the core capabilities and pattern detection formulas from the integrated `candlestick` library in an isolated environment, we introduced the **Candlestick Catalyst Laboratory** mode alongside the `'live'`, `'test'`, and `'bulk'` tabs. 
-
-*   **Pristine Architectural Isolation**: Runs independently in standard React state. Guarantees that active trade analysis, visual machine vision feeds, and point-scoring logic for the 4-Judge Matrix remain fully unaffected.
-*   **Sequential Pattern Chain**: Pulls either live OCR-extracted `ohlcSeries` from raw image files or generates custom volatile datasets (such as simulated Bitcoin, Gold, or EURUSD). Applies native library `patternChain` pattern algorithms and enriches metrics using standard package metadata (`filterByConfidence`, `filterByType`, and `sortByConfidence`).
-*   **Real-Time Streaming Simulation**: Integrates standard chunk handlers via `candlestick.streaming.createStream`. Divides selected timelines into rolling batches, displaying live progress bars and piping live `onMatch` and `onProgress` triggers dynamically to a visually scrolling log terminal.
-*   **Interactive Occurrences Plot**: Implements a high-contrast visual bar waveform highlighting chronological pattern occurrences dynamically upon ledger selection.
-
-
-## 15. RESOLUTION: Native Web Style Clashing and Repository Exactness Check
-We successfully targeted, diagnosed, and fully eliminated DOM clashing exceptions triggered in React Native Web browser targets, and verified compliance with the official `candlestick` library.
-
-### What was resolved
-1. **DOM Clashing Exception Fixed**: 
-   - Replaced raw `div` tags containing the React Native Web utility style helper (`tw` from `twrnc`) inside `LiveAnalysisResult.tsx`, `LiveAnalysisDebate.tsx`, and `LiveAnalysis.tsx` with compliant React Native `<View>` nodes. 
-   - **Comprehensive Icons and Framer Motion Harmonization**: Resolved the web browser console crash: `TypeError: Failed to set an indexed property [0] on 'CSSStyleDeclaration': Indexed property setter is not supported.` This occurred when standard HTML elements, Lucide icons (Web SVG structures), or `motion.div` elements received an array style returned by `twrnc`'s `tw` helper. Evaluated and refactored over 40 occurrences of `style={tw` on non-React Native components across `LiveAnalysisDashboard.tsx`, `LiveAnalysisResult.tsx`, `LiveAnalysis.tsx`, `LossAutopsyModal.tsx`, `RepoCatalystLab.tsx`, and `SystemSettingsModal.tsx` to use pure Tailwind `className` configurations instead.
-2. **Candlestick Catalyst Lab Stability Upgraded**:
-   - Upgraded `RepoCatalystLab.tsx` to use pure, standard React web elements (`div`, `span`, `button`, standard native scrollbars) instead of React Native components like `View`, `Text`, `Pressable`, and `ScrollView`.
-   - This architectural pivot successfully prevents React Native Web from instantiating internal helpers like `LocaleProvider` (which caused layout and render disruptions on Chrome/Vite targets), ensuring bulletproof sandbox execution under all active client environments.
-3. **Direct Repo Verification & Isolation Compliance**:
-   - Confirmed that the Candlestick Catalyst Laboratory implements the exact sequential processing (`patternChain`), metadata lookup (`getPatternMetadata`), filters (`filterByConfidence`, `filterByType`, `sortByConfidence`), and memory chunk emitters (`streaming.createStream`) directly from the native `candlestick` package associated with `https://github.com/cm45t3r/candlestick.git`.
-   - Verified that these calculations run in complete architectural isolation: active streaming and scanning run in standard React local memory, strictly avoiding any pollution of user configurations, file structures, or indicators.
-
-
-## 16. CHRONOLOGICAL UPGRADE: Interactive Control & Autograde Outcome Highlight Engine
-To optimize high-fidelity feedback and improve the usability of dynamic signals inside ChartLens:
-
-1. **Interactive Signal Overlay Controls**:
-   - **Dismiss Functionality Added**: Replaced the non-interactive warning screen layout with elegant, fully accessible close triggers. Users can now dismiss high-intensity warning screens immediately via a prominent, high-contrast `<Pressable>` button: `'✕ DISMISS ALERT & VIEW RESULTS'`, bringing them back to the detailed consensus panels under it smoothly.
-   - **Direct Consensus Scorecard Preview**: Injected a clean, dynamic Consensus Judge Scorecard preview directly inside the overlay backdrop itself. This provides an immediate, real-time snapshot of Judge 1 to Judge 4 point scores and final consensus confidence ratings without needing to clear the alert state first.
-2. **Imaginary Auto-Grade Result Chart Line**:
-   - **Actual Outcome Indicator on Chart Canvas**: Added the glowing, dashed high-contrast "Imaginary Auto-Grade Result Line" to the `TestResultCandleChart` SVG renderer.
-   - ** Confluence Feedback**: When a test or live trade is auto-graded, a secondary trajectory line connects the entry price to the actual exit price endpoint on the right side of the canvas. It dynamically highlights actual wins (`#10B981` green) or losses (`#EF4444` red) with dedicated caption cards, delivering visually intuitive grading verification.
-
-
-
-

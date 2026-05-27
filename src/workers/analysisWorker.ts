@@ -108,28 +108,13 @@ self.onmessage = async (e: MessageEvent) => {
       let confirmedPatterns: PatternEvidence[] = [];
       if (featureFlags.enableCandlestickRepoPatterns) {
         const rawPatterns = extractCandlestickPatterns(pipe.ohlcSeries);
-        if (data.isTestMode) {
-           confirmedPatterns = rawPatterns;
-        } else {
-           confirmedPatterns = patternStabilityManager.processFrame(rawPatterns);
-        }
+        confirmedPatterns = patternStabilityManager.processFrame(rawPatterns);
       }
 
       let confirmedGaps: GapEvidence[] = [];
       if (featureFlags.enableGapDetection) {
         const latestGap = detectLatestGap(pipe.ohlcSeries);
-        if (data.isTestMode) {
-           confirmedGaps = latestGap ? [{
-               type: latestGap.type,
-               startIndex: latestGap.startIndex,
-               size: latestGap.size,
-               firstSeenIndex: pipe.ohlcSeries.length - 1,
-               consecutiveFrames: 3,
-               lastSeenMs: Date.now()
-           }] : [];
-        } else {
-           confirmedGaps = gapStabilityManager.processFrame(latestGap);
-        }
+        confirmedGaps = gapStabilityManager.processFrame(latestGap);
       }
 
 
@@ -153,27 +138,23 @@ self.onmessage = async (e: MessageEvent) => {
         confirmedGaps,
         (key: string, text: string) => {
           sendOk('JUDGE_LOG', { msgId: data.msgId, logs: { [key]: { text, status: 'active' } } });
-        },
-        data.techniqueMode || 'COMBINED'
+        }
       );
       console.log(`[PERF] evaluateSignal: ${(performance.now()-t1Worker).toFixed(1)}ms`);
       console.log(`[PERF] TOTAL worker: ${(performance.now()-t0Worker).toFixed(1)}ms`);
-      let finalStable = true;
-      if (!data.isTestMode) {
-        const stab = emitStability(decision);
-        finalStable = stab.stable;
-      }
+      const stab = emitStability(decision);
 
       let finalSignal = decision.signal;
       let finalConfidence = decision.confidence;
       let finalScore = decision.finalScore;
+      let finalStable = stab.stable;
 
-      if (featureFlags.enableTemporalFiltering && !data.isTestMode) {
+      if (featureFlags.enableTemporalFiltering) {
         const tfResult = applyTemporalFilter(
           decision.signal,
           decision.confidence,
           decision.finalScore,
-          finalStable
+          stab.stable
         );
         finalSignal = tfResult.signal;
         finalConfidence = tfResult.confidence;
@@ -184,7 +165,6 @@ self.onmessage = async (e: MessageEvent) => {
       const debugTrace = {
         meta: pipe.meta,
         decision,
-        ohlcSeries: pipe.ohlcSeries,
         temporalFiltering: featureFlags.enableTemporalFiltering ? {
           smoothedConfidence: finalConfidence,
           smoothedScore: finalScore

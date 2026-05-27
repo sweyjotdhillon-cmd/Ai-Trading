@@ -58,9 +58,6 @@ export interface DecisionResult extends JudgeVerdict {
     latencyAdjustedForecast: string;
     techniquesUsed: string;
     executionTimeMs: number;
-    repoPatternsDetected?: string;
-    repoPatternCount?: number;
-    techniqueMode?: string;
   };
   j1Score: number;
   j2Score: number;
@@ -88,8 +85,8 @@ export function evaluateSignal(
   horizonCtx: HorizonContext,
   _confirmedPatterns: any[] = [],
   _confirmedGaps: any[] = [],
-  onLog?: (key: string, text: string) => void,
-  techniqueMode: 'USER' | 'REPO' | 'COMBINED' = 'COMBINED'
+  onLog?: (key: string, text: string) => void
+
 ): DecisionResult {
   const defaultCases = { bull: { j1: 0, j2: 0, j3: 0, total: 0 }, bear: { j1: 0, j2: 0, j3: 0, total: 0 } };
   const defaultNoTrade: DecisionResult = {
@@ -110,8 +107,7 @@ export function evaluateSignal(
     tradeDetails: {
       latencyAdjustedForecast: 'Signal: NO_TRADE',
       techniquesUsed: '',
-      executionTimeMs: 0,
-      techniqueMode: techniqueMode
+      executionTimeMs: 0
     },
     j1Score: 0,
     j2Score: 0,
@@ -169,72 +165,18 @@ export function evaluateSignal(
       close: haClose,
     };
   }
-// ohlcSeries = haSeries; // Disabled Heikin Ashi smoothing to fix math engine and indicator distortion
+  ohlcSeries = haSeries;
 
   let isBypass = false;
-  let activeList: any[] = [];
-  let customListUploaded = false;
-  let tTotal = 0;
-  let intakeBlockReason = '';
-  
-  // Load custom list if available, regardless of mode (COMBINED/USER/REPO)
-  if (techniquesList && techniquesList.length > 0) {
-    activeList = [...techniquesList];
-    customListUploaded = true;
-    tTotal = activeList.length;
+  const activeList: any[] = [...(techniquesList || [])];
+  if (activeList.length > 0) {
     isBypass = activeList.some(t => {
       const name = typeof t === 'string' ? t : t.name;
       return name === '__TEST_BYPASS__';
     });
-    
-    if (tTotal < 10 && !isBypass) {
-      intakeBlockReason = 'Insufficient technique count. Minimum 10 required for a valid signal.';
-    }
-  } else {
-    activeList = [
-      "RSI Oversold",
-      "RSI Overbought",
-      "Hammer",
-      "Shooting Star",
-      "Bullish Engulfing",
-      "Bearish Engulfing",
-      "Morning Star",
-      "Evening Star",
-      "MACD Golden Cross",
-      "MACD Death Cross",
-      "EMA Slope Up",
-      "EMA Slope Down",
-      "Bollinger Breakout Up",
-      "Bollinger Breakout Down"
-    ];
-    tTotal = activeList.length;
   }
 
-  // If the list is still less than 10 (and we aren't bypassing), pad it with repo/built-in techniques
-  if (activeList.length < 10 && !isBypass) {
-    const backupList = [
-      "RSI Oversold",
-      "RSI Overbought",
-      "Hammer",
-      "Shooting Star",
-      "Bullish Engulfing",
-      "Bearish Engulfing",
-      "Morning Star",
-      "Evening Star",
-      "MACD Golden Cross",
-      "MACD Death Cross",
-      "EMA Slope Up",
-      "EMA Slope Down",
-      "Bollinger Breakout Up",
-      "Bollinger Breakout Down"
-    ];
-    for (const t of backupList) {
-      if (activeList.length >= 10) break;
-      if (!activeList.some(x => (typeof x === 'string' ? x : x.name).toLowerCase() === t.toLowerCase())) {
-        activeList.push(t);
-      }
-    }
-  }
+  // Pre-defined techniques backup list REMOVED entirely per strict rule.
 
   let bullJ1 = 0, bullJ2 = 0, bullJ3 = 0;
   let bearJ1 = 0, bearJ2 = 0, bearJ3 = 0;
@@ -254,223 +196,17 @@ export function evaluateSignal(
 
 
 
-  // Compute indicators
-
-  const rsiVals = rsi(closes as unknown as number[], 14);
-  const macdVals = macd(closes as unknown as number[], 12, 26, 9);
-  const stochVals = stochastic(ohlcSeries, 14, 3);
-  const atrVals = atr(ohlcSeries, 14);
-  const slope = emaSlope(closes as unknown as number[], 21);
-  const curve = emaCurvature(closes as unknown as number[], 21);
-  const bollVals = bollinger(closes as unknown as number[], 20, 2);
-
-  // --- R3: Expected Move ---
-  // Brownian scaling (see Macroption)
-
-
-
-
-  // --- R6: Slope Strength ---
-
-
-
-
-
-  // --- 3-5 MINUTE BINARY MATH ENGINE ---
-  // 1. Hurst Exponent (Mean Reversion)
-  const hurst = rescaledRangeHurst(Array.from(closes).slice(-30));
-
-  // 2. Z-Score Breakout
-  const currentZScore = calculateZScore(Array.from(closes), 20);
-  if (currentZScore > 2.0) bullJ2 += 1.5;
-  if (currentZScore < -2.0) bearJ2 += 1.5;
-
-  // 3 & 4. EMA Derivatives & Micro-Momentum
-  const calcEMA = (data: number[], period: number) => {
-    const k = 2 / (period + 1);
-    const ema = [data[0]];
-    for (let i = 1; i < data.length; i++) {
-        ema.push(data[i] * k + ema[i - 1] * (1 - k));
-    }
-    return ema;
-  };
-  const ema9Series = calcEMA(Array.from(closes), 9);
-  const derivatives = calculateEMADerivatives(Array.from(ema9Series));
-  const microMom = calculateMicroMomentumScore(currentZScore, derivatives.velocity, derivatives.acceleration);
-  if (microMom === 3) bullJ1 += 2.0;
-  if (microMom === -3) bearJ1 += 2.0;
-
-  // 5. Volatility Regime
-  // Removed redeclared skeptic multiplier
-  const regimeValuesForMathEngine = ohlcSeries.map((c, i) => ({ ...c, prevClose: i > 0 ? ohlcSeries[i-1].close : c.open }));
-  const regime = calculateVolatilityRegime(regimeValuesForMathEngine);
-  if (regime.status === 'EXPLOSIVE_SKIP') {
-     skepticMultiplier *= 0.7; // Reduce confidence in high vol
-  } else if (regime.status === 'DEAD_SKIP') {
-     // Compression, breakout imminent. We don't reduce confidence, maybe boost breakout signals.
-     if (Math.abs(currentZScore) > 2.0) skepticMultiplier *= 1.2;
-  }
-
-  // 6. RSI Divergence
-  const divergence = detectRSIDivergence(Array.from(closes), rsiVals);
-  if (divergence === 'BULLISH') bullJ3 += 2.0;
-  if (divergence === 'BEARISH') bearJ3 += 2.0;
-
-  // DO NOT TRADE CHECKLIST (Hard blocks)
-  let hardBlockReason = '';
-  if (regime.status === 'EXPLOSIVE_SKIP' && hurst < 0.45) hardBlockReason = 'High Volatility + Mean Reverting';
-  if (atrVals[last] < 0.0001) hardBlockReason = 'Zero Volatility';
-  if (microMom === 0 && Math.abs(currentZScore) < 0.5) hardBlockReason = 'Complete Indecision';
-  // (We no longer return early here, we let it flow so UI elements populate)
-
-  // Hurst Suppressor: If strongly mean reverting, kill momentum points
-  if (hurst < 0.45) {
-     bullJ1 *= 0.5;
-     bearJ1 *= 0.5;
-  }
-
-  // --- Judge 1: Trend & Momentum ---
-  if (!isNaN(slope[last])) {
-    if (slope[last] > 0) bullJ1 += Math.min(2, Math.abs(slope[last]) * 10); // magnitude heuristic up to 2
-    else if (slope[last] < 0) bearJ1 += Math.min(2, Math.abs(slope[last]) * 10);
-  }
-  if (!isNaN(curve[last]) && !isNaN(slope[last])) {
-    if (curve[last] > 0 && slope[last] > 0) bullJ1 += 1;
-    if (curve[last] < 0 && slope[last] < 0) bearJ1 += 1;
-  }
+  // Computations for external techniques if needed
+  // ... predefined technique points calculations REMOVED ...
   
-  // Higher-highs / Lower-lows of last 5 closes
-  const last5 = closes.slice(-5);
-  let isHH = true, isLL = true;
-  for (let i = 1; i < last5.length; i++) {
-    if (last5[i] <= last5[i-1]) isHH = false;
-    if (last5[i] >= last5[i-1]) isLL = false;
-  }
-  if (isHH) bullJ1 += 1;
-  if (isLL) bearJ1 += 1;
-  
-  // --- Pattern Techniques Processing ---
-  const matchedTechniques: string[] = [];
-  const patterns = { bullish: [] as string[], bearish: [] as string[] };
-
-  if (activeList && activeList.length > 0) {
-    // Look back at the last 3 candles for pattern matching
-    const c1 = ohlcSeries[last - 2];
-    const c2 = ohlcSeries[last - 1];
-    const c3 = ohlcSeries[last];
-
-    // Helper functions for pattern detection
-    const isBullishCandle = (c: any) => c.close > c.open;
-    const isBearishCandle = (c: any) => c.close < c.open;
-    const bodySize = (c: any) => Math.abs(c.close - c.open);
-    const upperWickSize = (c: any) => c.high - Math.max(c.open, c.close);
-    const lowerWickSize = (c: any) => Math.min(c.open, c.close) - c.low;
-
-    // Detect common candlestick patterns
-
-    // 1. Doji
-    if (bodySize(c3) <= (c3.high - c3.low) * 0.1) {
-      if (slope && slope[last] < 0) patterns.bullish.push("Doji");
-      else if (slope && slope[last] > 0) patterns.bearish.push("Doji");
-    }
-
-    // 2. Hammer
-    if (isBullishCandle(c3) && lowerWickSize(c3) >= 2 * bodySize(c3) && upperWickSize(c3) <= bodySize(c3) * 0.1) {
-      if (slope && slope[last] < 0) patterns.bullish.push("Hammer");
-    }
-
-    // 3. Hanging Man
-    if (isBearishCandle(c3) && lowerWickSize(c3) >= 2 * bodySize(c3) && upperWickSize(c3) <= bodySize(c3) * 0.1) {
-      if (slope && slope[last] > 0) patterns.bearish.push("Hanging Man");
-    }
-
-    // 4. Inverted Hammer
-    if (upperWickSize(c3) >= 2 * bodySize(c3) && lowerWickSize(c3) <= bodySize(c3) * 0.1) {
-      if (slope && slope[last] < 0) patterns.bullish.push("Inverted Hammer");
-    }
-
-    // 5. Shooting Star
-    if (upperWickSize(c3) >= 2 * bodySize(c3) && lowerWickSize(c3) <= bodySize(c3) * 0.1) {
-      if (slope && slope[last] > 0) patterns.bearish.push("Shooting Star");
-    }
-
-    // 6. Bullish Engulfing
-    if (isBearishCandle(c2) && isBullishCandle(c3) && c3.open <= c2.close && c3.close >= c2.open) {
-      patterns.bullish.push("Bullish Engulfing");
-    }
-
-    // 7. Bearish Engulfing
-    if (isBullishCandle(c2) && isBearishCandle(c3) && c3.open >= c2.close && c3.close <= c2.open) {
-      patterns.bearish.push("Bearish Engulfing");
-    }
-
-    // 8. Morning Star
-    if (isBearishCandle(c1) && bodySize(c2) <= bodySize(c1) * 0.3 && isBullishCandle(c3) && c3.close > (c1.open + c1.close) / 2) {
-      patterns.bullish.push("Morning Star");
-    }
-
-    // 9. Evening Star
-    if (isBullishCandle(c1) && bodySize(c2) <= bodySize(c1) * 0.3 && isBearishCandle(c3) && c3.close < (c1.open + c1.close) / 2) {
-      patterns.bearish.push("Evening Star");
-    }
-
-    // 10. Piercing Line
-    if (isBearishCandle(c2) && isBullishCandle(c3) && c3.open < c2.low && c3.close > ((c2.open + c2.close) / 2)) {
-      patterns.bullish.push("Piercing Line");
-    }
-
-    // 11. Dark Cloud Cover
-    if (isBullishCandle(c2) && isBearishCandle(c3) && c3.open > c2.high && c3.close < (c2.open + c2.close) / 2) {
-      patterns.bearish.push("Dark Cloud Cover");
-    }
-
-    // 12. Three White Soldiers
-    if (isBullishCandle(c1) && isBullishCandle(c2) && isBullishCandle(c3) && c2.close > c1.close && c3.close > c2.close) {
-      patterns.bullish.push("Three White Soldiers");
-    }
-
-    // 13. Three Black Crows
-    if (isBearishCandle(c1) && isBearishCandle(c2) && isBearishCandle(c3) && c2.close < c1.close && c3.close < c2.close) {
-      patterns.bearish.push("Three Black Crows");
-    }
-
-    // 14. Marubozu Bullish
-    if (isBullishCandle(c3) && upperWickSize(c3) <= bodySize(c3) * 0.05 && lowerWickSize(c3) <= bodySize(c3) * 0.05) {
-      patterns.bullish.push("Marubozu");
-    }
-
-    // 15. Marubozu Bearish
-    if (isBearishCandle(c3) && upperWickSize(c3) <= bodySize(c3) * 0.05 && lowerWickSize(c3) <= bodySize(c3) * 0.05) {
-      patterns.bearish.push("Marubozu");
-    }
-
-    // Match techniques with requested list
-    const techniquesStr = activeList.map(t => typeof t === 'string' ? t : t.name).join(" ").toLowerCase();
-
-    for (const pat of patterns.bullish) {
-      if (techniquesStr.includes(pat.toLowerCase())) {
-        const modeLabel = techniqueMode === 'REPO' ? 'Repo-Matched' : 'User-Matched';
-        matchedTechniques.push(`${pat} (Bullish ${modeLabel})`);
-      }
-    }
-
-    for (const pat of patterns.bearish) {
-      if (techniquesStr.includes(pat.toLowerCase())) {
-        const modeLabel = techniqueMode === 'REPO' ? 'Repo-Matched' : 'User-Matched';
-        matchedTechniques.push(`${pat} (Bearish ${modeLabel})`);
-      }
-    }
-  }
-
   // --- Dynamic Batches Point System (Evaluate all configured active techniques) ---
   const techCache: any = {};
-  const normalizedNames = activeList.map(t => typeof t === 'string' ? t : t.name);
   
   // Shard into batches of 5
   const shardSize = 5;
-  const shards: string[][] = [];
-  for (let i = 0; i < normalizedNames.length; i += shardSize) {
-    shards.push(normalizedNames.slice(i, i + shardSize));
+  const shards: any[][] = [];
+  for (let i = 0; i < activeList.length; i += shardSize) {
+    shards.push(activeList.slice(i, i + shardSize));
   }
   
   const evaluationVotes: any[] = [];
@@ -480,34 +216,6 @@ export function evaluateSignal(
     const shard = shards[i];
     const shardVotes = evaluateShard(shard, ohlcSeries, i * shardSize, techCache);
     evaluationVotes.push(...shardVotes);
-  }
-
-  const repoDetected: string[] = [];
-  // Integrate Repo Candlestick Pattern Matches into standard voting
-  if (featureFlags.enableCandlestickRepoPatterns && _confirmedPatterns) {
-    for (const ev of _confirmedPatterns) {
-       if (ev.direction === 'BULL') {
-           evaluationVotes.push({
-               id: 'repo_' + ev.pattern.toLowerCase().replace(/\s+/g, ''),
-               name: ev.pattern + ' (Repo)',
-               vote: 'BULL',
-               score: 0.8,
-               reason: `Repo Candlestick Math Matched ${ev.pattern}`,
-               matched: true
-           });
-           repoDetected.push(ev.pattern + ' (Bullish)');
-       } else if (ev.direction === 'BEAR') {
-           evaluationVotes.push({
-               id: 'repo_' + ev.pattern.toLowerCase().replace(/\s+/g, ''),
-               name: ev.pattern + ' (Repo)',
-               vote: 'BEAR',
-               score: 0.8,
-               reason: `Repo Candlestick Math Matched ${ev.pattern}`,
-               matched: true
-           });
-           repoDetected.push(ev.pattern + ' (Bearish)');
-       }
-    }
   }
 
   // Programmatic Integrity & Hallucination checks
@@ -545,378 +253,62 @@ export function evaluateSignal(
 
   let bulldogPoints = 0;
   let peerPoints = 0;
-  let repoBulldogPoints = 0;
-  let repoPeerPoints = 0;
   let bullList: any[] = [];
   let bearList: any[] = [];
 
-  const getTechniqueBias = (name: string): 'BULL' | 'BEAR' | 'NEUTRAL' => {
-    const norm = name.toLowerCase().replace(/[\s_-]/g, '');
-    if (
-      norm.includes('bull') ||
-      norm.includes('oversold') ||
-      norm.includes('low') ||
-      norm.includes('hammer') ||
-      norm.includes('morningstar') ||
-      norm.includes('piercing') ||
-      norm.includes('threewhitesoldiers') ||
-      norm.includes('tweezerbottom') ||
-      norm.includes('tweezerbot') ||
-      norm.includes('higherhighs') ||
-      norm.includes('hh') ||
-      norm.includes('slopeup') ||
-      norm.includes('trendingup') ||
-      norm.includes('curvaturepositive') ||
-      norm.includes('breakoutup') ||
-      norm.includes('goldencross')
-    ) {
-      return 'BULL';
-    }
-    if (
-      norm.includes('bear') ||
-      norm.includes('overbought') ||
-      norm.includes('high') ||
-      norm.includes('shootingstar') ||
-      norm.includes('eveningstar') ||
-      norm.includes('darkcloud') ||
-      norm.includes('threeblackcrows') ||
-      norm.includes('tweezertop') ||
-      norm.includes('tweezerbtop') ||
-      norm.includes('lowerlows') ||
-      norm.includes('ll') ||
-      norm.includes('slopedown') ||
-      norm.includes('trendingdown') ||
-      norm.includes('curvaturenegative') ||
-      norm.includes('breakoutdown') ||
-      norm.includes('deathcross') ||
-      norm.includes('dcross')
-    ) {
-      return 'BEAR';
-    }
-    return 'NEUTRAL';
-  };
-
-  const hasRsiMatched = evaluationVotes.some(v => (v.vote === 'BULL' || v.vote === 'BEAR') && v.name.toLowerCase().includes('rsi'));
-  const hasStochMatched = evaluationVotes.some(v => (v.vote === 'BULL' || v.vote === 'BEAR') && v.name.toLowerCase().includes('stoch'));
-  const hasCorrelationOverlap = hasRsiMatched && hasStochMatched;
-
   evaluationVotes.forEach(v => {
-      const voteBias = getTechniqueBias(v.name);
       const isBull = v.vote === 'BULL';
       const isBear = v.vote === 'BEAR';
-      let pointsEarned = v.score || 0; 
+      const pointsEarned = v.score || 0; 
       const matched = isBull || isBear;
-
-      let rsiStochAdjusted = false;
-      const keyLower = v.name.toLowerCase();
-      if (hasCorrelationOverlap && (keyLower.includes('rsi') || keyLower.includes('stoch'))) {
-        pointsEarned *= 0.7; // Apply 1 - 30% = 0.7 correlation discount
-        rsiStochAdjusted = true;
-      }
 
       const obj = {
         id: v.id,
         name: v.name,
         vote: v.vote,
-        caseIndicated: voteBias === 'BULL' ? 'Bulldog' : (voteBias === 'BEAR' ? 'Peer' : 'Neutral'),
+        caseIndicated: isBull ? 'Bulldog' : (isBear ? 'Peer' : 'Neutral'),
         pointsEarned: matched ? pointsEarned : 0,
-        process: rsiStochAdjusted 
-          ? `[RSI-Stoch Correlated Penalty 0.7x Applied] ${v.reason || 'Criteria non-active on current candle'}` 
-          : (v.reason || 'Criteria non-active on current candle'),
+        process: v.reason || 'Criteria non-active on current candle',
         matched
       };
 
-      const isRepo = v.name.includes('(Repo)');
-      if (isRepo) {
-        if (isBull) { repoBulldogPoints += pointsEarned; }
-        if (isBear) { repoPeerPoints += pointsEarned; }
-        
-        if (techniqueMode === 'COMBINED' || techniqueMode === 'REPO') {
-           if (isBull) { bulldogPoints += pointsEarned; }
-           if (isBear) { peerPoints += pointsEarned; }
-        }
-      } else {
-        if (techniqueMode === 'COMBINED' || techniqueMode === 'USER') {
-           if (isBull) { bulldogPoints += pointsEarned; }
-           if (isBear) { peerPoints += pointsEarned; }
-        }
-      }
+      if (isBull) { bulldogPoints += pointsEarned; }
+      if (isBear) { peerPoints += pointsEarned; }
 
-      if (voteBias === 'BULL') {
+      // Sort into the requested lists so users see every technique evaluated
+      if (isBull) {
         bullList.push(obj);
-      } else if (voteBias === 'BEAR') {
+      } else if (isBear) {
         bearList.push(obj);
       } else {
+        // If neutral, distribute it to bullList so it is listed (users want all listed, even 0 points)
         bullList.push(obj);
       }
   });
 
-  // --- Technique Signal Evaluator Calculations (Rule matching engine) ---
-  let bullScore = 0;
-  let bearScore = 0;
-  let processed = 0;
-  let skipped = 0;
-  let driftFlag = false;
-
-  // Loop over evaluationVotes to count processed and skipped techniques.
-  evaluationVotes.forEach(v => {
-    if (v.name.includes('(Repo)')) return;
-    const isNoMatch = v.reason === 'no_match';
-    if (isNoMatch) {
-      skipped += 1;
-    } else if (v.vote === 'BULL') {
-      bullScore += (v.score || 0);
-      processed += 1;
-    } else if (v.vote === 'BEAR') {
-      bearScore += (v.score || 0);
-      processed += 1;
-    }
-  });
-
-  // Batch Drift Detection (Groups of 5)
-  if (shards.length >= 2) {
-    const shard0Votes = evaluationVotes.filter(v => !v.name.includes('(Repo)')).slice(0, 5);
-    const s0Bull = shard0Votes.filter(v => v.vote === 'BULL').reduce((sum, v) => sum + (v.score || 0), 0);
-    const s0Bear = shard0Votes.filter(v => v.vote === 'BEAR').reduce((sum, v) => sum + (v.score || 0), 0);
-    const earlyLeader = s0Bull > s0Bear ? 'BULL' : (s0Bear > s0Bull ? 'BEAR' : 'NEUTRAL');
-
-    if (earlyLeader !== 'NEUTRAL') {
-      for (let j = 1; j < shards.length; j++) {
-        const runningVotes = evaluationVotes.filter(v => !v.name.includes('(Repo)')).slice(0, (j + 1) * 5);
-        const rBull = runningVotes.filter(v => v.vote === 'BULL').reduce((sum, v) => sum + (v.score || 0), 0);
-        const rBear = runningVotes.filter(v => v.vote === 'BEAR').reduce((sum, v) => sum + (v.score || 0), 0);
-        const currentLead = rBull > rBear ? 'BULL' : (rBear > rBull ? 'BEAR' : 'NEUTRAL');
-        if (currentLead !== 'NEUTRAL' && currentLead !== earlyLeader) {
-          driftFlag = true;
-          break;
-        }
-      }
-    }
-  }
-
-  const totalScore = bullScore + bearScore;
-  const techMargin = Math.abs(bullScore - bearScore);
-  const skipRatio = (processed + skipped) > 0 ? (skipped / (processed + skipped)) : 0;
-
-  let techniqueBlockReason = '';
-  if (techniqueMode !== 'REPO' && !isBypass) {
-    if (intakeBlockReason) {
-      techniqueBlockReason = intakeBlockReason;
-    } else if (processed < 10) {
-      techniqueBlockReason = 'Too many techniques were irrelevant to this chart. Fewer than 10 valid signals could be extracted. No trade recommended.';
-    } else if (totalScore < 7.0) {
-      techniqueBlockReason = 'Insufficient signal strength. Total scoring techniques did not reach the minimum score benchmark of 7.0.';
-    } else if (techMargin < 3.0) {
-      techniqueBlockReason = 'Technique split too close. Margin is below 3.0, representing ambiguous market consolidation without a definitive directional edge.';
-    } else if (skipRatio > 0.6) {
-      techniqueBlockReason = 'High skip rate. Skip ratio exceeds 60%, indicating chart lacks the necessary clarity or data for the provided technique set.';
-    }
-  }
-
-  if (techniqueBlockReason) {
-    hardBlockReason = techniqueBlockReason;
-  }
-
-  // Formula: confidence = (margin / totalScore) * 100
-  let confidenceValBase = totalScore > 0 ? (techMargin / totalScore) * 100 : 0;
-  if (driftFlag) confidenceValBase *= 0.80;
-  if (skipRatio >= 0.4 && skipRatio <= 0.6) confidenceValBase *= 0.90;
-  
-  // Calculate if majority of weights were 0.5
-  const userScoringVotes = evaluationVotes.filter(v => !v.name.includes('(Repo)') && (v.vote === 'BULL' || v.vote === 'BEAR'));
-  const count05 = userScoringVotes.filter(v => v.score <= 0.5).length;
-  if (userScoringVotes.length > 0 && (count05 / userScoringVotes.length) > 0.5) {
-     confidenceValBase *= 0.85;
-  }
-  confidenceValBase = Math.round(Math.max(0, Math.min(100, confidenceValBase)));
-
-  // --- Dynamic Multipliers & Confluence ---
-  // 1. MACD + EMA + RSI Confluence Multiplier
-  let hasConfluenceBULL = false;
-  let hasConfluenceBEAR = false;
-
-  const hasMacdBull = evaluationVotes.some(v => v.vote === 'BULL' && (v.name.toLowerCase().includes('macd') || v.name.toLowerCase().includes('cross')));
-  const hasEmaSlopeBull = evaluationVotes.some(v => v.vote === 'BULL' && (v.name.toLowerCase().includes('ema') || v.name.toLowerCase().includes('slope')));
-  const hasRsiBull = evaluationVotes.some(v => v.vote === 'BULL' && v.name.toLowerCase().includes('rsi'));
-  hasConfluenceBULL = hasMacdBull && hasEmaSlopeBull && hasRsiBull;
-
-  const hasMacdBear = evaluationVotes.some(v => v.vote === 'BEAR' && (v.name.toLowerCase().includes('macd') || v.name.toLowerCase().includes('cross')));
-  const hasEmaSlopeBear = evaluationVotes.some(v => v.vote === 'BEAR' && (v.name.toLowerCase().includes('ema') || v.name.toLowerCase().includes('slope')));
-  const hasRsiBear = evaluationVotes.some(v => v.vote === 'BEAR' && v.name.toLowerCase().includes('rsi'));
-  hasConfluenceBEAR = hasMacdBear && hasEmaSlopeBear && hasRsiBear;
-
-  const bullConfluMult = hasConfluenceBULL ? 1.15 : 1.0;
-  const bearConfluMult = hasConfluenceBEAR ? 1.15 : 1.0;
-
-  // 2. Volume Multiplier: High volume confirmation
-  const currVolume = ohlcSeries[last]?.volume || 0;
-  const volumeSlice = ohlcSeries.slice(Math.max(0, last - 20), last + 1).map(c => c.volume || 0);
-  const avgVolume = volumeSlice.reduce((a, b) => a + b, 0) / Math.max(1, volumeSlice.length);
-  const isHighVolume = currVolume > avgVolume && avgVolume > 0;
-  const volumeMultiplier = isHighVolume ? 1.1 : 1.0;
-
-  // 3. Timeframe Independence Scaling
-  const tfMinutesVal = horizonCtx?.tfMinutes || 5;
-  const timeframeMultiplier = tfMinutesVal <= 5 ? 0.9 : (tfMinutesVal >= 60 ? 1.1 : 1.0);
-
   const techniquesEvaluation = {
-    totalTechniques: activeList.length,
-    processed,
-    skipped,
-    skipRatio,
-    drift: driftFlag ? 'YES' : 'NO',
-    totalScore,
-    margin: techMargin,
+    totalTechniques: bullList.length + bearList.length,
     bulldogPoints,
     peerPoints,
-    repoBulldogPoints,
-    repoPeerPoints,
     bullList,
-    bearList,
-    multipliers: {
-      hasCorrelationOverlap,
-      hasConfluenceBULL,
-      hasConfluenceBEAR,
-      bullConfluMult,
-      bearConfluMult,
-      isHighVolume,
-      volumeMultiplier,
-      tfMinutes: tfMinutesVal,
-      timeframeMultiplier
-    }
+    bearList
   };
 
-  // The engine scales J1 points by 4.0; we normalize these huge points so J1 is filled out properly
+  // All Judge checks and pattern processing removed.
+  // We only rely on evaluationVotes from user techniques.
   const totalEnginePoints = bulldogPoints + peerPoints;
   if (totalEnginePoints > 0) {
-    bullJ1 += (bulldogPoints / totalEnginePoints) * 6.0;
-    bearJ1 += (peerPoints / totalEnginePoints) * 6.0;
-  }
-
-  bullJ1 = Math.min(6, bullJ1);
-  bearJ1 = Math.min(6, bearJ1);
-
-  // --- R4: Pattern Detection & Re-weighting ---
-  const curr = ohlcSeries[last];
-  const prevCandle = ohlcSeries[last - 1];
-  const currBody = Math.abs(curr.close - curr.open);
-  const currRange = curr.high - curr.low;
-
-
-  let bullContinuation = false;
-  let bearContinuation = false;
-  let bullReversal = false;
-  let bearReversal = false;
-
-  // Marubozu (Continuation)
-  if (currRange > 0 && currBody / currRange > 0.9) {
-    if (curr.close > curr.open) bullContinuation = true;
-    else bearContinuation = true;
-  }
-  // Engulfing (Continuation in strong trends, can be reversal but keeping simple here as strong momentum)
-  if (prevCandle) {
-    if (curr.close > curr.open && prevCandle.close < prevCandle.open && curr.close > prevCandle.open && curr.open < prevCandle.close) bullContinuation = true;
-    if (curr.close < curr.open && prevCandle.close > prevCandle.open && curr.close < prevCandle.open && curr.open > prevCandle.close) bearContinuation = true;
-  }
-  // Doji/Pinbar (Reversal)
-  if (currRange > 0 && currBody / currRange < 0.2) {
-     const lowerWick = Math.min(curr.open, curr.close) - curr.low;
-     const upperWick = curr.high - Math.max(curr.open, curr.close);
-     if (lowerWick > currBody * 2 && upperWick < currBody) bullReversal = true;
-     if (upperWick > currBody * 2 && lowerWick < currBody) bearReversal = true;
-  }
-
-  const wCont = PATTERN_WEIGHTS_BY_HORIZON.CONTINUATION[(((horizonCtx ? horizonCtx.horizonClass : "INTRA_CANDLE") || "INTRA_CANDLE") as keyof typeof PATTERN_WEIGHTS_BY_HORIZON.CONTINUATION)];
-  const wRev = PATTERN_WEIGHTS_BY_HORIZON.REVERSAL[(((horizonCtx ? horizonCtx.horizonClass : "INTRA_CANDLE") || "INTRA_CANDLE") as keyof typeof PATTERN_WEIGHTS_BY_HORIZON.CONTINUATION)];
-
-  if (bullContinuation) bullJ1 += wCont;
-  if (bearContinuation) bearJ1 += wCont;
-  if (bullReversal) bullJ3 += wRev; // Apply reversal to Boundary/Reversal judge
-  if (bearReversal) bearJ3 += wRev;
-
-
-  // --- Judge 2: Oscillator Consensus ---
-  const rsiValue = rsiVals[last];
-  if (!isNaN(rsiValue)) {
-    if (rsiValue >= 45) bullJ2 += Math.min(1.5, ((rsiValue - 45) / 30) * 1.5);
-    if (rsiValue <= 55) bearJ2 += Math.min(1.5, ((55 - rsiValue) / 30) * 1.5);
-  }
-
-  const hist = macdVals.hist[last];
-  if (!isNaN(hist) && closes[last] !== 0) {
-    const histNorm = (hist / closes[last]) * 1000;
-    if (histNorm > 0) bullJ2 += Math.min(1.5, Math.tanh(histNorm) * 1.5);
-    if (histNorm < 0) bearJ2 += Math.min(1.5, Math.tanh(-histNorm) * 1.5);
-  }
-
-  const stochK = stochVals.k[last];
-  const stochD = stochVals.d[last];
-  if (!isNaN(stochK) && !isNaN(stochD)) {
-    if (stochK > stochD && stochK < 80) bullJ2 += 1;
-    if (stochK < stochD && stochK > 20) bearJ2 += 1;
-  }
-
-  bullJ2 = Math.min(2, bullJ2);
-  bearJ2 = Math.min(2, bearJ2);
-
-  // --- Judge 3: Boundary / Reversal ---
-  let yPercent = 50;
-  const maxH = Math.max(...highs);
-  const minL = Math.min(...lows);
-  if (maxH !== minL) {
-    yPercent = ((closes[last] - minL) / (maxH - minL)) * 100;
+    bullJ1 = (bulldogPoints / totalEnginePoints) * 6.0;
+    bearJ1 = (peerPoints / totalEnginePoints) * 6.0;
   }
   
-  // yPercent (0..100 -> 0..1.5 mapping)
-  // Low yPercent means price is near bottom (bullish). High means near top (bearish).
-  // Scaled down from 3.0 to 1.5 to reduce aggressive mean-reversion counter-trend signals (neutrality fix)
-  if (yPercent <= 50) bullJ3 += ((50 - yPercent) / 50) * 1.5;
-  if (yPercent >= 50) bearJ3 += ((yPercent - 50) / 50) * 1.5;
-
-  const lastCandle = ohlcSeries[last];
-  const body = Math.abs(lastCandle.close - lastCandle.open);
-  const upperWick = lastCandle.high - Math.max(lastCandle.open, lastCandle.close);
-  const lowerWick = Math.min(lastCandle.open, lastCandle.close) - lastCandle.low;
-  
-  if (body > 0 && lowerWick > body * 1.5) bullJ3 += 1;
-  if (body > 0 && upperWick > body * 1.5) bearJ3 += 1;
-
-  bullJ3 = Math.min(3, bullJ3);
-  bearJ3 = Math.min(3, bearJ3);
-
-
-  // --- New Feature: Candlestick Pattern Evidence ---
-  if ((techniqueMode === 'COMBINED' || techniqueMode === 'REPO') && featureFlags.enableCandlestickRepoPatterns && _confirmedPatterns && _confirmedPatterns.length > 0) {
-    _confirmedPatterns.forEach((ev: any) => {
-      if (ev.direction === 'BULL') bullJ1 += patternWeights.BULLISH;
-      if (ev.direction === 'BEAR') bearJ1 += patternWeights.BEARISH;
-    });
-    // Ensure we don't bypass caps after applying the modifier
-    bullJ1 = Math.min(6, bullJ1);
-    bearJ1 = Math.min(6, bearJ1);
+  if (totalEnginePoints === 0) {
+    bullJ1 = 0; bearJ1 = 0;
   }
 
-
-
-  if (featureFlags.enableGapDetection && _confirmedGaps && _confirmedGaps.length > 0) {
-    let bullGap = 0;
-    let bearGap = 0;
-    for (const gap of _confirmedGaps) {
-      const base = gap.type === 'GAP_UP' || gap.type === 'GAP_DOWN' ? gapWeights.FULL_GAP : gapWeights.PARTIAL_GAP;
-      const weighted = Math.min(base * gap.strength, gapWeights.MAX_CONTRIBUTION_PER_SIDE);
-      if (gap.direction === 'BULL') bullGap += weighted;
-      else bearGap += weighted;
-    }
-
-    // Correlated confidence inflation compression.
-    if (bullJ1 > bearJ1 && bullGap > 0) bullGap *= gapWeights.OVERLAP_COMPRESSION;
-    if (bearJ1 > bullJ1 && bearGap > 0) bearGap *= gapWeights.OVERLAP_COMPRESSION;
-
-    bullJ2 += Math.min(bullGap, gapWeights.MAX_CONTRIBUTION_PER_SIDE);
-    bearJ2 += Math.min(bearGap, gapWeights.MAX_CONTRIBUTION_PER_SIDE);
-    bullJ2 = Math.min(2, bullJ2);
-    bearJ2 = Math.min(2, bearJ2);
-  }
+  // Set rest to 0 to respect removal of heuristics
+  bullJ2 = 0; bearJ2 = 0;
+  bullJ3 = 0; bearJ3 = 0;
 
   // --- R5: Hurst Balancer ---
   const H_exp = rescaledRangeHurst(Array.from(closes).slice(-32));
@@ -932,33 +324,9 @@ export function evaluateSignal(
     }
   }
 
-  // --- Zero-out Rule when no techniques are matched under active Mode ---
-  let totalMatchedCount = 0;
-  if (techniqueMode === 'REPO') {
-     totalMatchedCount = repoDetected.length;
-  } else if (techniqueMode === 'USER') {
-     totalMatchedCount = processed;
-  } else {
-     totalMatchedCount = processed + repoDetected.length;
-  }
-
-  if (totalMatchedCount === 0) {
-     bullJ1 = 0; bearJ1 = 0;
-     bullJ2 = 0; bearJ2 = 0;
-     bullJ3 = 0; bearJ3 = 0;
-     hardBlockReason = 'No active techniques matched current market conditions';
-  }
-
-  // --- Apply Economic Multipliers to Final Case Totals ---
-  const bullPreTotal = bullJ1 + bullJ2 + bullJ3;
-  const bearPreTotal = bearJ1 + bearJ2 + bearJ3;
-
-  const bullTotalAdjusted = Number(Math.min(11.0, bullPreTotal * bullConfluMult * volumeMultiplier * timeframeMultiplier).toFixed(2));
-  const bearTotalAdjusted = Number(Math.min(11.0, bearPreTotal * bearConfluMult * volumeMultiplier * timeframeMultiplier).toFixed(2));
-
   const cases = {
-    bull: { j1: Number(bullJ1.toFixed(2)), j2: Number(bullJ2.toFixed(2)), j3: Number(bullJ3.toFixed(2)), total: bullTotalAdjusted },
-    bear: { j1: Number(bearJ1.toFixed(2)), j2: Number(bearJ2.toFixed(2)), j3: Number(bearJ3.toFixed(2)), total: bearTotalAdjusted }
+    bull: { j1: Number(bullJ1.toFixed(2)), j2: Number(bullJ2.toFixed(2)), j3: Number(bullJ3.toFixed(2)), total: Number((bullJ1 + bullJ2 + bullJ3).toFixed(2)) },
+    bear: { j1: Number(bearJ1.toFixed(2)), j2: Number(bearJ2.toFixed(2)), j3: Number(bearJ3.toFixed(2)), total: Number((bearJ1 + bearJ2 + bearJ3).toFixed(2)) }
   };
 
   // --- Skeptic Multiplier ---
@@ -1020,16 +388,7 @@ export function evaluateSignal(
   else if (skepticMultiplier < 0.85) skepticVerdict = 'CAUTION';
 
   // 2.6 Calculate Final Confidence Percentage
-  let finalConfidence = Math.round((rawWinningTotal * skepticMultiplier / 11) * 100);
-  if (techniqueMode !== 'REPO') {
-    if (hardBlockReason) {
-      finalConfidence = 0;
-    } else {
-      finalConfidence = confidenceValBase;
-    }
-  } else if (hardBlockReason) {
-    finalConfidence = 0;
-  }
+  const finalConfidence = Math.round((rawWinningTotal * skepticMultiplier / 11) * 100);
 
   // --- Step 3: Apply NO_TRADE Rules ---
   let finalSignal: 'CALL' | 'PUT' | 'NO_TRADE' = rawWinner === 'BULL' ? 'CALL' : (rawWinner === 'BEAR' ? 'PUT' : 'NO_TRADE');
@@ -1065,8 +424,8 @@ export function evaluateSignal(
 
   // --- Step 6: Write the Ruling ---
   const primaryEvidence = rawWinner === 'BULL'
-    ? (patterns.bullish[0] || 'Bullish momentum')
-    : (patterns.bearish[0] || 'Bearish momentum');
+    ? 'Bullish momentum'
+    : 'Bearish momentum';
 
   let ruling = '';
   if (finalSignal === 'NO_TRADE') {
@@ -1101,22 +460,19 @@ export function evaluateSignal(
 `┌─────────────────────────────────────┐
 │  ARBITRATOR FINAL VERDICT           │
 │  Signal: ${finalSignal.padEnd(21)}│
-│  Confidence: ${finalConfidence.toString().padEnd(3)}% (0-100 Scale) │
-│  Volume Mult: x${volumeMultiplier.toFixed(2)}  TF Mult: x${timeframeMultiplier.toFixed(2)} │
+│  Confidence: ${finalConfidence.toString().padEnd(3)}%                 │
 ├─────────────────────────────────────┤
 │  CASE 1 — BULL                      │
 │  J1 Momentum:  ${cases.bull.j1.toFixed(1).padEnd(5)}/ 6.0         │
 │  J2 Oscillator:${cases.bull.j2.toFixed(1).padEnd(5)}/ 2.0         │
 │  J3 Boundary:  ${cases.bull.j3.toFixed(1).padEnd(5)}/ 3.0         │
-│  Confluence:   x${bullConfluMult.toFixed(2)}                 │
-│  Total Adjusted:${cases.bull.total.toFixed(1).padEnd(5)}/ 11.0       │
+│  Total:        ${cases.bull.total.toFixed(1).padEnd(5)}/ 11.0        │
 ├─────────────────────────────────────┤
 │  CASE 2 — BEAR                      │
 │  J1 Momentum:  ${cases.bear.j1.toFixed(1).padEnd(5)}/ 6.0         │
 │  J2 Oscillator:${cases.bear.j2.toFixed(1).padEnd(5)}/ 2.0         │
 │  J3 Boundary:  ${cases.bear.j3.toFixed(1).padEnd(5)}/ 3.0         │
-│  Confluence:   x${bearConfluMult.toFixed(2)}                 │
-│  Total Adjusted:${cases.bear.total.toFixed(1).padEnd(5)}/ 11.0       │
+│  Total:        ${cases.bear.total.toFixed(1).padEnd(5)}/ 11.0        │
 ├─────────────────────────────────────┤
 │  SKEPTIC VETO:  ${skepticMultiplier.toFixed(2)} (${skepticVerdict.padEnd(7)}) │
 │  Margin:        ${margin.toFixed(1).padEnd(19)} │
@@ -1126,7 +482,7 @@ export function evaluateSignal(
 ${rulingStr}
 └─────────────────────────────────────┘`;
 
-  const techniquesUsed = matchedTechniques.join(', ');
+  const techniquesUsed = activeList.map(t => typeof t === 'string' ? t : (t.name || 'Custom')).join(', ');
   const skepticPenalty = (1 - skepticMultiplier) * 100;
 
   return {
@@ -1145,21 +501,18 @@ ${rulingStr}
     primaryEvidence,
     noTradeReason,
     topPatterns: {
-      bull: patterns.bullish,
-      bear: patterns.bearish
+      bull: [],
+      bear: []
     },
-    techniquesUsed,
-    techUsedCount: matchedTechniques.length,
+    techniquesUsed: "Execution Driven Only",
+    techUsedCount: activeList.length,
     formattedReport,
     hallucinationDetected,
     hallucinationMetrics,
     tradeDetails: {
       latencyAdjustedForecast: `Signal: ${finalSignal}`,
       techniquesUsed,
-      repoPatternsDetected: repoDetected && repoDetected.length > 0 ? repoDetected.join(', ') : undefined,
-      repoPatternCount: repoDetected ? repoDetected.length : undefined,
-      executionTimeMs: 0,
-      techniqueMode: techniqueMode
+      executionTimeMs: 0
     },
     j1Score: cases.bull.j1 + cases.bear.j1,
     j2Score: cases.bull.j2 + cases.bear.j2,

@@ -102,11 +102,10 @@ export function LiveAnalysis() {
   const [isBusy, setIsBusy] = useState(false);
   const [analysisStep, setAnalysisStep] = useState<string | null>(initialState.analysisStep || null);
   const [analysis, setAnalysis] = useState<any | null>(initialState.analysis || null);
-  const [mode, setMode] = useState<'live' | 'test' | 'bulk'>(initialState.mode === 'catalyst' ? 'live' : (initialState.mode || 'live'));
+  const [mode, setMode] = useState<'live' | 'test' | 'bulk'>(initialState.mode || 'live');
   const [selectedImage, setSelectedImage] = useState<string | null>(initialState.selectedImage || null);
   const [calibrationFrame, setCalibrationFrame] = useState<ImageData | null>(null);
   const [isStable, setIsStable] = useState(false);
-  const [appWideHallucinationFlag, setAppWideHallucinationFlag] = useState(false);
   
   const { requestLock, releaseLock } = useWakeLock();
 
@@ -205,20 +204,8 @@ export function LiveAnalysis() {
   const [profitabilityPercent, setProfitabilityPercent] = useState('85');
 
   // Technique Files
-  const [techniquesList, setTechniquesList] = useState<string[]>([]);
+  const [techniquesList, setTechniquesList] = useState<any[]>([]);
   const [techFileName, setTechFileName] = useState<string | null>(initialState.techFileName || null);
-  const [techniqueMode, setTechniqueMode] = useState<'USER'>('USER');
-
-  const handleSetTechniqueMode = (val: 'USER' | 'REPO' | 'COMBINED') => {
-    setTechniqueMode(val);
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.setItem('chartlens_technique_mode', val);
-      } catch (e) {
-        // ignore storage errors
-      }
-    }
-  };
 
   const [confirmedOutcome, setConfirmedOutcome] = useState<'WIN' | 'LOSS' | null>(initialState.confirmedOutcome || null);
 
@@ -242,15 +229,6 @@ export function LiveAnalysis() {
     return [];
   });
   const [sessionIndex] = useState<number>(() => Math.floor(pseudoRandom() * 1000));
-
-  useEffect(() => {
-    if (mode === 'live' && isCameraActive) {
-      setScoutActive(true);
-    } else {
-      setScoutActive(false);
-      setScoutData(null);
-    }
-  }, [mode, isCameraActive]);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -476,9 +454,9 @@ export function LiveAnalysis() {
     }
 
     const startScoutLoop = async () => {
-      if (!isMounted || !scoutActive || !isCameraActive || !videoRef.current) return;
+      if (!isMounted || !scoutActive || !analysis || !isCameraActive || !videoRef.current) return;
       
-      const currentInterval = (tradingPhase === 'WAITING_FOR_ENTRY' || tradingPhase === 'ENTRY_CONFIRMED') ? 2000 : 5000;
+      const currentInterval = (tradingPhase === 'WAITING_FOR_ENTRY' || tradingPhase === 'ENTRY_CONFIRMED') ? 2000 : 10000;
       const startTime = performance.now();
 
       if (!isFetching) {
@@ -512,7 +490,6 @@ export function LiveAnalysis() {
               encryptedSystemTokens,
               signal: scoutController.signal,
               isTestMode: false,
-              techniqueMode,
               onProgress: () => {}, // silent
               onJudgeLogs: () => {}, // silent
             });
@@ -523,9 +500,6 @@ export function LiveAnalysis() {
               if (tradingDirection && result.direction !== 'NO_TRADE' && result.direction !== tradingDirection && result.confidence >= 60) {
                  scoutJSON = { action: 'ABORT', reason: `Contradicting signal (${result.direction}) detected. Aborting trade.` };
                  // Save the aborting frame analysis for Loss Autopsy
-                 setAnalysis(result.analysis);
-              } else if (tradingPhase === 'IDLE' && result.analysis) {
-                 // Update the UI progressively to show real-time continuous analysis findings
                  setAnalysis(result.analysis);
               }
               
@@ -561,8 +535,8 @@ export function LiveAnalysis() {
       };
     }
 
-    if (scoutActive && isCameraActive && videoRef.current) {
-      const initialInterval = (tradingPhase === 'WAITING_FOR_ENTRY' || tradingPhase === 'ENTRY_CONFIRMED') ? 2000 : 5000;
+    if (scoutActive && analysis && isCameraActive && videoRef.current) {
+      const initialInterval = (tradingPhase === 'WAITING_FOR_ENTRY' || tradingPhase === 'ENTRY_CONFIRMED') ? 2000 : 10000;
       if (worker) {
          worker.postMessage({ command: 'start', interval: initialInterval });
       }
@@ -575,7 +549,7 @@ export function LiveAnalysis() {
         worker.terminate();
       }
     };
-  }, [scoutActive, isCameraActive, tradingPhase, encryptedSystemTokens, graphTimeframe, investmentAmount, investmentDuration, profitabilityPercent, stockName, techniquesList, tradingDirection, techniqueMode]);
+  }, [scoutActive, analysis, isCameraActive, tradingPhase, encryptedSystemTokens, graphTimeframe, investmentAmount, investmentDuration, profitabilityPercent, stockName, techniquesList, tradingDirection]);
 
   const closePickers = () => {
     setShowTfPicker(false);
@@ -627,10 +601,9 @@ export function LiveAnalysis() {
           const json = JSON.parse(event.target?.result as string);
           // Expecting either { techniques: [] } or a direct array
           const parsedList = Array.isArray(json) ? json : (json.techniques || []);
-          const list = parsedList.map((item: any) => typeof item === 'object' ? (item.name || item.technique || JSON.stringify(item)) : item);
-          setTechniquesList(list);
+          setTechniquesList(parsedList);
           setTimeout(() => {
-            showNotice(`Successfully loaded ${list.length} techniques from ${file.name}.`, `success`);
+            showNotice(`Successfully loaded ${parsedList.length} techniques from ${file.name}.`, `success`);
           }, 300);
         } catch (err) {
           console.error("Failed to parse technique file:", err);
@@ -765,17 +738,12 @@ export function LiveAnalysis() {
             encryptedSystemTokens,
             signal: controller.signal,
             isTestMode: mode === 'test',
-            techniqueMode,
             onJudgeLogs: (logs) => setJudgeLogs(prev => ({...prev, ...logs}))
           });
 
           clearTimeout(timeoutId);
 
           setAnalysis(result.analysis);
-          if (result.analysis?.judge?.evidence?.hallucinationDetected || result.analysis?.judge?.hallucinationDetected) {
-            setAppWideHallucinationFlag(true);
-            (window as any).appWideHallucinationDetected = true;
-          }
 
           if (mode === 'test') {
              if (result.testModeRightSlice) {
@@ -871,7 +839,7 @@ export function LiveAnalysis() {
       )}
       {/* Full Screen High-Intensity Overlays */}
 
-      {mode !== 'bulk' && tradingPhase === 'ENTRY_CONFIRMED' && !!tradingDirection && (
+      {tradingPhase === 'ENTRY_CONFIRMED' && !!tradingDirection && (
         <View style={tw`absolute top-0 bottom-0 left-0 right-0 z-50`}>
           <AnimatePresence>
             {(tradingPhase === 'ENTRY_CONFIRMED' && !!tradingDirection) && (
@@ -889,7 +857,7 @@ export function LiveAnalysis() {
                  className="absolute inset-0 bg-[repeating-linear-gradient(0deg,transparent,transparent_2px,rgba(0,0,0,0.1)_2px,rgba(0,0,0,0.1)_4px)]"
                />
                
-               <View style={tw`items-center px-10 relative z-10`}>
+               <div style={tw`items-center px-10 relative z-10`}>
                  <motion.div
                    animate={{ scale: [1, 1.05, 1] }}
                    transition={{ duration: 0.2, repeat: Infinity }}
@@ -919,16 +887,11 @@ export function LiveAnalysis() {
                  <motion.div 
                     animate={{ opacity: [0.5, 1, 0.5] }}
                     transition={{ duration: 1, repeat: Infinity }}
-                    className="mt-10 px-6 py-2 border-2 border-white rounded-full"
+                    style={tw`mt-10 px-6 py-2 border-2 border-white rounded-full`}
                  >
-                    <Pressable 
-                      onPress={() => setTradingPhase('IDLE')}
-                      style={tw`bg-white px-5 py-2.5 rounded-full cursor-pointer border border-white`}
-                    >
-                      <Text style={tw`text-black font-black text-xs uppercase tracking-[2px]`}>✕ DISMISS ALERT & VIEW RESULTS</Text>
-                    </Pressable>
-                  </motion.div>
-                </View>
+                    <Text style={tw`text-white font-black text-xl tracking-[5px]`}>STRIKE READY</Text>
+                 </motion.div>
+               </div>
             </motion.div>
           )}
         </AnimatePresence>
@@ -941,7 +904,7 @@ export function LiveAnalysis() {
 
       <ScrollView 
         style={tw`flex-1 bg-black`}
-        contentContainerStyle={[tw`pb-24 pt-16`, { flexGrow: 1 }]}
+        contentContainerStyle={[tw`pb-24`, { flexGrow: 1 }]}
         showsVerticalScrollIndicator={true}
         alwaysBounceVertical={true}
       >
@@ -1025,94 +988,91 @@ export function LiveAnalysis() {
         handlePickTechnique={handlePickTechnique}
       />
 
-      <>
-            {/* Action Bar / Live Debate UI Overlay */}
+        {/* Action Bar / Live Debate UI Overlay */}
 
-            <div className="flex flex-col mt-4">
-              {!isCalibrated() && (
-                <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-2 mb-3 flex items-center justify-center">
-                  <Text style={tw`text-red-400 font-bold text-xs uppercase tracking-widest`}>
-                    ⚠ NOT CALIBRATED — Results will be unreliable
-                  </Text>
-                </div>
-              )}
-              <Pressable
-                onPress={() => {
-                  if (isBusy) return;
-                  closePickers();
-                  handleAnalyze();
-                }}
-                disabled={(mode === 'test' && !selectedImage) || (mode === 'live' && !isCameraActive) || isBusy}
-                style={({ pressed }) => [
-                  tw`h-14 rounded-xl items-center justify-center`,
-                  ((mode === 'test' && !selectedImage) || (mode === 'live' && !isCameraActive) || isBusy) ? tw`bg-[#D9B382]/20` : tw`bg-[#D9B382]`,
-                  { opacity: (pressed && !isBusy) ? 0.7 : 1 }
-                ]}
-              >
-                <View style={tw`flex-row items-center`}>
-                  <Sparkles size={18} color="#1A1308" className="mr-2" />
-                  <Text style={tw`text-[#1A1308] font-black uppercase tracking-[2px] text-base`}>
-                     {mode === 'live' ? 'Start Camera Analysis' : 'Initiate Analysis'}
-                  </Text>
-                </View>
-              </Pressable>
-
-
-              {mode === 'live' && !pipSupported && (
-                <View style={tw`mt-2 px-3 py-2 rounded-lg bg-yellow-500/10 border border-yellow-500/20`}>
-                  <Text style={tw`text-yellow-400 text-[9px] font-black uppercase tracking-wider text-center`}>PiP not available — use Chrome or Edge browser</Text>
-                </View>
-              )}
-            </div>
-
-
-          {analysisError && (
-            <View style={tw`bg-red-500/10 border border-red-500 border-opacity-10 p-4 rounded-xl mt-4 flex-row items-center`}>
-              <AlertTriangle size={20} color="#EF4444" className="mr-3" />
-              <View style={tw`flex-1 flex-row justify-between items-center pr-2`}>
-                <View style={tw`flex-1 pr-2`}>
-                  <Text style={tw`text-red-400 font-bold mb-1`}>Analysis Notice / Abort</Text>
-                  <Text style={tw`text-red-200 text-xs`}>{analysisError}</Text>
-                </View>
-                {analysisError.includes('Trade Aborted') && analysis && (
-                   <Pressable
-                     onPress={() => setMode('bulk')}
-                     style={({ pressed }) => [tw`bg-red-600 px-3 py-2 rounded-lg`, { opacity: pressed ? 0.7 : 1 }]}
-                   >
-                     <Text style={tw`text-white font-bold text-[9px] uppercase`}>Run Loss Autopsy</Text>
-                   </Pressable>
-                )}
+          <div className="flex flex-col mt-4">
+            {!isCalibrated() && (
+              <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-2 mb-3 flex items-center justify-center">
+                <Text style={tw`text-red-400 font-bold text-xs uppercase tracking-widest`}>
+                  ⚠ NOT CALIBRATED — Results will be unreliable
+                </Text>
+              </div>
+            )}
+            <Pressable
+              onPress={() => {
+                if (isBusy) return;
+                closePickers();
+                handleAnalyze();
+              }}
+              disabled={(mode === 'test' && !selectedImage) || (mode === 'live' && !isCameraActive) || isBusy}
+              style={({ pressed }) => [
+                tw`h-14 rounded-xl items-center justify-center`,
+                ((mode === 'test' && !selectedImage) || (mode === 'live' && !isCameraActive) || isBusy) ? tw`bg-[#D9B382]/20` : tw`bg-[#D9B382]`,
+                { opacity: (pressed && !isBusy) ? 0.7 : 1 }
+              ]}
+            >
+              <View style={tw`flex-row items-center`}>
+                <Sparkles size={18} color="#1A1308" style={tw`mr-2`} />
+                <Text style={tw`text-[#1A1308] font-black uppercase tracking-[2px] text-base`}>
+                   {mode === 'live' ? 'Start Camera Analysis' : 'Initiate Analysis'}
+                </Text>
               </View>
-            </View>
-          )}
+            </Pressable>
 
-          <LiveAnalysisResult
-            analysis={analysis}
-            mode={mode}
-            prefersReducedMotion={prefersReducedMotion ?? false}
-            profitabilityPercent={profitabilityPercent}
-            investmentAmount={investmentAmount}
-            confirmedOutcome={confirmedOutcome}
-            saveToStats={saveToStats}
-            setMode={setMode}
-            appWideHallucinationFlag={appWideHallucinationFlag}
-            tradingDirection={tradingDirection}
-            actualDirection={actualDirection}
-            testModeLeftSlice={testModeLeftSlice}
-            testModeRightSlice={testModeRightSlice}
-            autoGradeStatus={autoGradeStatus}
-            autoGradeReason={autoGradeReason}
-            autoGradeRawOutcome={autoGradeRawOutcome}
-            autoGradeConfidence={autoGradeConfidence}
-            handleRegrade={handleRegrade}
-            setConfirmedOutcome={setConfirmedOutcome}
-            setAutoGradeStatus={setAutoGradeStatus}
-            handleReset={handleReset}
-            buttonHoverProps={buttonHoverProps}
-            buttonTapProps={buttonTapProps}
-            springProps={springProps}
-          />
-        </>
+
+            {mode === 'live' && !pipSupported && (
+              <View style={tw`mt-2 px-3 py-2 rounded-lg bg-yellow-500/10 border border-yellow-500/20`}>
+                <Text style={tw`text-yellow-400 text-[9px] font-black uppercase tracking-wider text-center`}>PiP not available — use Chrome or Edge browser</Text>
+              </View>
+            )}
+          </div>
+
+
+        {analysisError && (
+          <View style={tw`bg-red-500/10 border border-red-500 border-opacity-10 p-4 rounded-xl mt-4 flex-row items-center`}>
+            <AlertTriangle size={20} color="#EF4444" style={tw`mr-3`} />
+            <View style={tw`flex-1 flex-row justify-between items-center pr-2`}>
+              <View style={tw`flex-1 pr-2`}>
+                <Text style={tw`text-red-400 font-bold mb-1`}>Analysis Notice / Abort</Text>
+                <Text style={tw`text-red-200 text-xs`}>{analysisError}</Text>
+              </View>
+              {analysisError.includes('Trade Aborted') && analysis && (
+                 <Pressable
+                   onPress={() => setMode('bulk')}
+                   style={({ pressed }) => [tw`bg-red-600 px-3 py-2 rounded-lg`, { opacity: pressed ? 0.7 : 1 }]}
+                 >
+                   <Text style={tw`text-white font-bold text-[9px] uppercase`}>Run Loss Autopsy</Text>
+                 </Pressable>
+              )}
+            </View>
+          </View>
+        )}
+
+        <LiveAnalysisResult
+          analysis={analysis}
+          mode={mode}
+          prefersReducedMotion={prefersReducedMotion ?? false}
+          profitabilityPercent={profitabilityPercent}
+          investmentAmount={investmentAmount}
+          confirmedOutcome={confirmedOutcome}
+          saveToStats={saveToStats}
+          setMode={setMode}
+          tradingDirection={tradingDirection}
+          actualDirection={actualDirection}
+          testModeLeftSlice={testModeLeftSlice}
+          testModeRightSlice={testModeRightSlice}
+          autoGradeStatus={autoGradeStatus}
+          autoGradeReason={autoGradeReason}
+          autoGradeRawOutcome={autoGradeRawOutcome}
+          autoGradeConfidence={autoGradeConfidence}
+          handleRegrade={handleRegrade}
+          setConfirmedOutcome={setConfirmedOutcome}
+          setAutoGradeStatus={setAutoGradeStatus}
+          handleReset={handleReset}
+          buttonHoverProps={buttonHoverProps}
+          buttonTapProps={buttonTapProps}
+          springProps={springProps}
+        />
       </View>
     </ScrollView>
     </View>

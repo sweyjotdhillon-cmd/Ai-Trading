@@ -1,6 +1,5 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import localforage from 'localforage';
 import { View, Text, Pressable, ScrollView, Platform } from 'react-native';
 import tw from 'twrnc';
 import { motion } from 'motion/react';
@@ -19,10 +18,9 @@ export type MasterAutopsySummary = {
 };
 
 import { runSingleAnalysis } from '../utils/singleAnalysis';
-import { TestResultCandleChart } from './live-analysis/TestResultCandleChart';
 
 interface BulkTestPanelProps {
-  techniquesList: string[];
+  techniquesList: any[];
   encryptedSystemTokens?: string;
   saveToStats: (analysisData: any, outcome: 'WIN' | 'LOSS') => void;
   // Global context passes
@@ -58,7 +56,7 @@ export function BulkTestPanel({
   
   // Tab 1 state
   const [images, setImages] = useState<File[]>([]);
-  const [buildDuration, setBuildDuration] = useState<'3m' | '5m'>('3m');
+  const [buildDuration, setBuildDuration] = useState<'3m' | '5m'>('5m');
   const [generationProgress, setGenerationProgress] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
@@ -120,7 +118,6 @@ export function BulkTestPanel({
             investmentAmount: '100',
             profitabilityPercent: '85',
             techniquesList: techniquesList,
-            techniqueMode: techniqueMode,
             encryptedSystemTokens,
             signal: new AbortController().signal,
             isManifestCheck: true 
@@ -136,7 +133,7 @@ export function BulkTestPanel({
         results.push({
           imageFilename: file.name,
           expectedOutcome: detectedOutcome,
-          imageData: imageData,
+          imageData: imageData.length < MAX_PAYLOAD_KB * 1024 ? imageData : undefined, // ommit gigantic images to stop OOM
           stock: stockName,
           graphTimeframe: graphTimeframe,
           investmentDuration: buildDuration,
@@ -200,24 +197,9 @@ export function BulkTestPanel({
 
   // Tab 2 State
   const [queue, setQueue] = useState<BatchRun[]>([]);
-  const queueLoadedRef = useRef(false);
-
-  useEffect(() => {
-    localforage.getItem('aistudios_bulk_queue').then((saved: any) => {
-      if (saved && Array.isArray(saved)) {
-        setQueue(saved);
-      }
-      queueLoadedRef.current = true;
-    }).catch((e) => {
-      console.warn('Failed to load queue from localforage', e);
-      queueLoadedRef.current = true;
-    });
-  }, []);
-
   const [autopsyingBatch, setAutopsyingBatch] = useState(false);
   const [masterSummary, setMasterSummary] = useState<MasterAutopsySummary | null>(null);
   const [manifestErrors, setManifestErrors] = useState<string[]>([]);
-  const techniqueMode = 'USER';
   const [bulkNotice, setBulkNotice] = useState<{ text: string; type: 'success' | 'info' | 'error' } | null>(null);
 
   const showBulkNotice = (text: string, type: 'success' | 'info' | 'error' = 'info') => {
@@ -236,17 +218,6 @@ export function BulkTestPanel({
   const { requestLock, releaseLock } = useWakeLock();
   
   const abortControllerRef = useRef<AbortController | null>(null);
-
-  useEffect(() => {
-    if (!queueLoadedRef.current) return;
-    if (queue.length > 0) {
-      localforage.setItem('aistudios_bulk_queue', queue).catch((e) => {
-        console.warn('Failed to save batch results to localforage:', e);
-      });
-    } else {
-      localforage.removeItem('aistudios_bulk_queue');
-    }
-  }, [queue]);
 
   useEffect(() => {
     if ((Platform.OS as string) === 'web') {
@@ -301,8 +272,7 @@ export function BulkTestPanel({
         } else {
           setManifestErrors([]);
           const manifest = json as BatchManifest;
-          const shuffledEntries = [...manifest.entries].sort(() => Math.random() - 0.5);
-          setQueue(shuffledEntries.map(entry => ({
+          setQueue(manifest.entries.map(entry => ({
             entry,
             status: 'Pending'
           })));
@@ -320,24 +290,6 @@ export function BulkTestPanel({
     const fileArray = Array.from(files);
     
     setQueue(prev => {
-      // If queue is empty, they just uploaded raw images to run batch DIRECTLY
-      if (prev.length === 0) {
-          setManifestErrors([]); // Clear any previous errors
-          return fileArray.map(f => ({
-              entry: {
-                  imageFilename: f.name,
-                  expectedOutcome: 'UNKNOWN',
-                  stock: stockName,
-                  graphTimeframe: graphTimeframe,
-                  investmentDuration: investmentDuration,
-                  investmentAmount: Number(investmentAmount) || 100,
-                  profitabilityPercent: Number(profitabilityPercent) || 85
-              },
-              status: 'Pending',
-              file: f
-          }));
-      }
-
       const updated = [...prev];
       let hasError = false;
       const missingFiles: string[] = [];
@@ -373,7 +325,7 @@ export function BulkTestPanel({
     setIsPaused(false);
     abortControllerRef.current = new AbortController();
 
-    const CONCURRENCY_LIMIT = queue.length > 0 ? queue.length : 1; // Run all simultaneously as requested
+    const CONCURRENCY_LIMIT = Math.min(5, queue.length > 0 ? queue.length : 1); // 5 concurrent to be fast but avoid memory crash
     let currentIndex = 0;
     const workerLoop = async () => {
       while (currentIndex < queue.length) {
@@ -415,7 +367,6 @@ export function BulkTestPanel({
             investmentAmount: item.entry.investmentAmount ? String(item.entry.investmentAmount) : investmentAmount,
             profitabilityPercent: item.entry.profitabilityPercent ? String(item.entry.profitabilityPercent) : profitabilityPercent,
             techniquesList: item.entry.techniqueOverrides || techniquesList,
-            techniqueMode: techniqueMode,
             encryptedSystemTokens,
             signal: abortControllerRef.current!.signal,
             isTestMode: true,
@@ -762,19 +713,10 @@ export function BulkTestPanel({
                    <Text style={tw`text-[#D9B382] font-black text-[12px] uppercase tracking-widest mb-1`}>1. Load Manifest JSON</Text>
                    <Text style={tw`text-white text-opacity-50 text-[10px]`}>Tap to select manifest file</Text>
                    <input type="file" accept=".json" onChange={loadManifest} className="opacity-0 absolute inset-0 w-full h-full cursor-pointer z-10" />
+                   {manifestErrors.map((err, i) => (
+                     <Text key={i} style={tw`text-red-400 text-xs mt-4`}>• {err}</Text>
+                   ))}
                  </View>
-                 <View style={tw`flex-row justify-center items-center`}>
-                   <Text style={tw`text-white text-opacity-50 text-[10px]`}>- OR -</Text>
-                 </View>
-                 <View style={tw`bg-black bg-opacity-30 border-2 border-dashed border-white border-opacity-20 rounded-xl p-8 items-center justify-center relative overflow-hidden`}>
-                   <UploadCloud size={32} color="#4ADE80" className="mb-3 opacity-80" />
-                   <Text style={tw`text-[#4ADE80] font-black text-[12px] uppercase tracking-widest mb-1`}>Direct Image Test</Text>
-                   <Text style={tw`text-white text-opacity-50 text-[10px]`}>Select raw images to run</Text>
-                   <input type="file" multiple accept="image/*" onChange={loadRunImages} className="opacity-0 absolute inset-0 w-full h-full cursor-pointer z-10" />
-                 </View>
-                 {manifestErrors.map((err, i) => (
-                   <Text key={i} style={tw`text-red-400 text-xs mt-4`}>• {err}</Text>
-                 ))}
                </View>
              ) : (
                <View style={tw`gap-4`}>
@@ -787,7 +729,20 @@ export function BulkTestPanel({
                     )}
                   </View>
 
-                  {/* Missing images check UI removed as requested */}
+                  {/* Missing images check */}
+                  {queue.some(q => !q.file && !q.entry.imageData) && !isQueueRunning && (
+                    <View style={tw`bg-orange-500/10 border border-orange-500/30 rounded-xl p-4 flex-row items-center`}>
+                      <AlertTriangle size={16} color="#F97316" />
+                      <View style={tw`ml-3 flex-1`}>
+                        <Text style={tw`text-orange-400 font-bold text-xs mb-1`}>Missing image references</Text>
+                        <Text style={tw`text-white text-opacity-70 text-[10px]`}>Please select the images that map to the manifest.</Text>
+                      </View>
+                      <input type="file" multiple accept="image/*" onChange={loadRunImages} className="text-white text-xs opacity-0 absolute inset-0 cursor-pointer" />
+                      <View style={tw`bg-orange-500/20 px-3 py-1.5 rounded pr-4`}>
+                        <Text style={tw`text-orange-400 font-bold text-xs`}>Browse Images</Text>
+                      </View>
+                    </View>
+                  )}
 
                   <ScrollView style={tw`max-h-64 border border-white border-opacity-10 rounded-xl bg-black bg-opacity-20`}>
                     {queue.map((item, idx) => (
@@ -857,21 +812,6 @@ export function BulkTestPanel({
                                 </View>
                               )}
                             </View>
-
-                            {/* Beautiful Auto-Result Candlestick chart for bulk batch list item */}
-                            <View style={tw`my-1`}>
-                              <TestResultCandleChart
-                                ohlcSeries={item.result.analysis?.fullOhlcSeries || item.result.analysis?.ohlcSeries}
-                                candlesCut={item.result.analysis?.judge?.candlesCut || 8}
-                                tradingDirection={item.result.direction}
-                                actualDirection={item.result.actualDirection}
-                                entryClose={item.result.entryClose}
-                                exitClose={item.result.exitClose}
-                                expectedProfitText={`BATCH MATCH SCORE +₹36.60 (83%)`}
-                                isBulkItem={true}
-                              />
-                            </View>
-
                             <View style={tw`bg-black bg-opacity-30 rounded-lg p-3 border border-white border-opacity-5`}>
                                <Text style={tw`text-white text-[10px] font-bold mb-1`}>
                                  Trade Direction: <Text style={tw`${item.result.direction === 'UP' ? 'text-green-400' : 'text-red-400'}`}>{item.result.direction}</Text>
@@ -879,20 +819,6 @@ export function BulkTestPanel({
                                <Text style={tw`text-white text-opacity-70 text-[9px]`}>
                                  {item.result.reason || "Outcome confirmed visually via test bounds."}
                                </Text>
-                               {(item.result.judge?.tradeDetails?.repoPatternsDetected || item.result.judge?.tradeDetails?.techniqueMode === 'USER') && (
-                                  <View style={tw`mt-2 pt-2 border-t border-white/5`}>
-                                     <Text style={tw`font-bold text-[9px] mb-1 uppercase tracking-widest ${item.result.judge.tradeDetails.techniqueMode !== 'USER' ? 'text-purple-400' : 'text-gray-400'}`}>
-                                        {item.result.judge.tradeDetails.techniqueMode !== 'USER' ? 'Repo Active Output' : 'Alternative Repo Result'}
-                                     </Text>
-                                     <Text style={tw`text-purple-400 text-opacity-80 text-[8px] italic font-bold mb-1`}>
-                                        Target: {item.result.judge.tradeDetails.repoPatternsDetected || "Alternative Repo metrics active"}
-                                     </Text>
-                                     <Text style={tw`text-gray-400 text-[8px]`}>
-                                        Bull Points: +{(item.result.judge.techniquesEvaluation?.repoBulldogPoints || 0).toFixed(1)} | 
-                                        Bear Points: +{(item.result.judge.techniquesEvaluation?.repoPeerPoints || 0).toFixed(1)}
-                                     </Text>
-                                  </View>
-                               )}
                             </View>
                           </View>
                         )}

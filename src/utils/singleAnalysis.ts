@@ -62,23 +62,6 @@ function getWorker(): Worker {
           }
         }
       };
-
-      w.onerror = (err) => {
-        console.error("Worker fatal error:", err.message);
-        // We cannot securely resolve a specific msgId because the worker crashed and all state is lost.
-        // We must reject all pending promises.
-        messageResolvers.forEach(({ resolve, reject }, msgId) => {
-          reject(new Error("Worker fatal crash (OOM or internal fault)"));
-        });
-        messageResolvers.clear();
-        progressListeners.clear();
-        judgeLogListeners.clear();
-      };
-      
-      w.onmessageerror = (err) => {
-        console.error("Worker message error:", err);
-      };
-
       workers.push(w);
     }
   }
@@ -115,36 +98,6 @@ function generateId() {
 
 import { parseDurationToMinutes } from '../quant/horizon';
 
-class Semaphore {
-  private count: number;
-  private queue: (() => void)[] = [];
-
-  constructor(max: number) {
-    this.count = max;
-  }
-
-  async acquire() {
-    if (this.count > 0) {
-      this.count--;
-      return;
-    }
-    return new Promise<void>(resolve => {
-      this.queue.push(resolve);
-    });
-  }
-
-  release() {
-    if (this.queue.length > 0) {
-      const next = this.queue.shift();
-      if (next) next();
-    } else {
-      this.count++;
-    }
-  }
-}
-
-const analysisSemaphore = new Semaphore(WORKER_POOL_SIZE * 2);
-
 export async function runSingleAnalysis(params: {
   imageDataUrl: string;
   stock: string;
@@ -152,54 +105,13 @@ export async function runSingleAnalysis(params: {
   investmentDuration: string;
   investmentAmount: string;
   profitabilityPercent: string;
-  techniquesList: string[];
+  techniquesList: any[];
   encryptedSystemTokens?: string;
   signal: AbortSignal;
   onProgress?: (step: string) => void;
   onJudgeLogs?: (logs: any) => void;
   isTestMode?: boolean;
   isManifestCheck?: boolean;
-  techniqueMode?: 'USER' | 'REPO' | 'COMBINED';
-  onDirectionFound?: (direction: 'UP' | 'DOWN' | 'NO_TRADE') => void;
-}): Promise<{
-  analysis: any;
-  direction: 'UP' | 'DOWN' | 'NO_TRADE';
-  outcome: 'WIN' | 'LOSS' | 'NEUTRAL';
-  confidence: number;
-  reason: string;
-  testModeRightSlice: string | null;
-  finalImageForAnalysis: string;
-  entryAnchorBase64: string | null;
-  rawOutcome?: string;
-  frameStable?: boolean;
-  actualDirection?: 'UP' | 'DOWN' | 'FLAT' | null;
-  entryClose?: number;
-  exitClose?: number;
-  candlesCut?: number;
-}> {
-  await analysisSemaphore.acquire();
-  try {
-    return await _runSingleAnalysis(params);
-  } finally {
-    analysisSemaphore.release();
-  }
-}
-
-async function _runSingleAnalysis(params: {
-  imageDataUrl: string;
-  stock: string;
-  graphTimeframe: string;
-  investmentDuration: string;
-  investmentAmount: string;
-  profitabilityPercent: string;
-  techniquesList: string[];
-  encryptedSystemTokens?: string;
-  signal: AbortSignal;
-  onProgress?: (step: string) => void;
-  onJudgeLogs?: (logs: any) => void;
-  isTestMode?: boolean;
-  isManifestCheck?: boolean;
-  techniqueMode?: 'USER' | 'REPO' | 'COMBINED';
   onDirectionFound?: (direction: 'UP' | 'DOWN' | 'NO_TRADE') => void;
 }): Promise<{
   analysis: any;
@@ -219,10 +131,6 @@ async function _runSingleAnalysis(params: {
 }> {
   const t0 = performance.now();
   const { imageDataUrl, onJudgeLogs, isTestMode, onDirectionFound } = params;
-
-  if (params.signal.aborted) {
-    throw new Error('Aborted before starting analysis');
-  }
 
 
 
@@ -300,10 +208,6 @@ async function _runSingleAnalysis(params: {
       }
     }
 
-    if (params.isTestMode || params.isManifestCheck) {
-      w.postMessage({ type: 'RESET' });
-    }
-
     const payloadPromise = new Promise<any>((resolve, reject) => {
   messageResolvers.set(msgId, { resolve, reject });
   try {
@@ -314,8 +218,6 @@ async function _runSingleAnalysis(params: {
       graphTimeframeMinutes: tfM,
       investmentDurationMinutes: durM,
       techniquesList: params.techniquesList,
-      techniqueMode: params.techniqueMode,
-      isTestMode: params.isTestMode,
     });
   } catch (e: any) {
     messageResolvers.delete(msgId);
@@ -416,12 +318,9 @@ async function _runSingleAnalysis(params: {
   let exitClose: number | undefined;
   let actualDirection: 'UP' | 'DOWN' | 'FLAT' | null = null;
   let candlesCut: number | undefined;
-  let payload2: any = null;
 
   if (isTestMode && meta.candlesLength && meta.candlesLength > 10) {
-    const tfM = parseDurationToMinutes(params.graphTimeframe) || 1;
-    const durM = parseDurationToMinutes(params.investmentDuration) || 5;
-    const nCut = Math.max(1, Math.ceil(durM / tfM));
+    const nCut = parseInt(params.investmentDuration) || 5;
     candlesCut = nCut;
     const cropRatio = nCut / meta.candlesLength;
     
@@ -457,10 +356,6 @@ async function _runSingleAnalysis(params: {
         const leftImgData = await dataUrlToImageData(finalImageForAnalysis);
 
 
-        if (params.isTestMode || params.isManifestCheck) {
-          w.postMessage({ type: 'RESET' });
-        }
-        
         const payloadPromise2 = new Promise<any>((resolve, reject) => {
           messageResolvers.set(msgId, { resolve, reject });
           try {
@@ -471,8 +366,6 @@ async function _runSingleAnalysis(params: {
               graphTimeframeMinutes: tfM,
               investmentDurationMinutes: durM,
               techniquesList: params.techniquesList,
-              techniqueMode: params.techniqueMode,
-              isTestMode: params.isTestMode,
             });
           } catch (e: any) {
             reject(e);
@@ -483,7 +376,7 @@ async function _runSingleAnalysis(params: {
           });
         });
 
-        payload2 = await payloadPromise2;
+        const payload2 = await payloadPromise2;
         
         if (payload2.type !== 'ERROR') {
            finalDecision = payload2.debugTrace?.decision || payload2.decision || finalDecision;
@@ -501,11 +394,11 @@ async function _runSingleAnalysis(params: {
                actualDirection = 'FLAT';
              }
 
-             if (actualDirection === 'FLAT' || finalDecision.signal === 'NO_TRADE') {
+             if (actualDirection === 'FLAT' || finalDecision.winner === 'NO_TRADE') {
                  outcome = 'NEUTRAL';
-             } else if (finalDecision.signal === 'CALL') {
+             } else if (finalDecision.winner === 'BULL') {
                  outcome = actualDirection === 'UP' ? 'WIN' : 'LOSS';
-             } else if (finalDecision.signal === 'PUT') {
+             } else if (finalDecision.winner === 'BEAR') {
                  outcome = actualDirection === 'DOWN' ? 'WIN' : 'LOSS';
              }
            }
@@ -513,7 +406,7 @@ async function _runSingleAnalysis(params: {
     }
   }
 
-  const mappedDirection = finalDecision.signal === 'CALL' ? 'UP' : (finalDecision.signal === 'PUT' ? 'DOWN' : 'NO_TRADE');
+  const mappedDirection = finalDecision.winner === 'BULL' ? 'UP' : (finalDecision.winner === 'BEAR' ? 'DOWN' : 'NO_TRADE');
 
   const cases = finalDecision.cases || { bull: { j1: 0, j2: 0, j3: 0, total: 0 }, bear: { j1: 0, j2: 0, j3: 0, total: 0 } };
   const J1 = cases.bull.j1 + cases.bear.j1;
@@ -535,11 +428,10 @@ async function _runSingleAnalysis(params: {
 
   return {
     analysis: {
-      ohlcSeries: payload2?.debugTrace?.ohlcSeries || payload?.debugTrace?.ohlcSeries || [],
       judge: {
         cases: cases,
-        winner: finalDecision.winner, margin: finalDecision.margin, skepticMultiplier: finalDecision.skepticMultiplier,
-        decision: finalDecision.signal === 'NO_TRADE' ? 'WEAK' : 'STRONG SIGNAL',
+        winner: finalDecision.winner,
+        decision: finalDecision.winner === 'NO_TRADE' ? 'WEAK' : 'STRONG SIGNAL',
         finalConfidence: finalDecision.finalConfidence,
         j1Score: J1,
         j2Score: J2,

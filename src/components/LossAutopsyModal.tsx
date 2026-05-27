@@ -475,7 +475,7 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, p
                       style={({pressed}) => [tw`bg-red-600 px-8 py-4 rounded-xl flex-row items-center`, { opacity: pressed ? 0.7:1}]}
                     >
                       <motion.div whileHover={buttonHoverProps} whileTap={buttonTapProps} transition={springProps} style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
-                        <Search size={20} color="white" className="mr-3" />
+                        <Search size={20} color="white" style={tw`mr-3`} />
                         <Text style={tw`text-white font-black text-lg tracking-[1px]`}>RUN FORENSIC AUTOPSY</Text>
                       </motion.div>
                     </Pressable>
@@ -491,7 +491,7 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, p
                     style={tw`border-2 border-dashed border-white border-opacity-20 p-10 rounded-2xl items-center bg-white bg-opacity-10 hover:bg-white bg-opacity-10`}
                   >
                     <motion.div whileHover={buttonHoverProps} whileTap={buttonTapProps} transition={springProps} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                      <Upload size={32} color="#8B95B0" className="mb-4" />
+                      <Upload size={32} color="#8B95B0" style={tw`mb-4`} />
                       <Text style={tw`text-white font-bold mb-1`}>Upload Post-Trade Chart</Text>
                       <Text style={tw`text-gray-400 text-xs`}>Paste or select screenshot</Text>
                     </motion.div>
@@ -505,7 +505,7 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, p
 
             {loading && (
               <View style={tw`items-center justify-center py-20`}>
-                <ActivityIndicator size="large" color="#EF4444" className="mb-6 scale-150" />
+                <ActivityIndicator size="large" color="#EF4444" style={tw`mb-6 scale-150`} />
                 <Text style={tw`text-red-400 font-black tracking-[4px] text-xl animate-pulse`}>RUNNING CONTRARIAN AUDIT...</Text>
                 <Text style={tw`text-white text-opacity-60 text-xs mt-4`}>Building counter-case against the original Judge's verdict.</Text>
               </View>
@@ -887,7 +887,7 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, p
                   </View>
                   
                   <View style={tw`bg-black bg-opacity-40 p-4 rounded-xl border border-red-500 border-opacity-30 flex-row`}>
-                    <AlertTriangle size={24} color="#FCA5A5" className="mr-4 mt-1" />
+                    <AlertTriangle size={24} color="#FCA5A5" style={tw`mr-4 mt-1`} />
                     <View style={tw`flex-1`}>
                       <Text style={tw`text-red-300 font-bold mb-1`}>System Recommendation</Text>
                       <Text style={tw`text-red-100 text-sm leading-relaxed`}>{autopsyResult.systemRecommendation}</Text>
@@ -903,9 +903,9 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, p
 
                 {/* Categories breakdown */}
                 <Text style={tw`text-white text-opacity-40 text-xs font-black uppercase tracking-[2px] mb-4`}>Forensic Breakdown (7 Layers)</Text>
-                <motion.div variants={prefersReducedMotion ? {} : listContainerVariants} initial="hidden" animate="show" className="gap-3 mb-8">
+                <motion.div variants={prefersReducedMotion ? {} : listContainerVariants} initial="hidden" animate="show" style={tw`gap-3 mb-8`}>
                   {Object.entries(autopsyResult.categories || {}).map(([key, val]: any) => (
-                    <motion.div variants={prefersReducedMotion ? {} : listItemVariants} key={key} className="bg-white bg-opacity-10 border border-white border-opacity-10 rounded-xl p-4">
+                    <motion.div variants={prefersReducedMotion ? {} : listItemVariants} key={key} style={tw`bg-white bg-opacity-10 border border-white border-opacity-10 rounded-xl p-4`}>
                       <View style={tw`flex-row items-center justify-between mb-2`}>
                         <Text style={tw`text-[#D9B382] font-bold text-sm uppercase`}>{val.label || key}</Text>
                         <View style={tw`px-2 py-1 rounded-sm border ${getSeverityColor(val.severity)}`}>
@@ -926,7 +926,7 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, p
                     style={({pressed}) => [tw`flex-1 py-4 justify-center items-center rounded-xl flex-row transition-all bg-blue-600 bg-opacity-80 hover:bg-blue-600`, { opacity: pressed ? 0.7 : 1}]}
                   >
                     <motion.div whileHover={buttonHoverProps} whileTap={buttonTapProps} transition={springProps} style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
-                      <Download size={18} color="white" className="mr-2" />
+                      <Download size={18} color="white" style={tw`mr-2`} />
                       <Text style={tw`text-white font-bold uppercase`}>Download JSON</Text>
                     </motion.div>
                   </Pressable>
@@ -942,12 +942,12 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, p
                     <motion.div whileHover={isLogged || prefersReducedMotion ? {} : { scale: 1.04 }} whileTap={isLogged || prefersReducedMotion ? {} : { scale: 0.96 }} transition={springProps} style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
                       {isLogged ? (
                         <>
-                          <CheckCircle size={18} color="#22C55E" className="mr-2" />
+                          <CheckCircle size={18} color="#22C55E" style={tw`mr-2`} />
                           <Text style={tw`text-green-500 font-bold uppercase`}>Logged to Sheets</Text>
                         </>
                       ) : (
                         <>
-                          <Activity size={18} color="white" className="mr-2" />
+                          <Activity size={18} color="white" style={tw`mr-2`} />
                           <Text style={tw`text-white font-bold uppercase`}>Log This Autopsy</Text>
                         </>
                       )}
