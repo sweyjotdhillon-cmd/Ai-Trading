@@ -465,7 +465,7 @@ export function calculateBoundaryReversal(
  * Measures market energy to filter out dead or explosive markets.
  */
 export function calculateVolatilityRegime(candles: { high: number; low: number; close: number; prevClose: number }[], lookback = 20) {
-  if (candles.length < lookback) return { status: 'INSUFFICIENT_DATA', zScore: 0 };
+  if (candles.length < lookback) return { status: 'INSUFFICIENT_DATA', zScore: 0, ratioATR: 1.0 };
 
   const trueRanges = candles.slice(-lookback).map(c => 
     Math.max(c.high - c.low, Math.abs(c.high - c.prevClose), Math.abs(c.low - c.prevClose))
@@ -476,10 +476,16 @@ export function calculateVolatilityRegime(candles: { high: number; low: number; 
   const currentTr = trueRanges[trueRanges.length - 1];
 
   const volZ = (currentTr - atr) / (atrStd || 0.0001);
+  const ratioATR = atr > 0 ? currentTr / atr : 1.0;
 
-  if (volZ >= -0.5 && volZ <= 1.2) return { status: 'TRADEABLE', zScore: volZ };
-  if (volZ > 2.0) return { status: 'EXPLOSIVE_SKIP', zScore: volZ };
-  return { status: 'DEAD_SKIP', zScore: volZ };
+  let status: 'TRADEABLE' | 'EXPLOSIVE_SKIP' | 'DEAD_SKIP' = 'TRADEABLE';
+  if (volZ > 2.0 || ratioATR > 1.8) {
+    status = 'EXPLOSIVE_SKIP';
+  } else if (volZ < -1.2 || ratioATR < 0.6) {
+    status = 'DEAD_SKIP';
+  }
+
+  return { status, zScore: volZ, ratioATR };
 }
 
 /**
@@ -755,43 +761,122 @@ export function calculateZScore(series: number[], period = 20): number {
 }
 
 /**
- * Calculates first (velocity) and second (acceleration) derivatives of a series (e.g., EMA)
+ * Calculates first (velocity), second (acceleration), and third (jerk) derivatives of a series (e.g., EMA)
  */
-export function calculateEMADerivatives(series: number[]): { velocity: number; acceleration: number } {
+export function calculateEMADerivatives(series: number[]): { velocity: number; acceleration: number; jerk: number } {
   const n = series.length;
-  if (n < 3) return { velocity: 0, acceleration: 0 };
+  if (n < 4) return { velocity: 0, acceleration: 0, jerk: 0 };
   const v = series[n - 1] - series[n - 2];
   const vPrev = series[n - 2] - series[n - 3];
+  const vPrev2 = series[n - 3] - series[n - 4];
   const a = v - vPrev;
-  return { velocity: v, acceleration: a };
+  const aPrev = vPrev - vPrev2;
+  const j = a - aPrev;
+  return { velocity: v, acceleration: a, jerk: j };
 }
 
 /**
  * Calculates micro-momentum score based on Z-score, velocity, and acceleration alignment
  */
 export function calculateMicroMomentumScore(zScore: number, velocity: number, acceleration: number): number {
-  if (zScore > 0.5 && velocity > 0 && acceleration > 0) return 3;
-  if (zScore < -0.5 && velocity < 0 && acceleration < 0) return -3;
-  return 0;
+  let score = 0;
+  if (zScore > 1.0) score += 1;
+  else if (zScore < -1.0) score -= 1;
+
+  if (velocity > 0) score += 1;
+  else if (velocity < 0) score -= 1;
+
+  if (acceleration > 0) score += 1;
+  else if (acceleration < 0) score -= 1;
+
+  return score;
 }
 
 /**
- * Simple, robust detection of classical RSI divergence
+ * Robust detection of RSI divergence using swing highs/lows peaks and valleys COMPARISON
  */
 export function detectRSIDivergence(closes: number[], rsiVals: number[]): 'BULLISH' | 'BEARISH' | 'NONE' {
   const n = closes.length;
   if (n < 6 || rsiVals.length < 6) return 'NONE';
-  
-  const curClose = closes[n - 1];
-  const prevClose = closes[n - 5];
-  const curRSI = rsiVals[rsiVals.length - 1];
-  const prevRSI = rsiVals[rsiVals.length - 5];
-  
-  if (curClose < prevClose && curRSI > prevRSI) {
-    return 'BULLISH';
+
+  // Find swing highs
+  const swingHighs: { index: number; price: number; rsi: number }[] = [];
+  for (let i = n - 2; i >= 2; i--) {
+    if (closes[i] > closes[i - 1] && closes[i] > closes[i + 1] &&
+        closes[i] > closes[i - 2] && closes[i] > closes[i + 2]) {
+      swingHighs.push({ index: i, price: closes[i], rsi: rsiVals[i] });
+      if (swingHighs.length >= 2) break;
+    }
   }
-  if (curClose > prevClose && curRSI < prevRSI) {
-    return 'BEARISH';
+
+  // Find swing lows
+  const swingLows: { index: number; price: number; rsi: number }[] = [];
+  for (let i = n - 2; i >= 2; i--) {
+    if (closes[i] < closes[i - 1] && closes[i] < closes[i + 1] &&
+        closes[i] < closes[i - 2] && closes[i] < closes[i + 2]) {
+      swingLows.push({ index: i, price: closes[i], rsi: rsiVals[i] });
+      if (swingLows.length >= 2) break;
+    }
   }
+
+  // Check Bearish Divergence: PH2 > PH1 and RH2 < RH1
+  if (swingHighs.length >= 2) {
+    const ph2 = swingHighs[0].price;
+    const ph1 = swingHighs[1].price;
+    const rh2 = swingHighs[0].rsi;
+    const rh1 = swingHighs[1].rsi;
+    if (ph2 > ph1 && rh2 < rh1) {
+      return 'BEARISH';
+    }
+  }
+
+  // Check Bullish Divergence: PL2 < PL1 and RL2 > RL1
+  if (swingLows.length >= 2) {
+    const pl2 = swingLows[0].price;
+    const pl1 = swingLows[1].price;
+    const rl2 = swingLows[0].rsi;
+    const rl1 = swingLows[1].rsi;
+    if (pl2 < pl1 && rl2 > rl1) {
+      return 'BULLISH';
+    }
+  }
+
+  // Fallback to simpler method if no local 5-candle swings were identified
+  const recentHighs: { index: number; price: number; rsi: number }[] = [];
+  for (let i = n - 2; i >= 1; i--) {
+    if (closes[i] > closes[i - 1] && closes[i] > closes[i + 1]) {
+      recentHighs.push({ index: i, price: closes[i], rsi: rsiVals[i] });
+      if (recentHighs.length >= 2) break;
+    }
+  }
+
+  const recentLows: { index: number; price: number; rsi: number }[] = [];
+  for (let i = n - 2; i >= 1; i--) {
+    if (closes[i] < closes[i - 1] && closes[i] < closes[i + 1]) {
+      recentLows.push({ index: i, price: closes[i], rsi: rsiVals[i] });
+      if (recentLows.length >= 2) break;
+    }
+  }
+
+  if (recentHighs.length >= 2) {
+    const ph2 = recentHighs[0].price;
+    const ph1 = recentHighs[1].price;
+    const rh2 = recentHighs[0].rsi;
+    const rh1 = recentHighs[1].rsi;
+    if (ph2 > ph1 && rh2 < rh1) {
+      return 'BEARISH';
+    }
+  }
+
+  if (recentLows.length >= 2) {
+    const pl2 = recentLows[0].price;
+    const pl1 = recentLows[1].price;
+    const rl2 = recentLows[0].rsi;
+    const rl1 = recentLows[1].rsi;
+    if (pl2 < pl1 && rl2 > rl1) {
+      return 'BULLISH';
+    }
+  }
+
   return 'NONE';
 }

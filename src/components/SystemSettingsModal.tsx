@@ -74,7 +74,7 @@ export function SystemSettingsModal({ show, onClose }: Props) {
             >
               <View style={tw`flex-row items-center justify-between p-4 border-b border-white border-opacity-10`}>
                 <View style={tw`flex-row items-center`}>
-                  <ShieldAlert style={tw`mr-2 text-[#D9B382]`} size={20} />
+                  <ShieldAlert className="mr-2 text-[#D9B382]" size={20} />
                   <Text style={tw`text-lg font-bold text-white`}>System Settings</Text>
                 </View>
                 <Pressable 
@@ -160,7 +160,7 @@ export function SystemSettingsModal({ show, onClose }: Props) {
                     { opacity: pressed ? 0.7 : 1 }
                   ]}
                 >
-                  {saveStatus === 'saved' && <CheckCircle style={tw`mr-2 text-green-400`} size={18} />}
+                  {saveStatus === 'saved' && <CheckCircle className="mr-2 text-green-400" size={18} />}
                   <Text style={[
                     tw`text-sm font-bold`,
                     saveStatus === 'saved' ? tw`text-green-400` : tw`text-[#1A1308]`

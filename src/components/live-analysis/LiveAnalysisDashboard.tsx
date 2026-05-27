@@ -79,7 +79,7 @@ export function LiveAnalysisDashboard({
         </View>
       </View>
 
-      <motion.div whileHover={cardHoverProps} style={tw`bg-[#121419] rounded-2xl border border-white border-opacity-10 p-4 shadow-2xl mb-4 z-100`}>
+      <motion.div whileHover={cardHoverProps} className="bg-[#121419] rounded-2xl border border-white border-opacity-10 p-4 shadow-2xl mb-4 z-[100]">
          <View style={tw`mb-4`}>
             <View style={tw`flex-row justify-between items-center mb-2`}>
               <Text style={tw`text-[8px] font-black text-[#94A3B8] uppercase tracking-widest`}>Asset Selection</Text>
@@ -99,7 +99,7 @@ export function LiveAnalysisDashboard({
                     <Text style={[tw`mr-1.5 text-xs`, stockName === s.name ? tw`text-black` : tw`text-[#D9B382]`]}>{s.icon}</Text>
                     <Text style={[tw`text-[10px] font-black`, stockName === s.name ? tw`text-black` : tw`text-white`]}>{s.name}</Text>
                   </motion.div>
-                </Pressable>
+                </                Pressable>
               ))}
             </View>
          </View>
@@ -189,106 +189,106 @@ export function LiveAnalysisDashboard({
                     key={m}
                     onPress={() => setMode(m)}
                     style={({ pressed }) => [tw`px-3 py-1 rounded-md flex-row items-center`, mode === m ? tw`bg-[#D9B382]` : tw`bg-transparent`, { opacity: pressed ? 0.7 : 1 }]}
-                 >
-                   {m === 'live' ? <Camera size={12} color={mode === m ? '#1A1308' : '#4B5570'} /> : m === 'bulk' ? <Layers size={12} color={mode === m ? '#1A1308' : '#4B5570'} /> : <Activity size={12} color={mode === m ? '#1A1308' : '#4B5570'} />}
-                   <Text style={[tw`ml-1.5 text-[8px] font-black uppercase`, mode === m ? tw`text-[#1A1308]` : tw`text-[#4B5570]`]}>{m}</Text>
-                 </Pressable>
-               ))}
-            </View>
-         </View>
-
-         {mode === 'live' && (
-            <View style={tw`w-full bg-black bg-opacity-20 rounded-xl overflow-hidden border border-white border-opacity-10 items-center justify-center`}>
-              {Platform.OS === 'web' && (
-                <video
-                  ref={videoRef}
-                  autoPlay
-                  playsInline
-                  muted
-                  style={{ width: '100%', height: 160, objectFit: 'cover' }}
-                />
-              )}
-              {!isCameraActive && (
-                <View style={tw`absolute inset-0 bg-black bg-opacity-20 items-center justify-center`}>
-                  <Pressable
-                     onPress={startCamera}
-                     style={({ pressed }) => [tw`bg-[#D9B382] px-6 py-3 rounded-lg flex-row items-center`, { opacity: pressed ? 0.7 : 1 }]}
-                   >
-                     <Camera size={18} color="#1A1308" />
-                     <Text style={tw`text-[#1A1308] font-black ml-2`}>Start Camera</Text>
+                  >
+                    {m === 'live' ? <Camera size={12} color={mode === m ? '#1A1308' : '#4B5570'} /> : m === 'bulk' ? <Layers size={12} color={mode === m ? '#1A1308' : '#4B5570'} /> : <Activity size={12} color={mode === m ? '#1A1308' : '#4B5570'} />}
+                    <Text style={[tw`ml-1.5 text-[8px] font-black uppercase`, mode === m ? tw`text-[#1A1308]` : tw`text-[#4B5570]`]}>{m}</Text>
                   </Pressable>
-                </View>
-              )}
-              {isCameraActive && (
-                <Pressable
-                   onPress={stopCamera}
-                   style={({ pressed }) => [tw`absolute top-2 right-2 bg-red-500/80 p-1.5 rounded-md`, { opacity: pressed ? 0.7 : 1 }]}
-                 >
-                  <Text style={tw`text-white font-bold text-[8px]`}>STOP</Text>
-                </Pressable>
-              )}
-              {pipActive && (
-                <View style={tw`absolute top-2 left-2 bg-[#22C55E]/20 border border-[#22C55E]/40 px-2 py-1 rounded-md flex-row items-center`}>
-                  <View style={tw`w-1.5 h-1.5 rounded-full bg-[#22C55E] mr-1.5`} />
-                  <Text style={tw`text-[#22C55E] font-black text-[8px] uppercase tracking-widest`}>PiP LIVE</Text>
-                </View>
-              )}
-              {scoutActive && (
-                <View style={tw`absolute bottom-2 left-2 right-2 bg-black bg-opacity-20 p-2 rounded-lg border ${scoutData?.action === 'ABORT' ? 'border-red-500' : scoutData?.action === 'WAIT' ? 'border-orange-500' : 'border-[#00FFFF]/30'}`}>
-                   <View style={tw`flex-row justify-between items-center mb-1`}>
-                      <View style={tw`flex-row items-center`}>
-                        <View style={tw`w-2 h-2 rounded-full ${scoutData?.action === 'ABORT' ? 'bg-red-500' : scoutData?.action === 'WAIT' ? 'bg-orange-500' : 'bg-[#00FFFF]'} mr-2`} />
-                        <Text style={tw`text-[#00FFFF] font-black text-[9px] uppercase tracking-widest`}>Live Tick Scout</Text>
-                      </View>
-                      <Text style={tw`font-black text-[10px] ${scoutData?.action === 'ABORT' ? 'text-red-400' : scoutData?.action === 'WAIT' ? 'text-orange-400' : scoutData?.action === 'BUILD' ? 'text-green-400' : 'text-white'}`}>
-                         {scoutData ? scoutData.action : 'ANALYZING...'}
-                      </Text>
-                   </View>
-                   {scoutData && (
-                     <Text style={tw`text-white text-opacity-60 text-[9px] leading-3 font-medium`}>{scoutData.reason}</Text>
-                   )}
-                </View>
-              )}
-            </View>
-         )}
+                ))}
+             </View>
+          </View>
 
-         {mode === 'test' && (
-           <Pressable
-             onPress={handlePickImage}
-             // @ts-expect-error React Native Web missing typings
-             onDrop={handleDrop}
-             onDragOver={preventDefault}
-             onDragEnter={preventDefault}
-             style={({ pressed }) => [
-               tw`h-32 w-full rounded-xl bg-black bg-opacity-20 overflow-hidden border items-center justify-center`,
-               selectedImage ? tw`border-[#D9B382] border-opacity-20 ` : tw`border-dashed border-white border-opacity-10`,
-               { opacity: pressed ? 0.7 : 1 }
-             ]}
-           >
-             {selectedImage ? (
-               <Image source={{ uri: selectedImage }} style={tw`w-full h-full`} resizeMode="contain" />
-             ) : (
-               <View style={tw`items-center`}>
-                 <Upload size={18} color="#D9B382" style={tw`mb-2`} />
-                 <Text style={tw`text-[#4B5570] text-[9px] font-black uppercase tracking-wider`}>Sync Chart Image</Text>
-               </View>
-             )}
-           </Pressable>
-         )}
+          {mode === 'live' && (
+             <View style={tw`w-full bg-black bg-opacity-20 rounded-xl overflow-hidden border border-white border-opacity-10 items-center justify-center`}>
+               {Platform.OS === 'web' && (
+                 <video
+                   ref={videoRef}
+                   autoPlay
+                   playsInline
+                   muted
+                   style={{ width: '100%', height: 160, objectFit: 'cover' }}
+                 />
+               )}
+               {!isCameraActive && (
+                 <View style={tw`absolute inset-0 bg-black bg-opacity-20 items-center justify-center`}>
+                   <Pressable
+                      onPress={startCamera}
+                      style={({ pressed }) => [tw`bg-[#D9B382] px-6 py-3 rounded-lg flex-row items-center`, { opacity: pressed ? 0.7 : 1 }]}
+                    >
+                      <Camera size={18} color="#1A1308" />
+                      <Text style={tw`text-[#1A1308] font-black ml-2`}>Start Camera</Text>
+                   </Pressable>
+                 </View>
+               )}
+               {isCameraActive && (
+                 <Pressable
+                    onPress={stopCamera}
+                    style={({ pressed }) => [tw`absolute top-2 right-2 bg-red-500/80 p-1.5 rounded-md`, { opacity: pressed ? 0.7 : 1 }]}
+                  >
+                   <Text style={tw`text-white font-bold text-[8px]`}>STOP</Text>
+                 </Pressable>
+               )}
+               {pipActive && (
+                 <View style={tw`absolute top-2 left-2 bg-[#22C55E]/20 border border-[#22C55E]/40 px-2 py-1 rounded-md flex-row items-center`}>
+                   <View style={tw`w-1.5 h-1.5 rounded-full bg-[#22C55E] mr-1.5`} />
+                   <Text style={tw`text-[#22C55E] font-black text-[8px] uppercase tracking-widest`}>PiP LIVE</Text>
+                 </View>
+               )}
+               {scoutActive && (
+                 <View style={tw`absolute bottom-2 left-2 right-2 bg-black bg-opacity-20 p-2 rounded-lg border ${scoutData?.action === 'ABORT' ? 'border-red-500' : scoutData?.action === 'WAIT' ? 'border-orange-500' : 'border-[#00FFFF]/30'}`}>
+                    <View style={tw`flex-row justify-between items-center mb-1`}>
+                       <View style={tw`flex-row items-center`}>
+                         <View style={tw`w-2 h-2 rounded-full ${scoutData?.action === 'ABORT' ? 'bg-red-500' : scoutData?.action === 'WAIT' ? 'bg-orange-500' : 'bg-[#00FFFF]'} mr-2`} />
+                         <Text style={tw`text-[#00FFFF] font-black text-[9px] uppercase tracking-widest`}>Live Tick Scout</Text>
+                       </View>
+                       <Text style={tw`font-black text-[10px] ${scoutData?.action === 'ABORT' ? 'text-red-400' : scoutData?.action === 'WAIT' ? 'text-orange-400' : scoutData?.action === 'BUILD' ? 'text-green-400' : 'text-white'}`}>
+                          {scoutData ? scoutData.action : 'ANALYZING...'}
+                       </Text>
+                    </View>
+                    {scoutData && (
+                      <Text style={tw`text-white text-opacity-60 text-[9px] leading-3 font-medium`}>{scoutData.reason}</Text>
+                    )}
+                 </View>
+               )}
+             </View>
+          )}
 
-         <View style={mode === 'bulk' ? tw`flex` : tw`hidden`}>
-           <BulkTestPanel
-              techniquesList={techniquesList}
-              encryptedSystemTokens={encryptedSystemTokens}
-              saveToStats={saveToStats}
-              stockName={stockName}
-              graphTimeframe={graphTimeframe}
-              investmentDuration={investmentDuration}
-              investmentAmount={investmentAmount}
-              profitabilityPercent={profitabilityPercent}
-           />
-         </View>
-     </View>
+          {mode === 'test' && (
+            <Pressable
+              onPress={handlePickImage}
+              // @ts-expect-error React Native Web missing typings
+              onDrop={handleDrop}
+              onDragOver={preventDefault}
+              onDragEnter={preventDefault}
+              style={({ pressed }) => [
+                tw`h-32 w-full rounded-xl bg-black bg-opacity-20 overflow-hidden border items-center justify-center`,
+                selectedImage ? tw`border-[#D9B382] border-opacity-20` : tw`border-dashed border-white border-opacity-10`,
+                { opacity: pressed ? 0.7 : 1 }
+              ]}
+            >
+              {selectedImage ? (
+                <Image source={{ uri: selectedImage }} style={tw`w-full h-full`} resizeMode="contain" />
+              ) : (
+                <View style={tw`items-center`}>
+                  <Upload size={18} color="#D9B382" className="mb-2" />
+                  <Text style={tw`text-[#4B5570] text-[9px] font-black uppercase tracking-wider`}>Sync Chart Image</Text>
+                </View>
+              )}
+            </Pressable>
+          )}
+
+          <View style={mode === 'bulk' ? tw`flex` : tw`hidden`}>
+            <BulkTestPanel
+               techniquesList={techniquesList}
+               encryptedSystemTokens={encryptedSystemTokens}
+               saveToStats={saveToStats}
+               stockName={stockName}
+               graphTimeframe={graphTimeframe}
+               investmentDuration={investmentDuration}
+               investmentAmount={investmentAmount}
+               profitabilityPercent={profitabilityPercent}
+            />
+          </View>
+      </View>
     </>
   );
 }

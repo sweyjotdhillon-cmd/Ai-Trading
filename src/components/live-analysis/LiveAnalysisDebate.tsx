@@ -1,4 +1,4 @@
-import { Text, ActivityIndicator } from 'react-native';
+import { Text, View, ActivityIndicator } from 'react-native';
 import tw from 'twrnc';
 import { motion } from 'motion/react';
 import { Check } from 'lucide-react';
@@ -39,19 +39,19 @@ export function LiveAnalysisDebate({
         />
       </div>
 
-      <div style={tw`flex-row items-center justify-between mb-4 border-b border-white border-opacity-10 pb-3 relative z-10`}>
-        <div style={tw`flex-row items-center gap-2`}>
+      <View style={tw`flex-row items-center justify-between mb-4 border-b border-white border-opacity-10 pb-3 relative z-10`}>
+        <View style={tw`flex-row items-center gap-2`}>
            <ActivityIndicator color="#D9B382" size="small" />
            <motion.div animate={prefersReducedMotion ? {} : { scale: [1, 1.15, 1], opacity: [0.7, 1, 0.7] }} transition={{ duration: 1.6, repeat: Infinity, ease: "easeInOut" }} style={{ display: 'contents' }}>
            <Text style={[tw`font-black uppercase tracking-widest`, { fontSize: 10, color: '#D9B382' }]}>
              {analysisStep || 'Live Neural Debate Active'}
            </Text>
            </motion.div>
-        </div>
+        </View>
         <Text style={[tw`tracking-widest uppercase`, { fontSize: 8, color: '#8B95B0' }]}>Simultaneous execution</Text>
-      </div>
+      </View>
 
-      <div style={tw`gap-3 relative z-10`}>
+      <View style={tw`gap-3 relative z-10`}>
         {[
           { key: 'system', label: 'System Context', color: '#00FFFF', bg: 'rgba(0, 255, 255, 0.05)' },
           { key: 'judge1', label: 'Judge 1: Trend & Momentum', color: '#FF00FF', bg: 'rgba(255, 0, 255, 0.05)' },
@@ -67,7 +67,7 @@ export function LiveAnalysisDebate({
             className="bg-black bg-opacity-20 p-3 rounded-lg flex-row items-center justify-between border-l-4"
             style={{ borderColor: item.color, backgroundColor: item.bg }}
           >
-            <div style={tw`flex-1`}>
+            <View style={tw`flex-1`}>
               <div className="flex flex-row items-center gap-2 mb-1">
                 <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: item.color }} />
                 <Text style={[tw`font-black uppercase tracking-widest`, { fontSize: 9, color: item.color }]}>{item.label}</Text>
@@ -80,7 +80,7 @@ export function LiveAnalysisDebate({
               >
                 {judgeLogs[item.key as keyof typeof judgeLogs].text}
               </motion.p>
-            </div>
+            </View>
             {judgeLogs[item.key as keyof typeof judgeLogs].status === 'done' ? (
               <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} className="ml-2">
                 <Check size={16} color={item.color} />
@@ -99,7 +99,7 @@ export function LiveAnalysisDebate({
             )}
           </motion.div>
         ))}
-      </div>
+      </View>
     </motion.div>
   );
 }

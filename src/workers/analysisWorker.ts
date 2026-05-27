@@ -184,6 +184,7 @@ self.onmessage = async (e: MessageEvent) => {
       const debugTrace = {
         meta: pipe.meta,
         decision,
+        ohlcSeries: pipe.ohlcSeries,
         temporalFiltering: featureFlags.enableTemporalFiltering ? {
           smoothedConfidence: finalConfidence,
           smoothedScore: finalScore

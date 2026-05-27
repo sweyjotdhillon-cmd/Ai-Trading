@@ -348,8 +348,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    backgroundColor: 'transparent',
-    borderBottomWidth: 0,
+    backgroundColor: '#0A0B0E',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.06)',
   },
   headerLeft: {
     flexDirection: 'row',

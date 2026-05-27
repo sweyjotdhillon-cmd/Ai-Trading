@@ -62,6 +62,23 @@ function getWorker(): Worker {
           }
         }
       };
+
+      w.onerror = (err) => {
+        console.error("Worker fatal error:", err.message);
+        // We cannot securely resolve a specific msgId because the worker crashed and all state is lost.
+        // We must reject all pending promises.
+        messageResolvers.forEach(({ resolve, reject }, msgId) => {
+          reject(new Error("Worker fatal crash (OOM or internal fault)"));
+        });
+        messageResolvers.clear();
+        progressListeners.clear();
+        judgeLogListeners.clear();
+      };
+      
+      w.onmessageerror = (err) => {
+        console.error("Worker message error:", err);
+      };
+
       workers.push(w);
     }
   }
@@ -98,7 +115,77 @@ function generateId() {
 
 import { parseDurationToMinutes } from '../quant/horizon';
 
+class Semaphore {
+  private count: number;
+  private queue: (() => void)[] = [];
+
+  constructor(max: number) {
+    this.count = max;
+  }
+
+  async acquire() {
+    if (this.count > 0) {
+      this.count--;
+      return;
+    }
+    return new Promise<void>(resolve => {
+      this.queue.push(resolve);
+    });
+  }
+
+  release() {
+    if (this.queue.length > 0) {
+      const next = this.queue.shift();
+      if (next) next();
+    } else {
+      this.count++;
+    }
+  }
+}
+
+const analysisSemaphore = new Semaphore(WORKER_POOL_SIZE * 2);
+
 export async function runSingleAnalysis(params: {
+  imageDataUrl: string;
+  stock: string;
+  graphTimeframe: string;
+  investmentDuration: string;
+  investmentAmount: string;
+  profitabilityPercent: string;
+  techniquesList: string[];
+  encryptedSystemTokens?: string;
+  signal: AbortSignal;
+  onProgress?: (step: string) => void;
+  onJudgeLogs?: (logs: any) => void;
+  isTestMode?: boolean;
+  isManifestCheck?: boolean;
+  techniqueMode?: 'USER' | 'REPO' | 'COMBINED';
+  onDirectionFound?: (direction: 'UP' | 'DOWN' | 'NO_TRADE') => void;
+}): Promise<{
+  analysis: any;
+  direction: 'UP' | 'DOWN' | 'NO_TRADE';
+  outcome: 'WIN' | 'LOSS' | 'NEUTRAL';
+  confidence: number;
+  reason: string;
+  testModeRightSlice: string | null;
+  finalImageForAnalysis: string;
+  entryAnchorBase64: string | null;
+  rawOutcome?: string;
+  frameStable?: boolean;
+  actualDirection?: 'UP' | 'DOWN' | 'FLAT' | null;
+  entryClose?: number;
+  exitClose?: number;
+  candlesCut?: number;
+}> {
+  await analysisSemaphore.acquire();
+  try {
+    return await _runSingleAnalysis(params);
+  } finally {
+    analysisSemaphore.release();
+  }
+}
+
+async function _runSingleAnalysis(params: {
   imageDataUrl: string;
   stock: string;
   graphTimeframe: string;
@@ -132,6 +219,10 @@ export async function runSingleAnalysis(params: {
 }> {
   const t0 = performance.now();
   const { imageDataUrl, onJudgeLogs, isTestMode, onDirectionFound } = params;
+
+  if (params.signal.aborted) {
+    throw new Error('Aborted before starting analysis');
+  }
 
 
 
@@ -325,6 +416,7 @@ export async function runSingleAnalysis(params: {
   let exitClose: number | undefined;
   let actualDirection: 'UP' | 'DOWN' | 'FLAT' | null = null;
   let candlesCut: number | undefined;
+  let payload2: any = null;
 
   if (isTestMode && meta.candlesLength && meta.candlesLength > 10) {
     const tfM = parseDurationToMinutes(params.graphTimeframe) || 1;
@@ -391,7 +483,7 @@ export async function runSingleAnalysis(params: {
           });
         });
 
-        const payload2 = await payloadPromise2;
+        payload2 = await payloadPromise2;
         
         if (payload2.type !== 'ERROR') {
            finalDecision = payload2.debugTrace?.decision || payload2.decision || finalDecision;
@@ -443,6 +535,7 @@ export async function runSingleAnalysis(params: {
 
   return {
     analysis: {
+      ohlcSeries: payload2?.debugTrace?.ohlcSeries || payload?.debugTrace?.ohlcSeries || [],
       judge: {
         cases: cases,
         winner: finalDecision.winner, margin: finalDecision.margin, skepticMultiplier: finalDecision.skepticMultiplier,

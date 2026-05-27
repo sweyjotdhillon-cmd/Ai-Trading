@@ -1,5 +1,4 @@
 import { NumericOHLC } from '../vision/pipeline';
-import * as candlestick from 'candlestick';
 
 export interface PatternEvidence {
   pattern: string;
@@ -12,53 +11,38 @@ export interface PatternEvidence {
 export function extractCandlestickPatterns(series: NumericOHLC[]): PatternEvidence[] {
   const evidence: PatternEvidence[] = [];
 
-  if (!series || series.length < 5) return evidence;
+  if (!series || series.length < 2) return evidence;
 
-  const recent = series.slice(-5);
   const lastIndex = series.length - 1;
+  const c3 = series[lastIndex];       // current candle
+  const c2 = series[lastIndex - 1];   // previous candle
 
-  if (recent.length >= 2) {
-      const p = recent[recent.length - 2];
-      const c = recent[recent.length - 1];
+  const isC2Bear = c2.close < c2.open;
+  const isC2Bull = c2.close > c2.open;
+  const isC3Bear = c3.close < c3.open;
+  const isC3Bull = c3.close > c3.open;
 
-      try {
-          if (candlestick.isBullishEngulfing(p, c)) {
-              evidence.push({
-                  pattern: 'Bullish Engulfing',
-                  confidence: 1.0,
-                  direction: 'BULL',
-                  index: lastIndex,
-                  source: 'candlestick'
-              });
-          }
-      } catch { /* ignore */ }
-
-      try {
-          if (candlestick.isBearishEngulfing(p, c)) {
-              evidence.push({
-                  pattern: 'Bearish Engulfing',
-                  confidence: 1.0,
-                  direction: 'BEAR',
-                  index: lastIndex,
-                  source: 'candlestick'
-              });
-          }
-      } catch { /* ignore */ }
+  // Local, safe, zero-dependency pattern matchers
+  // 1. Bullish Engulfing
+  if (isC2Bear && isC3Bull && c3.close >= c2.open && c3.open <= c2.close) {
+    evidence.push({
+      pattern: 'Bullish Engulfing',
+      confidence: 1.0,
+      direction: 'BULL',
+      index: lastIndex,
+      source: 'candlestick'
+    });
   }
 
-  if (recent.length >= 1) {
-      const c = recent[recent.length - 1];
-      try {
-          if (candlestick.isDoji(c)) {
-              evidence.push({
-                  pattern: 'Doji',
-                  confidence: 1.0,
-                  direction: 'NEUTRAL',
-                  index: lastIndex,
-                  source: 'candlestick'
-              });
-          }
-      } catch { /* ignore */ }
+  // 2. Bearish Engulfing
+  if (isC2Bull && isC3Bear && c3.close <= c2.open && c3.open >= c2.close) {
+    evidence.push({
+      pattern: 'Bearish Engulfing',
+      confidence: 1.0,
+      direction: 'BEAR',
+      index: lastIndex,
+      source: 'candlestick'
+    });
   }
 
   return evidence;

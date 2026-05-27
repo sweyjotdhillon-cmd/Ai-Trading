@@ -173,38 +173,65 @@ export function evaluateSignal(
 
   let isBypass = false;
   let activeList: any[] = [];
+  let customListUploaded = false;
+  let tTotal = 0;
+  let intakeBlockReason = '';
   
-  if (techniqueMode !== 'REPO') {
-    activeList = [...(techniquesList || [])];
-    if (activeList.length > 0) {
-      isBypass = activeList.some(t => {
-        const name = typeof t === 'string' ? t : t.name;
-        return name === '__TEST_BYPASS__';
-      });
+  // Load custom list if available, regardless of mode (COMBINED/USER/REPO)
+  if (techniquesList && techniquesList.length > 0) {
+    activeList = [...techniquesList];
+    customListUploaded = true;
+    tTotal = activeList.length;
+    isBypass = activeList.some(t => {
+      const name = typeof t === 'string' ? t : t.name;
+      return name === '__TEST_BYPASS__';
+    });
+    
+    if (tTotal < 10 && !isBypass) {
+      intakeBlockReason = 'Insufficient technique count. Minimum 10 required for a valid signal.';
     }
+  } else {
+    activeList = [
+      "RSI Oversold",
+      "RSI Overbought",
+      "Hammer",
+      "Shooting Star",
+      "Bullish Engulfing",
+      "Bearish Engulfing",
+      "Morning Star",
+      "Evening Star",
+      "MACD Golden Cross",
+      "MACD Death Cross",
+      "EMA Slope Up",
+      "EMA Slope Down",
+      "Bollinger Breakout Up",
+      "Bollinger Breakout Down"
+    ];
+    tTotal = activeList.length;
+  }
 
-    if (activeList.length < 10) {
-      const backupList = [
-        "RSI Oversold",
-        "RSI Overbought",
-        "Hammer",
-        "Shooting Star",
-        "Bullish Engulfing",
-        "Bearish Engulfing",
-        "Morning Star",
-        "Evening Star",
-        "MACD Golden Cross",
-        "MACD Death Cross",
-        "EMA Slope Up",
-        "EMA Slope Down",
-        "Bollinger Breakout Up",
-        "Bollinger Breakout Down"
-      ];
-      for (const t of backupList) {
-        if (activeList.length >= 10) break;
-        if (!activeList.some(x => (typeof x === 'string' ? x : x.name).toLowerCase() === t.toLowerCase())) {
-          activeList.push(t);
-        }
+  // If the list is still less than 10 (and we aren't bypassing), pad it with repo/built-in techniques
+  if (activeList.length < 10 && !isBypass) {
+    const backupList = [
+      "RSI Oversold",
+      "RSI Overbought",
+      "Hammer",
+      "Shooting Star",
+      "Bullish Engulfing",
+      "Bearish Engulfing",
+      "Morning Star",
+      "Evening Star",
+      "MACD Golden Cross",
+      "MACD Death Cross",
+      "EMA Slope Up",
+      "EMA Slope Down",
+      "Bollinger Breakout Up",
+      "Bollinger Breakout Down"
+    ];
+    for (const t of backupList) {
+      if (activeList.length >= 10) break;
+      if (!activeList.some(x => (typeof x === 'string' ? x : x.name).toLowerCase() === t.toLowerCase())) {
+        activeList.push(t);
       }
     }
   }
@@ -422,13 +449,15 @@ export function evaluateSignal(
 
     for (const pat of patterns.bullish) {
       if (techniquesStr.includes(pat.toLowerCase())) {
-        matchedTechniques.push(pat + " (Bullish User-Matched)");
+        const modeLabel = techniqueMode === 'REPO' ? 'Repo-Matched' : 'User-Matched';
+        matchedTechniques.push(`${pat} (Bullish ${modeLabel})`);
       }
     }
 
     for (const pat of patterns.bearish) {
       if (techniquesStr.includes(pat.toLowerCase())) {
-        matchedTechniques.push(pat + " (Bearish User-Matched)");
+        const modeLabel = techniqueMode === 'REPO' ? 'Repo-Matched' : 'User-Matched';
+        matchedTechniques.push(`${pat} (Bearish ${modeLabel})`);
       }
     }
   }
@@ -622,6 +651,85 @@ export function evaluateSignal(
       }
   });
 
+  // --- Technique Signal Evaluator Calculations (Rule matching engine) ---
+  let bullScore = 0;
+  let bearScore = 0;
+  let processed = 0;
+  let skipped = 0;
+  let driftFlag = false;
+
+  // Loop over evaluationVotes to count processed and skipped techniques.
+  evaluationVotes.forEach(v => {
+    if (v.name.includes('(Repo)')) return;
+    const isNoMatch = v.reason === 'no_match';
+    if (isNoMatch) {
+      skipped += 1;
+    } else if (v.vote === 'BULL') {
+      bullScore += (v.score || 0);
+      processed += 1;
+    } else if (v.vote === 'BEAR') {
+      bearScore += (v.score || 0);
+      processed += 1;
+    }
+  });
+
+  // Batch Drift Detection (Groups of 5)
+  if (shards.length >= 2) {
+    const shard0Votes = evaluationVotes.filter(v => !v.name.includes('(Repo)')).slice(0, 5);
+    const s0Bull = shard0Votes.filter(v => v.vote === 'BULL').reduce((sum, v) => sum + (v.score || 0), 0);
+    const s0Bear = shard0Votes.filter(v => v.vote === 'BEAR').reduce((sum, v) => sum + (v.score || 0), 0);
+    const earlyLeader = s0Bull > s0Bear ? 'BULL' : (s0Bear > s0Bull ? 'BEAR' : 'NEUTRAL');
+
+    if (earlyLeader !== 'NEUTRAL') {
+      for (let j = 1; j < shards.length; j++) {
+        const runningVotes = evaluationVotes.filter(v => !v.name.includes('(Repo)')).slice(0, (j + 1) * 5);
+        const rBull = runningVotes.filter(v => v.vote === 'BULL').reduce((sum, v) => sum + (v.score || 0), 0);
+        const rBear = runningVotes.filter(v => v.vote === 'BEAR').reduce((sum, v) => sum + (v.score || 0), 0);
+        const currentLead = rBull > rBear ? 'BULL' : (rBear > rBull ? 'BEAR' : 'NEUTRAL');
+        if (currentLead !== 'NEUTRAL' && currentLead !== earlyLeader) {
+          driftFlag = true;
+          break;
+        }
+      }
+    }
+  }
+
+  const totalScore = bullScore + bearScore;
+  const techMargin = Math.abs(bullScore - bearScore);
+  const skipRatio = (processed + skipped) > 0 ? (skipped / (processed + skipped)) : 0;
+
+  let techniqueBlockReason = '';
+  if (techniqueMode !== 'REPO' && !isBypass) {
+    if (intakeBlockReason) {
+      techniqueBlockReason = intakeBlockReason;
+    } else if (processed < 10) {
+      techniqueBlockReason = 'Too many techniques were irrelevant to this chart. Fewer than 10 valid signals could be extracted. No trade recommended.';
+    } else if (totalScore < 7.0) {
+      techniqueBlockReason = 'Insufficient signal strength. Total scoring techniques did not reach the minimum score benchmark of 7.0.';
+    } else if (techMargin < 3.0) {
+      techniqueBlockReason = 'Technique split too close. Margin is below 3.0, representing ambiguous market consolidation without a definitive directional edge.';
+    } else if (skipRatio > 0.6) {
+      techniqueBlockReason = 'High skip rate. Skip ratio exceeds 60%, indicating chart lacks the necessary clarity or data for the provided technique set.';
+    }
+  }
+
+  if (techniqueBlockReason) {
+    hardBlockReason = techniqueBlockReason;
+  }
+
+  // Formula: confidence = (margin / totalScore) * 100
+  let confidenceValBase = totalScore > 0 ? (techMargin / totalScore) * 100 : 0;
+  if (driftFlag) confidenceValBase *= 0.80;
+  if (skipRatio >= 0.4 && skipRatio <= 0.6) confidenceValBase *= 0.90;
+  
+  // Calculate if majority of weights were 0.5
+  const userScoringVotes = evaluationVotes.filter(v => !v.name.includes('(Repo)') && (v.vote === 'BULL' || v.vote === 'BEAR'));
+  const count05 = userScoringVotes.filter(v => v.score <= 0.5).length;
+  if (userScoringVotes.length > 0 && (count05 / userScoringVotes.length) > 0.5) {
+     confidenceValBase *= 0.85;
+  }
+  confidenceValBase = Math.round(Math.max(0, Math.min(100, confidenceValBase)));
+
   // --- Dynamic Multipliers & Confluence ---
   // 1. MACD + EMA + RSI Confluence Multiplier
   let hasConfluenceBULL = false;
@@ -652,7 +760,13 @@ export function evaluateSignal(
   const timeframeMultiplier = tfMinutesVal <= 5 ? 0.9 : (tfMinutesVal >= 60 ? 1.1 : 1.0);
 
   const techniquesEvaluation = {
-    totalTechniques: bullList.length + bearList.length,
+    totalTechniques: activeList.length,
+    processed,
+    skipped,
+    skipRatio,
+    drift: driftFlag ? 'YES' : 'NO',
+    totalScore,
+    margin: techMargin,
     bulldogPoints,
     peerPoints,
     repoBulldogPoints,
@@ -818,6 +932,23 @@ export function evaluateSignal(
     }
   }
 
+  // --- Zero-out Rule when no techniques are matched under active Mode ---
+  let totalMatchedCount = 0;
+  if (techniqueMode === 'REPO') {
+     totalMatchedCount = repoDetected.length;
+  } else if (techniqueMode === 'USER') {
+     totalMatchedCount = processed;
+  } else {
+     totalMatchedCount = processed + repoDetected.length;
+  }
+
+  if (totalMatchedCount === 0) {
+     bullJ1 = 0; bearJ1 = 0;
+     bullJ2 = 0; bearJ2 = 0;
+     bullJ3 = 0; bearJ3 = 0;
+     hardBlockReason = 'No active techniques matched current market conditions';
+  }
+
   // --- Apply Economic Multipliers to Final Case Totals ---
   const bullPreTotal = bullJ1 + bullJ2 + bullJ3;
   const bearPreTotal = bearJ1 + bearJ2 + bearJ3;
@@ -889,7 +1020,16 @@ export function evaluateSignal(
   else if (skepticMultiplier < 0.85) skepticVerdict = 'CAUTION';
 
   // 2.6 Calculate Final Confidence Percentage
-  const finalConfidence = Math.round((rawWinningTotal * skepticMultiplier / 11) * 100);
+  let finalConfidence = Math.round((rawWinningTotal * skepticMultiplier / 11) * 100);
+  if (techniqueMode !== 'REPO') {
+    if (hardBlockReason) {
+      finalConfidence = 0;
+    } else {
+      finalConfidence = confidenceValBase;
+    }
+  } else if (hardBlockReason) {
+    finalConfidence = 0;
+  }
 
   // --- Step 3: Apply NO_TRADE Rules ---
   let finalSignal: 'CALL' | 'PUT' | 'NO_TRADE' = rawWinner === 'BULL' ? 'CALL' : (rawWinner === 'BEAR' ? 'PUT' : 'NO_TRADE');

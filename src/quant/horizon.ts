@@ -10,16 +10,22 @@ export function parseDurationToMinutes(s: string): number {
     console.warn(`parseDurationToMinutes: Invalid input "${s}", defaulting to 30`);
     return 30; // Default fallback
   }
-  const match = s.trim().match(/^(\d+)(m|h|d)?$/i);
-  if (!match) {
-    console.warn(`parseDurationToMinutes: Failed to parse "${s}", defaulting to 5`);
+  const trimmed = s.trim();
+  const numMatch = trimmed.match(/^(\d+)/);
+  if (!numMatch) {
+    console.warn(`parseDurationToMinutes: Failed to find number in "${s}", defaulting to 5`);
     return 5;
   }
-  const val = parseInt(match[1], 10);
-  const unit = (match[2] || 'm').toLowerCase();
-  if (unit === 'h') return val * 60;
-  if (unit === 'd') return val * 1440;
-  return val;
+  const val = parseInt(numMatch[1], 10);
+  const textPart = trimmed.slice(numMatch[1].length).toLowerCase().trim();
+  
+  if (textPart.startsWith('h') || textPart.includes('hour')) {
+    return val * 60;
+  }
+  if (textPart.startsWith('d') || textPart.includes('day')) {
+    return val * 1440;
+  }
+  return val; // defaults to minutes (e.g. "m", "min", "minutes", "" etc)
 }
 
 // R4: Per-pattern weight table depending on horizonClass.
