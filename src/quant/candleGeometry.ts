@@ -36,7 +36,7 @@ export function isHammer(ohlc: NumericOHLC[]): { match: boolean; score: number }
 
   const bodyUpper30 = Math.min(c.open, c.close) >= c.low + (range * 0.7);
 
-  if (lw >= 2 * body && uw <= 0.3 * body && bodyUpper30) {
+  if (lw >= 2 * body && uw <= (body + 0.01) && bodyUpper30) {
     const score = Math.min(1.0, lw / (2.5 * (body || 0.001)));
     return { match: true, score };
   }

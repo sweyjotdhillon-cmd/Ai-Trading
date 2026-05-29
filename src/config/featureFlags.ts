@@ -1,5 +1,5 @@
 export const featureFlags = {
-  enableTemporalFiltering: false,
-  enableCandlestickRepoPatterns: false,
-  enableGapDetection: false,
+  enableTemporalFiltering: true,
+  enableCandlestickRepoPatterns: true,
+  enableGapDetection: true,
 };

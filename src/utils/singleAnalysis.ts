@@ -1,3 +1,4 @@
+import { antiImagine } from './antiImagine';
 let msgCounter = 0;
 import { dataUrlToImageData } from './imageUtils';
 import { loadCalibration } from '../vision/colorCalibration';
@@ -31,6 +32,7 @@ function getWorker(): Worker {
         const { ok, stage, ms, payload } = e.data;
         if (!ok) {
           console.error(`Worker Fault [${stage}] ${ms.toFixed(1)}ms:`, payload.message);
+          antiImagine.log('ERROR', `worker_fault_${stage}`, payload.message);
           if (payload.msgId) {
             const res = messageResolvers.get(payload.msgId);
             if (res) {
@@ -42,6 +44,14 @@ function getWorker(): Worker {
         }
 
         const { type } = payload;
+        
+        // Log incidents collected from worker
+        if (payload.incidents && Array.isArray(payload.incidents)) {
+          payload.incidents.forEach((inc: any) => {
+            antiImagine.log(inc.type, inc.module, inc.message, inc.details);
+          });
+        }
+
         if (type === 'FRAME_RESULT' && payload.msgId) {
           const res = messageResolvers.get(payload.msgId);
           if (res) {
@@ -216,6 +226,7 @@ export async function runSingleAnalysis(params: {
       msgId,
       imageData: imgData,
       graphTimeframeMinutes: tfM,
+      graphTimeframe: params.graphTimeframe,
       investmentDurationMinutes: durM,
       techniquesList: params.techniquesList,
     });

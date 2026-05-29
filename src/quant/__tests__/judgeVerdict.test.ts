@@ -74,7 +74,7 @@ describe('Judge Verdict', () => {
   it('3. Sideways noise', () => {
     const series = generateSeries('sideways', 150);
     const result = evaluateSignal(series, null, 'REAL_PRICE');
-    
+    console.log("SIDEWAYS RESULT:", JSON.stringify(result, null, 2));
     expect(result.winner).toBe('NO_TRADE');
     expect(result.margin).toBeLessThan(2);
   });

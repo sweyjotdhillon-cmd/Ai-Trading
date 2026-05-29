@@ -1,8 +1,10 @@
-import { runSingleAnalysis, onStableSignal } from '../utils/singleAnalysis';
+import { runSingleAnalysis, onStableSignal, resetWorkerStability } from '../utils/singleAnalysis';
 import { LiveAnalysisDashboard } from './live-analysis/LiveAnalysisDashboard';
 import { LiveAnalysisDebate } from './live-analysis/LiveAnalysisDebate';
 import { LiveAnalysisResult } from './live-analysis/LiveAnalysisResult';
 import { useState, useRef, useEffect } from 'react';
+import { useWakeLock } from '../hooks/useWakeLock';
+import { antiImagine } from '../utils/antiImagine';
 import { View, Text, Pressable, ScrollView, Platform } from 'react-native';
 import { TIMEOUTS } from '../config/timeouts';
 
@@ -71,8 +73,6 @@ import { CalibrationOverlay } from './CalibrationOverlay';
 
 
 
-import { useWakeLock } from '../hooks/useWakeLock';
-
 let _seed = 0xC0FFEE;
 function pseudoRandom() {
   _seed = (_seed * 1664525 + 1013904223) % 4294967296;
@@ -83,29 +83,61 @@ function pseudoRandom() {
 
 
 export function LiveAnalysis() {
-  const getInitialState = () => {
+  const [stockName, setStockName] = useState('Bitcoin');
+  const [graphTimeframe, setGraphTimeframe] = useState('30:00');
+  const [loading, setLoading] = useState(false);
+  const [isBusy, setIsBusy] = useState(false);
+  const [analysisStep, setAnalysisStep] = useState<string | null>(null);
+  const [analysis, setAnalysis] = useState<any | null>(null);
+  const [mode, setMode] = useState<'live' | 'test' | 'bulk'>('live');
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [calibrationFrame, setCalibrationFrame] = useState<ImageData | null>(null);
+  const [isStable, setIsStable] = useState(false);
+
+  // Explicit session restore state
+  const [hasSavedSession, setHasSavedSession] = useState(() => {
     if (typeof window !== 'undefined') {
       try {
         const saved = localStorage.getItem('chartlens_current_analysis');
-        if (saved) return JSON.parse(saved);
-      } catch (e) {
-        console.warn("Could not retrieve initial state", e);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          return !!(parsed.analysis || parsed.selectedImage);
+        }
+      } catch {
+        return false;
       }
     }
-    return {};
-  };
-  const initialState = getInitialState();
+    return false;
+  });
 
-  const [stockName, setStockName] = useState(initialState.stockName || 'Bitcoin');
-  const [graphTimeframe, setGraphTimeframe] = useState(initialState.graphTimeframe || '3 minutes');
-  const [loading, setLoading] = useState(false);
-  const [isBusy, setIsBusy] = useState(false);
-  const [analysisStep, setAnalysisStep] = useState<string | null>(initialState.analysisStep || null);
-  const [analysis, setAnalysis] = useState<any | null>(initialState.analysis || null);
-  const [mode, setMode] = useState<'live' | 'test' | 'bulk'>(initialState.mode || 'live');
-  const [selectedImage, setSelectedImage] = useState<string | null>(initialState.selectedImage || null);
-  const [calibrationFrame, setCalibrationFrame] = useState<ImageData | null>(null);
-  const [isStable, setIsStable] = useState(false);
+  const handleRestoreSession = () => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('chartlens_current_analysis');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed.stockName) setStockName(parsed.stockName);
+          if (parsed.graphTimeframe) setGraphTimeframe(parsed.graphTimeframe);
+          if (parsed.analysisStep) setAnalysisStep(parsed.analysisStep);
+          if (parsed.analysis) setAnalysis(parsed.analysis);
+          if (parsed.mode) setMode(parsed.mode);
+          if (parsed.selectedImage) setSelectedImage(parsed.selectedImage);
+          if (parsed.techFileName) setTechFileName(parsed.techFileName);
+          if (parsed.confirmedOutcome) setConfirmedOutcome(parsed.confirmedOutcome);
+          if (parsed.autoGradeStatus) setAutoGradeStatus(parsed.autoGradeStatus);
+          if (parsed.testModeLeftSlice) setTestModeLeftSlice(parsed.testModeLeftSlice);
+          if (parsed.testModeRightSlice) setTestModeRightSlice(parsed.testModeRightSlice);
+          if (parsed.autoGradeReason) setAutoGradeReason(parsed.autoGradeReason);
+          if (parsed.autoGradeConfidence) setAutoGradeConfidence(parsed.autoGradeConfidence);
+          if (parsed.autoGradeRawOutcome) setAutoGradeRawOutcome(parsed.autoGradeRawOutcome);
+          showNotice("Previous session successfully restored.", "success");
+        }
+      } catch (err) {
+        console.warn("Could not restore session:", err);
+      }
+    }
+    setHasSavedSession(false);
+  };
   
   const { requestLock, releaseLock } = useWakeLock();
 
@@ -200,27 +232,27 @@ export function LiveAnalysis() {
   
   // Investment Details
   const [investmentAmount, setInvestmentAmount] = useState('100');
-  const [investmentDuration, setInvestmentDuration] = useState('3m');
+  const [investmentDuration, setInvestmentDuration] = useState('3:00');
   const [profitabilityPercent, setProfitabilityPercent] = useState('85');
 
   // Technique Files
   const [techniquesList, setTechniquesList] = useState<any[]>([]);
-  const [techFileName, setTechFileName] = useState<string | null>(initialState.techFileName || null);
+  const [techFileName, setTechFileName] = useState<string | null>(null);
 
-  const [confirmedOutcome, setConfirmedOutcome] = useState<'WIN' | 'LOSS' | null>(initialState.confirmedOutcome || null);
+  const [confirmedOutcome, setConfirmedOutcome] = useState<'WIN' | 'LOSS' | null>(null);
 
-  const [autoGradeStatus, setAutoGradeStatus] = useState<'idle' | 'grading' | 'done' | 'failed'>(initialState.autoGradeStatus || 'idle');
-  const [testModeLeftSlice, setTestModeLeftSlice] = useState<string | null>(initialState.testModeLeftSlice || null);
-  const [testModeRightSlice, setTestModeRightSlice] = useState<string | null>(initialState.testModeRightSlice || null);
-  const [autoGradeReason, setAutoGradeReason] = useState<string>(initialState.autoGradeReason || '');
-  const [autoGradeConfidence, setAutoGradeConfidence] = useState<number>(initialState.autoGradeConfidence || 0);
-  const [autoGradeRawOutcome, setAutoGradeRawOutcome] = useState<string>(initialState.autoGradeRawOutcome || '');
+  const [autoGradeStatus, setAutoGradeStatus] = useState<'idle' | 'grading' | 'done' | 'failed'>('idle');
+  const [testModeLeftSlice, setTestModeLeftSlice] = useState<string | null>(null);
+  const [testModeRightSlice, setTestModeRightSlice] = useState<string | null>(null);
+  const [autoGradeReason, setAutoGradeReason] = useState<string>('');
+  const [autoGradeConfidence, setAutoGradeConfidence] = useState<number>(0);
+  const [autoGradeRawOutcome, setAutoGradeRawOutcome] = useState<string>('');
   const actualDirection: 'UP' | 'DOWN' | null =
     confirmedOutcome === 'WIN' ? 'UP' : confirmedOutcome === 'LOSS' ? 'DOWN' : null;
   const [statsData, setStatsData] = useState<any[]>(() => {
     if (typeof window !== 'undefined') {
       try {
-        const existing = sessionStorage.getItem('stats_surface_data');
+        const existing = localStorage.getItem('stats_surface_data');
         if (existing) return JSON.parse(existing).stats || [];
       } catch {
         // ignore
@@ -228,6 +260,18 @@ export function LiveAnalysis() {
     }
     return [];
   });
+
+  useEffect(() => {
+    const handleClearLocalStats = () => {
+      setStatsData([]);
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('determinist:clearstats', handleClearLocalStats);
+      return () => {
+        window.removeEventListener('determinist:clearstats', handleClearLocalStats);
+      };
+    }
+  }, []);
   const [sessionIndex] = useState<number>(() => Math.floor(pseudoRandom() * 1000));
 
   useEffect(() => {
@@ -330,8 +374,8 @@ export function LiveAnalysis() {
     { name: 'Google', icon: 'G' },
   ];
 
-  const timeframes = ['5 minutes', '3 minutes'];
-  const durations = ['3m', '5m'];
+  const timeframes = ['30:00', '15:00'];
+  const durations = ['3:00', '5:00'];
 
 
 
@@ -353,18 +397,21 @@ export function LiveAnalysis() {
     setConfirmedOutcome(null);
     setAutoGradeStatus('idle');
     setTestModeLeftSlice(null);
+    setTestModeRightSlice(null);
     setAutoGradeReason('');
     setAutoGradeConfidence(0);
     setAutoGradeRawOutcome('');
     setMode('live');
-    setMode('live');
     setStockName('Bitcoin');
-    setGraphTimeframe('30 minutes');
-    setInvestmentDuration('3m');
+    setGraphTimeframe('30:00');
+    setInvestmentDuration('3:00');
     setScoutActive(false);
     setScoutData(null);
     setLoading(false);
     setIsBusy(false);
+    setTechFileName(null);
+    setTechniquesList([]);
+    setHasSavedSession(false);
     
     setJudgeLogs({
       judge1: { text: "", status: 'idle' },
@@ -386,6 +433,16 @@ export function LiveAnalysis() {
     // Stop PiP on reset
 
     closePip(true);
+
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem('chartlens_current_analysis');
+      } catch (err) {
+        console.warn("Could not remove storage key on reset:", err);
+      }
+    }
+
+    resetWorkerStability();
 
     setTimeout(() => {
       showNotice("Analysis reset. Controls restored to defaults.", "info");
@@ -456,7 +513,7 @@ export function LiveAnalysis() {
     const startScoutLoop = async () => {
       if (!isMounted || !scoutActive || !analysis || !isCameraActive || !videoRef.current) return;
       
-      const currentInterval = (tradingPhase === 'WAITING_FOR_ENTRY' || tradingPhase === 'ENTRY_CONFIRMED') ? 2000 : 10000;
+      const currentInterval = 1000;
       const startTime = performance.now();
 
       if (!isFetching) {
@@ -536,7 +593,7 @@ export function LiveAnalysis() {
     }
 
     if (scoutActive && analysis && isCameraActive && videoRef.current) {
-      const initialInterval = (tradingPhase === 'WAITING_FOR_ENTRY' || tradingPhase === 'ENTRY_CONFIRMED') ? 2000 : 10000;
+      const initialInterval = 1000;
       if (worker) {
          worker.postMessage({ command: 'start', interval: initialInterval });
       }
@@ -655,11 +712,20 @@ export function LiveAnalysis() {
       setStatsData(updatedStats);
       setConfirmedOutcome(outcome);
 
-      const existing = sessionStorage.getItem('stats_surface_data');
+      const existing = localStorage.getItem('stats_surface_data');
       let localStats = { stats: [] };
-      if (existing) localStats = JSON.parse(existing);
+      if (existing) {
+        try {
+          localStats = JSON.parse(existing);
+          if (!Array.isArray(localStats.stats)) {
+            localStats.stats = [];
+          }
+        } catch {
+          localStats = { stats: [] };
+        }
+      }
       localStats.stats.push(newEntry as never);
-      sessionStorage.setItem('stats_surface_data', JSON.stringify(localStats));
+      localStorage.setItem('stats_surface_data', JSON.stringify(localStats));
     } catch (err) {
       console.error("Failed to save stats:", err);
     }
@@ -667,6 +733,8 @@ export function LiveAnalysis() {
 
   const handleAnalyze = async () => {
     if (loading || isBusy) return;
+    antiImagine.clear();
+    resetWorkerStability();
     setIsBusy(true);
 
     let finalImageToAnalyze = selectedImage;
@@ -774,6 +842,10 @@ export function LiveAnalysis() {
               if (mode !== 'test') setTradingDirection(null);
             }
           }, 6000);
+
+          if (antiImagine.hasLogs()) {
+            antiImagine.download();
+          }
 
           setLoading(false);
           setIsBusy(false);
@@ -942,6 +1014,40 @@ export function LiveAnalysis() {
             <Pressable onPress={() => setSystemNotice(null)} style={tw`p-1 bg-white/5 rounded-full`}>
               <X size={12} color="#A1A1AA" />
             </Pressable>
+          </View>
+        )}
+
+        {hasSavedSession && (
+          <View style={tw`mb-4 p-4 rounded-xl flex-row items-center justify-between border bg-amber-500/10 border-amber-500/30`}>
+            <View style={tw`flex-row items-center flex-1 mr-3`}>
+              <View style={tw`w-2 h-2 rounded-full mr-2.5 bg-amber-400`} />
+              <Text style={tw`text-xs font-semibold text-amber-200`}>
+                Previous analysis session detected. Would you like to restore it?
+              </Text>
+            </View>
+            <View style={tw`flex-row gap-2`}>
+              <Pressable 
+                onPress={handleRestoreSession} 
+                style={({ pressed }) => [tw`bg-amber-500/20 px-3 py-1.5 rounded-lg border border-amber-500/30`, { opacity: pressed ? 0.7 : 1 }]}
+              >
+                <Text style={tw`text-amber-300 font-extrabold text-[10px] uppercase tracking-wider`}>Restore</Text>
+              </Pressable>
+              <Pressable 
+                onPress={() => {
+                  if (typeof window !== 'undefined') {
+                    try {
+                      localStorage.removeItem('chartlens_current_analysis');
+                    } catch (err) {
+                      console.warn("Could not remove storage key on dismiss:", err);
+                    }
+                  }
+                  setHasSavedSession(false);
+                }} 
+                style={({ pressed }) => [tw`bg-white/5 px-3 py-1.5 rounded-lg border border-white/10`, { opacity: pressed ? 0.7 : 1 }]}
+              >
+                <Text style={tw`text-[#A1A1AA] font-bold text-[10px] uppercase tracking-wider`}>Dismiss</Text>
+              </Pressable>
+            </View>
           </View>
         )}
         {/* Compact Terminal Header */}

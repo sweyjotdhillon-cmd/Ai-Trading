@@ -56,7 +56,7 @@ export function BulkTestPanel({
   
   // Tab 1 state
   const [images, setImages] = useState<File[]>([]);
-  const [buildDuration, setBuildDuration] = useState<'3m' | '5m'>('5m');
+  const [buildDuration, setBuildDuration] = useState<'3:00' | '5:00'>('3:00');
   const [generationProgress, setGenerationProgress] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
@@ -666,16 +666,16 @@ export function BulkTestPanel({
                <Text style={tw`text-[10px] font-black text-[#94a3b8] uppercase tracking-wider mb-2 text-center`}>Investment Duration (Cut Target Window)</Text>
                <View style={tw`flex-row gap-2`}>
                   <Pressable
-                    onPress={() => setBuildDuration('3m')}
-                    style={({ pressed }) => [tw`flex-1 h-10 rounded-lg flex-row items-center justify-center border`, buildDuration === '3m' ? tw`bg-[#D9B382]/20 border-[#D9B382]` : tw`bg-black bg-opacity-20 border-white border-opacity-10`, { opacity: pressed ? 0.7 : 1 }]}
+                    onPress={() => setBuildDuration('3:00')}
+                    style={({ pressed }) => [tw`flex-1 h-10 rounded-lg flex-row items-center justify-center border`, buildDuration === '3:00' ? tw`bg-[#D9B382]/20 border-[#D9B382]` : tw`bg-black bg-opacity-20 border-white border-opacity-10`, { opacity: pressed ? 0.7 : 1 }]}
                   >
-                     <Text style={[tw`text-[10px] font-black tracking-widest`, buildDuration === '3m' ? tw`text-[#D9B382]` : tw`text-white text-opacity-50`]}>3 MINUTES</Text>
+                     <Text style={[tw`text-[10px] font-black tracking-widest`, buildDuration === '3:00' ? tw`text-[#D9B382]` : tw`text-white text-opacity-50`]}>3 MINUTES</Text>
                   </Pressable>
                   <Pressable
-                    onPress={() => setBuildDuration('5m')}
-                    style={({ pressed }) => [tw`flex-1 h-10 rounded-lg flex-row items-center justify-center border`, buildDuration === '5m' ? tw`bg-[#D9B382]/20 border-[#D9B382]` : tw`bg-black bg-opacity-20 border-white border-opacity-10`, { opacity: pressed ? 0.7 : 1 }]}
+                    onPress={() => setBuildDuration('5:00')}
+                    style={({ pressed }) => [tw`flex-1 h-10 rounded-lg flex-row items-center justify-center border`, buildDuration === '5:00' ? tw`bg-[#D9B382]/20 border-[#D9B382]` : tw`bg-black bg-opacity-20 border-white border-opacity-10`, { opacity: pressed ? 0.7 : 1 }]}
                   >
-                     <Text style={[tw`text-[10px] font-black tracking-widest`, buildDuration === '5m' ? tw`text-[#D9B382]` : tw`text-white text-opacity-50`]}>5 MINUTES</Text>
+                     <Text style={[tw`text-[10px] font-black tracking-widest`, buildDuration === '5:00' ? tw`text-[#D9B382]` : tw`text-white text-opacity-50`]}>5 MINUTES</Text>
                   </Pressable>
                </View>
             </View>

@@ -10,15 +10,20 @@ export function parseDurationToMinutes(s: string): number {
     console.warn(`parseDurationToMinutes: Invalid input "${s}", defaulting to 30`);
     return 30; // Default fallback
   }
-  const match = s.trim().match(/^(\d+)(m|h|d)?$/i);
-  if (!match) {
+  const cleaned = s.trim().toLowerCase();
+  if (cleaned.includes(':')) {
+    const parts = cleaned.split(':');
+    const mins = parseInt(parts[0], 10);
+    if (!isNaN(mins)) return mins;
+  }
+  const digitMatch = cleaned.match(/^(\d+)/);
+  if (!digitMatch) {
     console.warn(`parseDurationToMinutes: Failed to parse "${s}", defaulting to 5`);
     return 5;
   }
-  const val = parseInt(match[1], 10);
-  const unit = (match[2] || 'm').toLowerCase();
-  if (unit === 'h') return val * 60;
-  if (unit === 'd') return val * 1440;
+  const val = parseInt(digitMatch[1], 10);
+  if (cleaned.includes('hour') || cleaned.endsWith('h')) return val * 60;
+  if (cleaned.includes('day') || cleaned.endsWith('d')) return val * 1440;
   return val;
 }
 

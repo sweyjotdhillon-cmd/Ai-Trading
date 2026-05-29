@@ -1,9 +1,11 @@
 import { NumericOHLC } from '../vision/pipeline';
 
-import { rsi, stochastic, macd, atr, bollinger } from './indicators';
+import { rsi, stochastic, macd, atr, bollinger, ema } from './indicators';
 import { emaSlope, emaCurvature } from './calculus';
 
-export type VoteResult = 'BULL' | 'BEAR' | 'NEUTRAL';
+import { TECHNIQUE_LIBRARY } from './techniqueLibrary';
+
+export type VoteResult = 'BULL' | 'BEAR' | 'NEUTRAL' | 'SKIP';
 
 export interface TechniqueVote {
   id: string;           // e.g. "T042"
@@ -11,6 +13,8 @@ export interface TechniqueVote {
   vote: VoteResult;
   score: number;        // 0.0 - 1.0 confidence of this technique's finding
   reason: string;       // short math-based reason e.g. "RSI=27 < 30 threshold"
+  bullPoints?: number;
+  bearPoints?: number;
 }
 
 export function normalizeKey(name: string): string {
@@ -36,8 +40,181 @@ export interface IndicatorCache {
   closes?: number[];
 }
 
+function evaluateConditions(
+  conditions: any[],
+  ohlc: NumericOHLC[],
+  closes: number[],
+  last: number,
+  getRSI: () => number[],
+  getStoch: () => { k: number[], d: number[] },
+  getMACD: () => { macd: number[], signal: number[], hist: number[] },
+  getATR: () => number[],
+  getBollinger: () => { upper: number[], middle: number[], lower: number[] }
+): { score: number, matched: number, reasons: string[] } {
+
+  // Build a lookup for a candle by reference name
+  function resolveCandle(ref: string): NumericOHLC | null {
+    if (ref === 'current' || !ref || ref === 'any') return ohlc[last] ?? null;
+    if (ref === 'prev')           return ohlc[last - 1] ?? null;
+    if (ref === 'prev2')          return ohlc[last - 2] ?? null;
+    return null;
+  }
+
+  // Build indicator snapshot at the last index
+  function getFieldValue(field: string, candleRef: string): number | string | null {
+    const rsiVals    = getRSI();
+    const stochVals  = getStoch();
+    const macdVals   = getMACD();
+    const atrVals    = getATR();
+    const bollVals   = getBollinger();
+    const c          = resolveCandle(candleRef);
+
+    if (!c) return null;
+
+    const bodySize   = Math.abs(c.close - c.open);
+    const totalRange = c.high - c.low || 1e-9;
+
+    switch (field) {
+      // OHLC
+      case 'open':            return c.open;
+      case 'high':            return c.high;
+      case 'low':             return c.low;
+      case 'close':           return c.close;
+      case 'bodySize':        return bodySize;
+      case 'totalRange':      return totalRange;
+      case 'bodyRatio':       return bodySize / totalRange;
+      case 'upperWick':       return c.high - Math.max(c.open, c.close);
+      case 'lowerWick':       return Math.min(c.open, c.close) - c.low;
+      case 'upperWickRatio':  return (c.high - Math.max(c.open, c.close)) / totalRange;
+      case 'lowerWickRatio':  return (Math.min(c.open, c.close) - c.low) / totalRange;
+      case 'direction':
+        if (bodySize / totalRange < 0.05) return 'DOJI';
+        return c.close > c.open ? 'BULL' : 'BEAR';
+
+      // Oscillators
+      case 'rsi':        return rsiVals[last] ?? null;
+      case 'stochK':     return stochVals.k[last] ?? null;
+      case 'stochD':     return stochVals.d[last] ?? null;
+      case 'macdLine':   return macdVals.macd[last] ?? null;
+      case 'macdSignal': return macdVals.signal[last] ?? null;
+      case 'macdHist':   return macdVals.hist[last] ?? null;
+
+      // EMAs
+      case 'ema9': {
+        const e = ema(closes, 9);
+        return closes[last] - (e[last] ?? NaN);  // approximate: return close vs ema
+      }
+      case 'ema21': {
+        const e = ema(closes, 21);
+        return closes[last] - (e[last] ?? NaN);
+      }
+
+      // Volatility
+      case 'atr':      return atrVals[last] ?? null;
+      case 'bbUpper':  return bollVals.upper[last] ?? null;
+      case 'bbMiddle': return bollVals.middle[last] ?? null;
+      case 'bbLower':  return bollVals.lower[last] ?? null;
+      case 'bbPct': {
+        const u = bollVals.upper[last], l = bollVals.lower[last];
+        if (!u || !l || u === l) return null;
+        return (c.close - l) / (u - l);
+      }
+      case 'bbWidth': {
+        const u = bollVals.upper[last], m = bollVals.middle[last], l = bollVals.lower[last];
+        if (!m || m === 0) return null;
+        return (u - l) / m;
+      }
+
+      // Delta fields
+      case 'rsiDelta': {
+        const r = rsiVals;
+        if (isNaN(r[last]) || isNaN(r[last-1])) return null;
+        return r[last] - r[last - 1];
+      }
+      case 'macdHistDelta': {
+        const h = macdVals.hist;
+        if (isNaN(h[last]) || isNaN(h[last-1])) return null;
+        return h[last] - h[last - 1];
+      }
+      case 'stochKDelta': {
+        const k = stochVals.k;
+        if (isNaN(k[last]) || isNaN(k[last-1])) return null;
+        return k[last] - k[last - 1];
+      }
+      case 'closeDelta': {
+        if (last < 1) return null;
+        return closes[last] - closes[last - 1];
+      }
+
+      default: return null;
+    }
+  }
+
+  // Evaluate a single operator
+  function applyOperator(
+    fieldValue: number | string | null,
+    operator: string,
+    threshold: number | string,
+    field: string,
+    candleRef: string
+  ): boolean {
+    if (fieldValue === null || fieldValue === undefined) return false;
+    if (typeof fieldValue === 'string') {
+      // String fields only support == and !=
+      if (operator === '==') return fieldValue === threshold;
+      if (operator === '!=') return fieldValue !== threshold;
+      return false;
+    }
+    const v = fieldValue as number;
+    const t = threshold as number;
+    if (isNaN(v)) return false;
+
+    switch (operator) {
+      case '<':   return v < t;
+      case '>':   return v > t;
+      case '<=':  return v <= t;
+      case '>=':  return v >= t;
+      case '==':  return v === t;
+      case '!=':  return v !== t;
+      case 'CROSS_UP': {
+        // current[field] > threshold AND prev[field] <= threshold
+        const cur  = getFieldValue(field, 'current') as number;
+        const prev = getFieldValue(field, 'prev')    as number;
+        if (cur === null || prev === null) return false;
+        return cur > t && prev <= t;
+      }
+      case 'CROSS_DOWN': {
+        const cur  = getFieldValue(field, 'current') as number;
+        const prev = getFieldValue(field, 'prev')    as number;
+        if (cur === null || prev === null) return false;
+        return cur < t && prev >= t;
+      }
+      default: return false;
+    }
+  }
+
+  let totalScore = 0;
+  let matchedCount = 0;
+  const reasons: string[] = [];
+
+  for (const cond of conditions) {
+    const fieldVal = getFieldValue(cond.field, cond.candle || 'current');
+    const passed   = applyOperator(fieldVal, cond.operator, cond.value, cond.field, cond.candle);
+
+    if (passed) {
+      totalScore  += cond.weight ?? 1.0;
+      matchedCount++;
+      reasons.push(`${cond.field}=${typeof fieldVal === 'number' ? fieldVal.toFixed(3) : fieldVal} ${cond.operator} ${cond.value} ✓`);
+    } else {
+      reasons.push(`${cond.field}=${typeof fieldVal === 'number' ? fieldVal.toFixed(3) : fieldVal} ${cond.operator} ${cond.value} ✗`);
+    }
+  }
+
+  return { score: totalScore, matched: matchedCount, reasons };
+}
+
 export function evaluateShard(
-  shard: string[],
+  shard: any[],
   ohlc: NumericOHLC[],
   shardOffset: number,
   cache: IndicatorCache
@@ -65,8 +242,66 @@ export function evaluateShard(
     let vote: VoteResult = 'NEUTRAL';
     let score = 0;
     let reason = 'no_match';
+    let bullPoints = 0;
+    let bearPoints = 0;
 
-    if (typeof techItem === 'object' && techItem.code) {
+    if (typeof techItem === 'object' && techItem.callConditions) {
+      // Evaluate CALL side
+      const callResult = evaluateConditions(
+        techItem.callConditions || [], ohlc, closes, last,
+        getRSI, getStoch, getMACD, getATR, getBollinger
+      );
+      
+      // Evaluate PUT side
+      const putResult = evaluateConditions(
+        techItem.putConditions || [], ohlc, closes, last,
+        getRSI, getStoch, getMACD, getATR, getBollinger
+      );
+
+      const scoring = techItem.scoring || { minConditionsForSignal: 0, fullSignalThreshold: 0, halfSignalThreshold: 0, maxScore: 0 };
+
+      // Determine CALL signal level
+      let callVote: VoteResult = 'NEUTRAL';
+      let callScore = 0;
+      if (callResult.matched >= scoring.minConditionsForSignal &&
+          callResult.score  >= scoring.fullSignalThreshold) {
+        callVote  = 'BULL';
+        callScore = callResult.score;
+      } else if (callResult.score >= scoring.halfSignalThreshold) {
+        callVote  = 'BULL';
+        callScore = callResult.score * 0.5;
+      }
+
+      // Determine PUT signal level
+      let putVote: VoteResult = 'NEUTRAL';
+      let putScore = 0;
+      if (putResult.matched >= scoring.minConditionsForSignal &&
+          putResult.score   >= scoring.fullSignalThreshold) {
+        putVote  = 'BEAR';
+        putScore = putResult.score;
+      } else if (putResult.score >= scoring.halfSignalThreshold) {
+        putVote  = 'BEAR';
+        putScore = putResult.score * 0.5;
+      }
+
+      // Winning direction
+      if (callScore > putScore) {
+        vote   = 'BULL';
+        score  = callScore;
+        reason = `CALL: ${callResult.reasons.filter(r => r.includes('✓')).join(' | ')}`;
+      } else if (putScore > callScore) {
+        vote   = 'BEAR';
+        score  = putScore;
+        reason = `PUT: ${putResult.reasons.filter(r => r.includes('✓')).join(' | ')}`;
+      } else {
+        vote   = 'NEUTRAL';
+        score  = 0;
+        reason = `CALL=${callResult.score.toFixed(2)} PUT=${putResult.score.toFixed(2)} — tied`;
+      }
+
+      bullPoints = vote === 'BULL' ? score : 0;
+      bearPoints = vote === 'BEAR' ? score : 0;
+    } else if (typeof techItem === 'object' && techItem.code) {
       try {
         const func = new Function('ohlc', 'closes', 'last', 'getRSI', 'getStoch', 'getMACD', 'getEmaSlope', 'getEmaCurvature', 'getATR', 'getBollinger', techItem.code);
         const res = func(ohlc, closes, last, getRSI, getStoch, getMACD, getEmaSlope, getEmaCurvature, getATR, getBollinger);
@@ -75,12 +310,28 @@ export function evaluateShard(
            vote = res.vote || 'NEUTRAL';
            score = res.score || 0;
            reason = res.reason || 'Executed user technique';
+           bullPoints = res.bullPoints ?? (vote === 'BULL' ? score : 0);
+           bearPoints = res.bearPoints ?? (vote === 'BEAR' ? score : 0);
         }
       } catch (err: any) {
         reason = `Code Exec Error: ${err.message}`;
       }
     } else {
-      reason = 'No execution code provided in the user technique file.';
+      const libFn = TECHNIQUE_LIBRARY[key];
+      if (libFn) {
+        const res = libFn(ohlc, cache);
+        vote = res.vote;
+        score = res.score;
+        reason = res.reason;
+        bullPoints = res.bullPoints;
+        bearPoints = res.bearPoints;
+      } else {
+        vote = 'NEUTRAL';
+        score = 0;
+        reason = typeof techItem === 'object' 
+          ? 'Technique has no executable conditions or code field.' 
+          : `unknown technique "${rawName}"`;
+      }
     }
 
     votes.push({
@@ -88,7 +339,9 @@ export function evaluateShard(
       name: rawName,
       vote,
       score,
-      reason
+      reason,
+      bullPoints,
+      bearPoints
     });
   }
 
@@ -137,11 +390,6 @@ export async function evaluateAllShards(
 
     const totalEvaluated = bullVotes + bearVotes + neutralVotes;
     const runningConfidence = (bullVotes - bearVotes) / Math.max(1, totalEvaluated);
-
-    if (Math.abs(runningConfidence) >= 0.75 && totalEvaluated >= 10) {
-      earlyExit = true;
-      break;
-    }
   }
 
   return {

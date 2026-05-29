@@ -2,8 +2,9 @@ import { useState } from 'react';
 import { View, Text, Pressable, ActivityIndicator } from 'react-native';
 import tw from 'twrnc';
 import { motion } from 'motion/react';
-import { Brain, CheckCircle, AlertTriangle, XCircle, Terminal, Check, Zap, Sparkles, ChevronDown, ChevronUp } from 'lucide-react';
+import { Brain, CheckCircle, AlertTriangle, XCircle, Terminal, Check, Zap, Sparkles, ChevronDown, ChevronUp, Activity } from 'lucide-react';
 import { LossAutopsyModal } from '../LossAutopsyModal';
+import { antiImagine } from '../../utils/antiImagine';
 
 interface Props {
   analysis: any;
@@ -43,6 +44,16 @@ export function LiveAnalysisResult({
 
   if (!analysis) return null;
 
+  const judgeObj = analysis.judge || {};
+  const decisionValue = judgeObj.decision || 'NO_TRADE';
+  const formattedReportValue = judgeObj.formattedReport || '';
+  const rulingValue = judgeObj.ruling || 'Deliberation active';
+  const winnerValue = judgeObj.winner || 'NONE';
+  const casesObj = judgeObj.cases || null;
+  const j1ScoreValue = judgeObj.j1Score !== undefined ? judgeObj.j1Score : 0;
+  const j2ScoreValue = judgeObj.j2Score !== undefined ? judgeObj.j2Score : 0;
+  const j3ScoreValue = judgeObj.j3Score !== undefined ? judgeObj.j3Score : 0;
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -67,13 +78,13 @@ export function LiveAnalysisResult({
         </div>
         <motion.div
           whileHover={{ scale: 1.05 }}
-          className={`px-3 py-1 rounded-full flex flex-row items-center ${analysis.judge.decision === 'STRONG SIGNAL' ? 'bg-green-500/10' : (analysis.judge.decision === 'MODERATE' ? 'bg-yellow-500/10' : 'bg-red-500/10')}`}
+          className={`px-3 py-1 rounded-full flex flex-row items-center ${decisionValue === 'STRONG SIGNAL' ? 'bg-green-500/10' : (decisionValue === 'MODERATE' ? 'bg-yellow-500/10' : 'bg-red-500/10')}`}
         >
-          {analysis.judge.decision === 'STRONG SIGNAL' ? <CheckCircle size={14} color="#22C55E" /> : (analysis.judge.decision === 'MODERATE' ? <AlertTriangle size={14} color="#EAB308" /> : <XCircle size={14} color="#EF4444" />)}
+          {decisionValue === 'STRONG SIGNAL' ? <CheckCircle size={14} color="#22C55E" /> : (decisionValue === 'MODERATE' ? <AlertTriangle size={14} color="#EAB308" /> : <XCircle size={14} color="#EF4444" />)}
           <Text style={[
             tw`ml-1 text-[10px] font-black`,
-            analysis.judge.decision === 'STRONG SIGNAL' ? tw`text-green-500` : (analysis.judge.decision === 'MODERATE' ? tw`text-yellow-500` : tw`text-red-500`)
-          ]}>{analysis.judge.decision}</Text>
+            decisionValue === 'STRONG SIGNAL' ? tw`text-green-500` : (decisionValue === 'MODERATE' ? tw`text-yellow-500` : tw`text-red-500`)
+          ]}>{decisionValue}</Text>
         </motion.div>
       </div>
 
@@ -85,15 +96,15 @@ export function LiveAnalysisResult({
         className="bg-black bg-opacity-20 rounded-2xl p-4 border border-[#D9B382] border-opacity-20  mb-6 group hover:border-[#D9B382] border-opacity-20  transition-colors"
       >
          <div className="absolute top-2 right-2 opacity-20"><Terminal size={12} color="#D9B382" /></div>
-         <Text style={tw`text-[#D9B382] font-mono text-xs mb-2`}>{analysis.judge.formattedReport}</Text>
+         <Text style={tw`text-[#D9B382] font-mono text-xs mb-2`}>{formattedReportValue}</Text>
       </motion.div>
 
       {/* Dynamic Comparison Scorecards - Tactical Readouts */}
-      {analysis.judge.cases ? (
+      {casesObj ? (
         <div className="flex flex-row flex-wrap gap-3 mb-6">
           {['bull', 'bear'].map((side, idx) => {
-            const data = analysis.judge.cases[side];
-            const isWinner = side.toUpperCase() === analysis.judge.winner.toUpperCase();
+            const data = casesObj[side] || { j1: 0, j2: 0, j3: 0, total: 0 };
+            const isWinner = winnerValue && typeof winnerValue === 'string' && side.toUpperCase() === winnerValue.toUpperCase();
             const sideColor = side === 'bull' ? '#22C55E' : '#EF4444';
 
             return (
@@ -159,9 +170,9 @@ export function LiveAnalysisResult({
               <Text style={tw`text-[#D9B382] text-[10px] font-black uppercase tracking-widest`}>Judge Deliberations</Text>
           </View>
           {[
-            { name: 'Judge 1 (Reasoning)', color: '#D9B382', text: `Score: ${analysis.judge.j1Score}/5. Analysis based on agent arguments and structural priors.` },
-            { name: 'Judge 2 (Vehicle)', color: '#D9B382', text: `Score: ${analysis.judge.j2Score}/5. Analysis of trend momentum and bullish/bearish vehicles.` },
-            { name: 'Judge 3 (Z-Score)', color: '#D9B382', text: `Score: ${analysis.judge.j3Score}/5. Statistical significance of recent candle movements.` }
+            { name: 'Judge 1 (Reasoning)', color: '#D9B382', text: `Score: ${j1ScoreValue}/5. Analysis based on agent arguments and structural priors.` },
+            { name: 'Judge 2 (Vehicle)', color: '#D9B382', text: `Score: ${j2ScoreValue}/5. Analysis of trend momentum and bullish/bearish vehicles.` },
+            { name: 'Judge 3 (Z-Score)', color: '#D9B382', text: `Score: ${j3ScoreValue}/5. Statistical significance of recent candle movements.` }
           ].map((j, i) => (
             <View key={i} style={tw`mb-4 last:mb-0`}>
                 <Text style={[tw`text-[9px] font-black uppercase mb-1`, { color: j.color }]}>{j.name}</Text>
@@ -178,7 +189,7 @@ export function LiveAnalysisResult({
         className="mb-8"
       >
          <Text style={tw`text-[10px] font-black text-[#8B95B0] uppercase tracking-widest mb-2`}>Arbitrator Ruling</Text>
-         <Text style={tw`text-white text-sm leading-5 font-medium`}>{analysis.judge.ruling}</Text>
+         <Text style={tw`text-white text-sm leading-5 font-medium`}>{rulingValue}</Text>
       </motion.div>
 
       {analysis.judge.tradeDetails?.latencyAdjustedForecast && (
@@ -663,6 +674,18 @@ export function LiveAnalysisResult({
             </View>
           )}
         </View>
+      )}
+
+      {antiImagine.hasLogs() && (
+        <Pressable
+          onPress={() => antiImagine.download()}
+          style={({ pressed }) => [tw`mt-6 bg-[#D9B382]/10 border border-[#D9B382]/30 h-14 rounded-2xl items-center justify-center flex-row shadow-2xl`, { opacity: pressed ? 0.7 : 1 }]}
+        >
+          <motion.div whileHover={buttonHoverProps} whileTap={buttonTapProps} transition={springProps} style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+            <Activity size={20} color="#D9B382" style={tw`mr-3`} />
+            <Text style={tw`text-[#D9B382] font-black uppercase tracking-[2px] text-sm`}>Download Anti-Imagine System Logs</Text>
+          </motion.div>
+        </Pressable>
       )}
 
       <Pressable

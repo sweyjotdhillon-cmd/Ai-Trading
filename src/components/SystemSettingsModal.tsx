@@ -7,7 +7,7 @@ import {
   ScrollView
 } from 'react-native';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, ShieldAlert, CheckCircle, Copy, Share2, Activity } from 'lucide-react';
+import { X, ShieldAlert, CheckCircle, Copy, Share2, Activity, Trash2 } from 'lucide-react';
 import tw from 'twrnc';
 
 interface Props {
@@ -18,6 +18,20 @@ interface Props {
 export function SystemSettingsModal({ show, onClose }: Props) {
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saved'>('idle');
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copied'>('idle');
+  const [clearStatsStatus, setClearStatsStatus] = useState<'idle' | 'cleared'>('idle');
+
+  const handleClearTradeStats = () => {
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem('stats_surface_data');
+        window.dispatchEvent(new Event('determinist:clearstats'));
+        setClearStatsStatus('cleared');
+        setTimeout(() => setClearStatsStatus('idle'), 2000);
+      } catch (err) {
+        console.warn("Could not clear trade stats", err);
+      }
+    }
+  };
 
   const handleSave = () => {
     if (typeof window !== 'undefined') {
@@ -147,6 +161,34 @@ export function SystemSettingsModal({ show, onClose }: Props) {
                       ]}
                    >
                       <Text style={tw`text-[#1A1308] font-bold uppercase tracking-wider`}>Recalibrate</Text>
+                   </Pressable>
+                </View>
+
+                {/* Clear Trade Statistics */}
+                <View style={tw`bg-gray-800 bg-opacity-50 p-4 rounded-xl border border-white border-opacity-10 mb-6`}>
+                   <View style={tw`flex-row items-center justify-between mb-2`}>
+                     <View style={tw`flex-row items-center flex-1`}>
+                       <Trash2 size={20} color="#EF4444" />
+                       <Text style={tw`text-white font-bold ml-2 text-base`}>Clear Local Statistics</Text>
+                     </View>
+                   </View>
+                   <Text style={tw`text-gray-400 text-sm mb-4 leading-5`}>
+                     Permanently delete compiled batch runs and live trade statistics stored on your local device.
+                   </Text>
+                   <Pressable
+                      onPress={handleClearTradeStats}
+                      style={({ pressed }) => [
+                        tw`flex-row items-center justify-center h-12 rounded-lg border border-red-500/30`,
+                        clearStatsStatus === 'cleared' ? tw`bg-green-500/20` : tw`bg-red-500/10`,
+                        { opacity: pressed ? 0.7 : 1 }
+                      ]}
+                   >
+                      <Text style={[
+                        tw`font-bold uppercase tracking-wider text-xs`,
+                        clearStatsStatus === 'cleared' ? tw`text-green-400` : tw`text-red-400`
+                      ]}>
+                        {clearStatsStatus === 'cleared' ? 'Statistics Cleared ✓' : 'Clear Trade Stats'}
+                      </Text>
                    </Pressable>
                 </View>
 

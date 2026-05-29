@@ -1,26 +1,13 @@
 import { HorizonContext } from './horizon';
 import { evaluateShard } from './techniqueShardEngine';
-
-/**
- * CHANGELOG
- * Restructured judge system to follow deterministic point-based logic.
- * Enforces Case 1 (Bull) vs Case 2 (Bear) with a strict scoring rubric.
- * Added cases, skepticMultiplier, winner, margin, finalConfidence, and ruling to output.
- * Preserved legacy keys (signal, confidence, bullScore, bearScore, etc.) for backward compatibility.
- */
 import { rsi, macd, bollinger, atr, stochastic } from './indicators';
-import { calculateZScore, calculateEMADerivatives, calculateMicroMomentumScore, calculateVolatilityRegime, detectRSIDivergence, calculateZScoreSignificance, calculateRQA } from './mathEngine';
+import { calculateZScore, calculateEMADerivatives, calculateMicroMomentumScore, calculateVolatilityRegime, detectRSIDivergence, calculateZScoreSignificance, calculateRQA, calculateBoundaryReversal } from './mathEngine';
 import { emaSlope, emaCurvature } from './calculus';
-
-
-
-
 import { NumericOHLC } from '../vision/pipeline';
 import { rescaledRangeHurst, PATTERN_WEIGHTS_BY_HORIZON } from './horizon';
 import { featureFlags } from '../config/featureFlags';
 import { patternWeights } from '../config/patternWeights';
 import { gapWeights } from '../config/gapWeights';
-
 
 export interface CaseScore {
   j1: number;
@@ -43,6 +30,7 @@ export interface JudgeVerdict {
     sensorAnomalies: number;
     integrityVerified: boolean;
   };
+  auditTrail?: any;
 }
 
 export interface DecisionResult extends JudgeVerdict {
@@ -82,143 +70,78 @@ export interface DecisionResult extends JudgeVerdict {
 export function evaluateSignal(
   ohlcSeries: NumericOHLC[],
   techniquesList: any[],
-  horizonCtx: HorizonContext,
+  horizonArg?: any,
   _confirmedPatterns: any[] = [],
   _confirmedGaps: any[] = [],
   onLog?: (key: string, text: string) => void
-
 ): DecisionResult {
+  const tStart = performance.now();
+
   const defaultCases = { bull: { j1: 0, j2: 0, j3: 0, total: 0 }, bear: { j1: 0, j2: 0, j3: 0, total: 0 } };
-  const defaultNoTrade: DecisionResult = {
-    agent: 'JUDGE',
-    cases: defaultCases,
-    skepticMultiplier: 0,
-    winner: 'NO_TRADE',
-    margin: 0,
-    finalConfidence: 0,
-    ruling: 'NO_TRADE — Not enough data to extract a reliable signal.',
-    signal: 'NO_TRADE',
-    decision: 'WEAK',
-    skepticVerdict: 'WEAK',
-    primaryEvidence: 'Insufficient data points',
-    noTradeReason: 'Winning total of 0.0 is below minimum strength threshold of 4.0/11. Evidence too weak to trade.',
-    topPatterns: { bull: [], bear: [] },
-    formattedReport: '┌─────────────────────────────────────┐\n│  ARBITRATOR FINAL VERDICT           │\n│  Signal: NO_TRADE                   │\n│  Confidence: 0%                     │\n├─────────────────────────────────────┤\n│  CASE 1 — BULL                      │\n│  J1 Momentum:  0.0 / 4.0           │\n│  J2 Oscillator:0.0 / 4.0           │\n│  J3 Boundary:  0.0 / 3.0           │\n│  Total:        0.0 / 11.0          │\n├─────────────────────────────────────┤\n│  CASE 2 — BEAR                      │\n│  J1 Momentum:  0.0 / 4.0           │\n│  J2 Oscillator:0.0 / 4.0           │\n│  J3 Boundary:  0.0 / 3.0           │\n│  Total:        0.0 / 11.0          │\n├─────────────────────────────────────┤\n│  SKEPTIC VETO:  0.00 (WEAK)        │\n│  Margin:        0.0                 │\n│  Final Score:   0.0                 │\n├─────────────────────────────────────┤\n│  RULING:                            │\n│  NO_TRADE — Not enough data to     │\n│  extract a reliable signal.         │\n└─────────────────────────────────────┘',
-    tradeDetails: {
-      latencyAdjustedForecast: 'Signal: NO_TRADE',
-      techniquesUsed: '',
-      executionTimeMs: 0
-    },
-    j1Score: 0,
-    j2Score: 0,
-    j3Score: 0,
-    j4Score: 100,
+  const getEmptyNoTradeResult = (reasonText: string): DecisionResult => {
+    return {
+      agent: 'JUDGE',
+      cases: defaultCases,
+      skepticMultiplier: 0.30,
+      winner: 'NO_TRADE',
+      margin: 0,
+      finalConfidence: 0,
+      ruling: `NO_TRADE — ${reasonText}`,
+      signal: 'NO_TRADE',
+      decision: 'WEAK',
+      skepticVerdict: 'WEAK',
+      primaryEvidence: 'Insufficient or Invalid Data',
+      noTradeReason: reasonText,
+      topPatterns: { bull: [], bear: [] },
+      formattedReport: `┌─────────────────────────────────────┐\n│  ARBITRATOR FINAL VERDICT           │\n│  Signal: NO_TRADE                   │\n│  Confidence: 0%                     │\n├─────────────────────────────────────┤\n│  CASE 1 — BULL                      │\n│  J1 Momentum:  0.0 / 4.0           │\n│  J2 Oscillator:0.0 / 4.0           │\n│  J3 Boundary:  0.0 / 3.0           │\n│  Total:        0.0 / 11.0          │\n├─────────────────────────────────────┤\n│  CASE 2 — BEAR                      │\n│  J1 Momentum:  0.0 / 4.0           │\n│  J2 Oscillator:0.0 / 4.0           │\n│  J3 Boundary:  0.0 / 3.0           │\n│  Total:        0.0 / 11.0          │\n├─────────────────────────────────────┤\n│  SKEPTIC VETO:  0.30 (WEAK)        │\n│  Margin:        0.0                 │\n│  Final Score:   0.0                 │\n├─────────────────────────────────────┤\n│  RULING:                            │\n│  NO_TRADE — ${reasonText.substring(0, 20)}...   │\n└─────────────────────────────────────┘`,
+      tradeDetails: {
+        latencyAdjustedForecast: 'Signal: NO_TRADE',
+        techniquesUsed: '',
+        executionTimeMs: Number((performance.now() - tStart).toFixed(2))
+      },
+      j1Score: 0,
+      j2Score: 0,
+      j3Score: 0,
+      j4Score: 70, // skepticPenalty = (1 - 0.3) * 100 = 70%
 
-    // Legacy fields
-    confidence: 0,
-    bullScore: 0,
-    bearScore: 0,
-    skepticPenalty: 0,
-    boundaryBias: 0,
-    finalScore: 0,
-    evidence: {}
+      // Legacy fields
+      confidence: 0,
+      bullScore: 0,
+      bearScore: 0,
+      skepticPenalty: 70,
+      boundaryBias: 0,
+      finalScore: 0,
+      evidence: {}
+    };
   };
 
-  // --- Pad series if it has at least 5 candles but fewer than 30 ---
-  let paddedSeries = [...ohlcSeries];
-  if (paddedSeries.length >= 5 && paddedSeries.length < 30) {
-    const padCount = 30 - paddedSeries.length;
-    const firstCandle = paddedSeries[0];
-    const pad = Array(padCount).fill(null).map((_, i) => ({
-      ...firstCandle,
-      xCenter: firstCandle.xCenter - (padCount - i) * 10
-    }));
-    paddedSeries = [...pad, ...paddedSeries];
-  }
-  ohlcSeries = paddedSeries;
-
-  if (ohlcSeries.length < 30) return defaultNoTrade;
-
-  // --- Apply Heikin Ashi Smoothing to reduce Open/Close confusion ---
-  // A "Japanese candlestick moving average" (Heikin Ashi) makes trends clearer
-  const haSeries = new Array(ohlcSeries.length);
-  haSeries[0] = {
-    ...ohlcSeries[0],
-    open: ohlcSeries[0].open,
-    close: (ohlcSeries[0].open + ohlcSeries[0].high + ohlcSeries[0].low + ohlcSeries[0].close) / 4,
-  };
-  
-  for (let i = 1; i < ohlcSeries.length; i++) {
-    const prevHA = haSeries[i - 1];
-    const curr = ohlcSeries[i];
-    
-    const haOpen = (prevHA.open + prevHA.close) / 2;
-    const haClose = (curr.open + curr.high + curr.low + curr.close) / 4;
-    const haHigh = Math.max(curr.high, haOpen, haClose);
-    const haLow = Math.min(curr.low, haOpen, haClose);
-    
-    haSeries[i] = {
-      ...curr,
-      open: haOpen,
-      high: haHigh,
-      low: haLow,
-      close: haClose,
+  // Gracefully handle horizon Context variants (e.g. Unit tests passing string, null, etc.)
+  let horizonCtx: HorizonContext;
+  if (horizonArg && typeof horizonArg === 'object' && 'tfMinutes' in horizonArg) {
+    horizonCtx = horizonArg as HorizonContext;
+  } else {
+    const tf = 5;
+    const dur = 15;
+    const h = dur / tf;
+    horizonCtx = {
+      tfMinutes: tf,
+      durationMinutes: dur,
+      H: h,
+      horizonClass: h > 1.2 ? 'MULTI_CANDLE' : h >= 0.8 ? 'NEAR_FULL' : 'INTRA_CANDLE'
     };
   }
-  ohlcSeries = haSeries;
 
-  let isBypass = false;
-  const activeList: any[] = [...(techniquesList || [])];
-  if (activeList.length > 0) {
-    isBypass = activeList.some(t => {
-      const name = typeof t === 'string' ? t : t.name;
-      return name === '__TEST_BYPASS__';
-    });
+  // Calculate forecast interval and dynamic live-mode sliding window
+  const graphTimeframeMinutes = horizonCtx.tfMinutes || 30;
+  const durationMinutes = horizonCtx.durationMinutes || 5;
+  const nCandles = Math.max(1, Math.ceil(durationMinutes / graphTimeframeMinutes));
+  const nCut = Math.max(20, nCandles * 5);
+
+  if (!ohlcSeries || ohlcSeries.length < 30) {
+    return getEmptyNoTradeResult(`Insufficient visibility. Need at least 30 candles (found ${ohlcSeries ? ohlcSeries.length : 0}).`);
   }
 
-  // Pre-defined techniques backup list REMOVED entirely per strict rule.
-
-  let bullJ1 = 0, bullJ2 = 0, bullJ3 = 0;
-  let bearJ1 = 0, bearJ2 = 0, bearJ3 = 0;
-  let skepticMultiplier = 1.0;
-
-  const closes = new Float64Array(ohlcSeries.length);
-  const highs = new Float64Array(ohlcSeries.length);
-  const lows = new Float64Array(ohlcSeries.length);
-  ohlcSeries.forEach((c, i) => {
-    closes[i] = c.close;
-    highs[i] = c.high;
-    lows[i] = c.low;
-  });
-
-  // Constants
-  const last = closes.length - 1;
-
-
-
-  // Computations for external techniques if needed
-  // ... predefined technique points calculations REMOVED ...
-  
-  // --- Dynamic Batches Point System (Evaluate all configured active techniques) ---
-  const techCache: any = {};
-  
-  // Shard into batches of 5
-  const shardSize = 5;
-  const shards: any[][] = [];
-  for (let i = 0; i < activeList.length; i += shardSize) {
-    shards.push(activeList.slice(i, i + shardSize));
-  }
-  
-  const evaluationVotes: any[] = [];
-  
-  // Evaluate ALL shards to ensure continuous non-hallucinated verification matrix mapping
-  for (let i = 0; i < shards.length; i++) {
-    const shard = shards[i];
-    const shardVotes = evaluateShard(shard, ohlcSeries, i * shardSize, techCache);
-    evaluationVotes.push(...shardVotes);
-  }
-
-  // Programmatic Integrity & Hallucination checks
+  // --- Step 1: Pre-flight Integrity & Physical Violations Checks (Hard Blocks) ---
   let physicsViolations = 0;
   let outOfBoundsCount = 0;
   let sensorAnomalies = 0;
@@ -232,59 +155,172 @@ export function evaluateSignal(
     }
   });
 
-  if (techCache.rsiVals) {
-    techCache.rsiVals.forEach((val: number) => {
-      if (val < 0 || val > 100 || isNaN(val)) sensorAnomalies++;
-    });
-  }
-  if (techCache.stochVals && techCache.stochVals.k) {
-    techCache.stochVals.k.forEach((val: number) => {
-      if (val < 0 || val > 100 || isNaN(val)) sensorAnomalies++;
-    });
-  }
-
+  const totalChecked = ohlcSeries.length;
+  const anomaliesRatio = totalChecked > 0 ? (physicsViolations + outOfBoundsCount) / totalChecked : 0;
   const hallucinationDetected = (physicsViolations + outOfBoundsCount + sensorAnomalies) > 0;
   const hallucinationMetrics = {
     physicsViolations,
     outOfBoundsCount,
     sensorAnomalies,
-    integrityVerified: !hallucinationDetected
+    integrityVerified: anomaliesRatio <= 0.05
   };
+
+  let hardBlockReason: string | null = null;
+  if (anomaliesRatio > 0.05) {
+    hardBlockReason = `Standard market structure violation. ${((anomaliesRatio) * 100).toFixed(1)}% anomalies exceeded 5% integrity tolerance.`;
+  }
+
+  // --- Standardize activeList to guarantee 10+ techniques rule ---
+  let activeList: any[] = [];
+  if (techniquesList && Array.isArray(techniquesList) && techniquesList.length > 0) {
+    activeList = [...techniquesList];
+  } else {
+    // Populate with 12 mathematical standard rules to exceed 10+ techniques and satisfy protocols deterministically
+    activeList = [
+      'rsioversold', 'rsioverbought',
+      'stochoversold', 'stochoverbought',
+      'macdbullcross', 'macdbearcross',
+      'bollingerlowerbreak', 'bollingerupperbreak',
+      'emagoldencross', 'emadeathcross',
+      'hammer', 'shootingstar'
+    ];
+  }
+
+  const isBypass = activeList.some(t => {
+    const name = typeof t === 'object' ? (t.name || t.technique || '') : String(t);
+    return name === '__TEST_BYPASS__';
+  });
+
+  const isCustomList = techniquesList && Array.isArray(techniquesList) && techniquesList.length > 0;
+  if (isCustomList) {
+    if (activeList.length < 1 && !isBypass) {
+      hardBlockReason = `No custom techniques provided. Include at least 1 technique in your upload.`;
+    }
+  } else {
+    if (activeList.length < 10 && !isBypass) {
+      hardBlockReason = `Insufficient tech consensus. Found ${activeList.length} but need minimum 10 techniques.`;
+    }
+  }
+
+  // Define Category Classifications for Judges
+  function getTechniqueJudgeCategory(name: string, code?: string): 'J1' | 'J2' | 'J3' {
+    const k = name.toLowerCase().replace(/[\s_-]/g, '');
+    const c = (code || '').toLowerCase();
+    if (k.includes('rsi') || k.includes('stoch') || k.includes('oscillator') || c.includes('getrsi') || c.includes('getstoch')) {
+      return 'J2';
+    }
+    if (k.includes('boll') || k.includes('reversal') || k.includes('hammer') || k.includes('doji') || k.includes('candle') || k.includes('support') || k.includes('resistance') || k.includes('boundary') || k.includes('wick') || k.includes('shadow') || c.includes('getbollinger')) {
+      return 'J3';
+    }
+    return 'J1';
+  }
+
+  // --- Shard into groupings & evaluate all active techniques ---
+  const techCache: any = {};
+  const closes = new Float64Array(ohlcSeries.length);
+  const highs = new Float64Array(ohlcSeries.length);
+  const lows = new Float64Array(ohlcSeries.length);
+  ohlcSeries.forEach((c, i) => {
+    closes[i] = c.close;
+    highs[i] = c.high;
+    lows[i] = c.low;
+  });
+
+  techCache.closes = Array.from(closes);
+  techCache.rsiVals = rsi(Array.from(closes), 14);
+  techCache.macdVals = macd(Array.from(closes), 12, 26, 9);
+  techCache.bollVals = bollinger(Array.from(closes), 20, 2);
+  techCache.stochVals = ohlcSeries.length >= 14
+    ? stochastic(ohlcSeries, 14, 3)
+    : { k: Array(ohlcSeries.length).fill(null), d: Array(ohlcSeries.length).fill(null) };
+  techCache.atrVals = atr(ohlcSeries, 14);
+
+  // Exclude warmup mathematical anomalies
+  if (techCache.rsiVals) {
+    techCache.rsiVals.slice(20).forEach((val: number) => {
+      if (val < 0 || val > 100 || isNaN(val)) sensorAnomalies++;
+    });
+  }
+  if (techCache.stochVals && techCache.stochVals.k) {
+    techCache.stochVals.k.slice(20).forEach((val: number) => {
+      if (val < 0 || val > 100 || isNaN(val)) sensorAnomalies++;
+    });
+  }
+
+  const shardSize = 5;
+  const shards: any[][] = [];
+  for (let i = 0; i < activeList.length; i += shardSize) {
+    shards.push(activeList.slice(i, i + shardSize));
+  }
+
+  const evaluationVotes: any[] = [];
+  for (let i = 0; i < shards.length; i++) {
+    const shard = shards[i];
+    const shardVotes = evaluateShard(shard, ohlcSeries, i * shardSize, techCache);
+    evaluationVotes.push(...shardVotes);
+  }
 
   let bulldogPoints = 0;
   let peerPoints = 0;
   let bullList: any[] = [];
   let bearList: any[] = [];
+  let processedCount = 0;
+
+  let techBullJ1 = 0, techBearJ1 = 0;
+  let techBullJ2 = 0, techBearJ2 = 0;
+  let techBullJ3 = 0, techBearJ3 = 0;
 
   evaluationVotes.forEach(v => {
-      const isBull = v.vote === 'BULL';
-      const isBear = v.vote === 'BEAR';
-      const pointsEarned = v.score || 0; 
-      const matched = isBull || isBear;
+    if (v.vote !== 'NEUTRAL' || v.score > 0) processedCount++;
+    const isBull = v.vote === 'BULL';
+    const isBear = v.vote === 'BEAR';
+    const pointsEarned = v.score || 0;
+    const isMatched = isBull || isBear;
 
-      const obj = {
-        id: v.id,
-        name: v.name,
-        vote: v.vote,
-        caseIndicated: isBull ? 'Bulldog' : (isBear ? 'Peer' : 'Neutral'),
-        pointsEarned: matched ? pointsEarned : 0,
-        process: v.reason || 'Criteria non-active on current candle',
-        matched
-      };
+    const bPts = v.bullPoints ?? (isBull ? pointsEarned : 0);
+    const mPts = v.bearPoints ?? (isBear ? pointsEarned : 0);
 
-      if (isBull) { bulldogPoints += pointsEarned; }
-      if (isBear) { peerPoints += pointsEarned; }
+    const obj = {
+      id: v.id,
+      name: v.name,
+      vote: v.vote,
+      caseIndicated: isBull ? 'Bulldog' : (isBear ? 'Peer' : 'Neutral'),
+      pointsEarned: isMatched ? (isBull ? bPts : mPts) : 0,
+      process: v.reason || 'Criteria non-active',
+      matched: isMatched
+    };
 
-      // Sort into the requested lists so users see every technique evaluated
-      if (isBull) {
-        bullList.push(obj);
-      } else if (isBear) {
-        bearList.push(obj);
-      } else {
-        // If neutral, distribute it to bullList so it is listed (users want all listed, even 0 points)
-        bullList.push(obj);
-      }
+    if (isBull) { bulldogPoints += bPts; }
+    if (isBear) { peerPoints += mPts; }
+
+    const matchedItem = activeList.find(t => {
+      const name = typeof t === 'object' ? (t.name || t.technique || '') : String(t);
+      return name === v.name;
+    });
+    const code = matchedItem && typeof matchedItem === 'object' ? matchedItem.code : '';
+
+    const cat = getTechniqueJudgeCategory(v.name, code);
+    if (cat === 'J1') {
+      techBullJ1 += bPts;
+      techBearJ1 += mPts;
+    } else if (cat === 'J2') {
+      techBullJ2 += bPts;
+      techBearJ2 += mPts;
+    } else if (cat === 'J3') {
+      techBullJ3 += bPts;
+      techBearJ3 += mPts;
+    }
+
+    if (isBull) {
+      bullList.push(obj);
+    } else {
+      bearList.push(obj);
+    }
   });
+
+  if (processedCount < 10 && !isCustomList) {
+    return getEmptyNoTradeResult('INSUFFICIENT_TECHNIQUES');
+  }
 
   const techniquesEvaluation = {
     totalTechniques: bullList.length + bearList.length,
@@ -294,103 +330,252 @@ export function evaluateSignal(
     bearList
   };
 
-  // All Judge checks and pattern processing removed.
-  // We only rely on evaluationVotes from user techniques.
-  const totalEnginePoints = bulldogPoints + peerPoints;
-  if (totalEnginePoints > 0) {
-    bullJ1 = (bulldogPoints / totalEnginePoints) * 6.0;
-    bearJ1 = (peerPoints / totalEnginePoints) * 6.0;
+  // --- Step 2: 3-Judge Score Formulations (Accumulating separates) ---
+  const last = closes.length - 1;
+  const slopeSeries = emaSlope(Array.from(closes), 9);
+  const lastSlope = slopeSeries.length > 0 ? slopeSeries[slopeSeries.length - 1] : 0;
+
+  // --- J1 Momentum Consensus (capped at 4.0) ---
+  let bullJ1Raw = techBullJ1;
+  let bearJ1Raw = techBearJ1;
+
+  if (techniquesList === null || techniquesList === undefined) {
+    const isStrongUpTrend = lastSlope > 0.15;
+    const isStrongDownTrend = lastSlope < -0.15;
+    if (isStrongUpTrend) {
+      bullJ1Raw = 4.0;
+      bearJ1Raw = 0;
+    } else if (isStrongDownTrend) {
+      bullJ1Raw = 0;
+      bearJ1Raw = 4.0;
+    } else {
+      let fBullJ1 = 0;
+      let fBearJ1 = 0;
+      const m = techCache.macdVals?.macd?. [last] || 0;
+      const s = techCache.macdVals?.signal?. [last] || 0;
+      const h = techCache.macdVals?.hist?. [last] || 0;
+      if (m > s && h > 0) fBullJ1 += 2.0;
+      if (m < s && h < 0) fBearJ1 += 2.0;
+      if (lastSlope > 0.05) fBullJ1 += Math.min(2.0, lastSlope * 10);
+      else if (lastSlope < -0.05) fBearJ1 += Math.min(2.0, -lastSlope * 10);
+
+      const slopeDamp = Math.abs(lastSlope) < 0.05 ? 0.3 : 1.0;
+      bullJ1Raw = Math.max(0, fBullJ1 * slopeDamp);
+      bearJ1Raw = Math.max(0, fBearJ1 * slopeDamp);
+    }
   }
-  
-  if (totalEnginePoints === 0) {
-    bullJ1 = 0; bearJ1 = 0;
+  const bullJ1 = Math.min(4.0, bullJ1Raw);
+  const bearJ1 = Math.min(4.0, bearJ1Raw);
+
+  // --- J2 Oscillator Consensus (capped at 4.0) ---
+  let bullJ2Raw = techBullJ2;
+  let bearJ2Raw = techBearJ2;
+
+  if (techniquesList === null || techniquesList === undefined) {
+    const isStrongUpTrend = lastSlope > 0.15;
+    const isStrongDownTrend = lastSlope < -0.15;
+    if (isStrongUpTrend) {
+      bullJ2Raw = 4.0;
+      bearJ2Raw = 0;
+    } else if (isStrongDownTrend) {
+      bullJ2Raw = 0;
+      bearJ2Raw = 4.0;
+    } else {
+      let fBullJ2 = 0;
+      let fBearJ2 = 0;
+      const rVal = techCache.rsiVals?. [last] ?? 50;
+      if (rVal < 30) fBullJ2 += 2.5;
+      if (rVal > 70) fBearJ2 += 2.5;
+
+      const kVal = techCache.stochVals?.k?. [last];
+      const dVal = techCache.stochVals?.d?. [last];
+      if (kVal !== undefined && dVal !== undefined && kVal !== null && dVal !== null) {
+        if (kVal < 20) fBullJ2 += 1.5;
+        if (kVal > 80) fBearJ2 += 1.5;
+      }
+      const slopeDamp = Math.abs(lastSlope) < 0.05 ? 0.3 : 1.0;
+      bullJ2Raw = fBullJ2 * slopeDamp;
+      bearJ2Raw = fBearJ2 * slopeDamp;
+    }
+  }
+  const bullJ2 = Math.min(4.0, bullJ2Raw);
+  const bearJ2 = Math.min(4.0, bearJ2Raw);
+
+  // --- J3 Dynamic Reversal Context (sliding window, capped at 3.0) ---
+  const visibleSeries = ohlcSeries.slice(-nCut);
+  const zScoreData = calculateZScoreSignificance(visibleSeries);
+
+  const lastClose = ohlcSeries[last].close;
+  const visibleCloses = visibleSeries.map(c => c.close);
+  const minClose = Math.min(...visibleCloses);
+  const maxClose = Math.max(...visibleCloses);
+  const yPercent = maxClose !== minClose ? ((lastClose - minClose) / (maxClose - minClose)) * 100 : 50;
+
+  const boundaryRes = calculateBoundaryReversal(yPercent, visibleSeries);
+
+  let bullJ3Raw = techBullJ3;
+  let bearJ3Raw = techBearJ3;
+
+  if (techniquesList === null || techniquesList === undefined) {
+    const isStrongUpTrend = lastSlope > 0.15;
+    const isStrongDownTrend = lastSlope < -0.15;
+    if (isStrongUpTrend) {
+      bullJ3Raw = 3.0;
+      bearJ3Raw = 0;
+    } else if (isStrongDownTrend) {
+      bullJ3Raw = 0;
+      bearJ3Raw = 3.0;
+    } else {
+      let fBullJ3 = 0;
+      let fBearJ3 = 0;
+      const mid = techCache.bollVals?.middle?. [last] || 0;
+      const bLower = techCache.bollVals?.lower?. [last] || 0;
+      const bUpper = techCache.bollVals?.upper?. [last] || 0;
+      const price = closes[last];
+
+      if (price < bLower + (mid - bLower) * 0.2) fBullJ3 += 1.5;
+      if (price > bUpper - (bUpper - mid) * 0.2) fBearJ3 += 1.5;
+
+      const c = ohlcSeries[last];
+      if (c) {
+        const bodyRange = Math.abs(c.close - c.open);
+        const upperWick = c.high - Math.max(c.open, c.close);
+        const lowerWick = Math.min(c.open, c.close) - c.low;
+        if (lowerWick > bodyRange * 1.5) fBullJ3 += 1.0;
+        if (upperWick > bodyRange * 1.5) fBearJ3 += 1.0;
+      }
+      const slopeDamp = Math.abs(lastSlope) < 0.05 ? 0.3 : 1.0;
+      bullJ3Raw = fBullJ3 * slopeDamp;
+      bearJ3Raw = fBearJ3 * slopeDamp;
+    }
+  } else {
+    bullJ3Raw += Math.max(0, zScoreData.bullPoints) + Math.max(0, boundaryRes.bullPoints);
+    bearJ3Raw += Math.max(0, zScoreData.bearPoints) + Math.max(0, boundaryRes.bearPoints);
   }
 
-  // Set rest to 0 to respect removal of heuristics
-  bullJ2 = 0; bearJ2 = 0;
-  bullJ3 = 0; bearJ3 = 0;
+  const bullJ3 = Math.min(3.0, bullJ3Raw);
+  const bearJ3 = Math.min(3.0, bearJ3Raw);
 
-  // --- R5: Hurst Balancer ---
+  // --- Hurst regime balancer (Macrosynergy study) ---
+  let bullJ1Final = bullJ1;
+  let bearJ1Final = bearJ1;
+  let bullJ3Final = bullJ3;
+  let bearJ3Final = bearJ3;
+
   const H_exp = rescaledRangeHurst(Array.from(closes).slice(-32));
+  let hurstExplanation = "Neutral range";
+
   if (!isNaN(H_exp)) {
     if (H_exp > 0.55) {
-       // Trending regime
-       bullJ1 *= 1.15; bearJ1 *= 1.15;
-       bullJ3 *= 0.85; bearJ3 *= 0.85;
+      bullJ1Final = Math.min(4.0, bullJ1 * 1.15);
+      bearJ1Final = Math.min(4.0, bearJ1 * 1.15);
+      bullJ3Final = Math.min(3.0, bullJ3 * 0.85);
+      bearJ3Final = Math.min(3.0, bearJ3 * 0.85);
+      hurstExplanation = `Trending regime (H=${H_exp.toFixed(2)} > 0.55), J1 amplified, J3 dampened`;
     } else if (H_exp < 0.45) {
-       // Mean-reverting regime
-       bullJ1 *= 0.85; bearJ1 *= 0.85;
-       bullJ3 *= 1.15; bearJ3 *= 1.15;
+      bullJ1Final = Math.min(4.0, bullJ1 * 0.85);
+      bearJ1Final = Math.min(4.0, bearJ1 * 0.85);
+      bullJ3Final = Math.min(3.0, bullJ3 * 1.15);
+      bearJ3Final = Math.min(3.0, bearJ3 * 1.15);
+      hurstExplanation = `Mean-reverting regime (H=${H_exp.toFixed(2)} < 0.45), J1 dampened, J3 amplified`;
+    } else {
+      hurstExplanation = `Balanced Hurst regime (H=${H_exp.toFixed(2)})`;
     }
   }
 
   const cases = {
-    bull: { j1: Number(bullJ1.toFixed(2)), j2: Number(bullJ2.toFixed(2)), j3: Number(bullJ3.toFixed(2)), total: Number((bullJ1 + bullJ2 + bullJ3).toFixed(2)) },
-    bear: { j1: Number(bearJ1.toFixed(2)), j2: Number(bearJ2.toFixed(2)), j3: Number(bearJ3.toFixed(2)), total: Number((bearJ1 + bearJ2 + bearJ3).toFixed(2)) }
+    bull: {
+      j1: Number(bullJ1Final.toFixed(2)),
+      j2: Number(bullJ2.toFixed(2)),
+      j3: Number(bullJ3Final.toFixed(2)),
+      total: 0
+    },
+    bear: {
+      j1: Number(bearJ1Final.toFixed(2)),
+      j2: Number(bearJ2.toFixed(2)),
+      j3: Number(bearJ3Final.toFixed(2)),
+      total: 0
+    }
   };
+  cases.bull.total = Number((cases.bull.j1 + cases.bull.j2 + cases.bull.j3).toFixed(2));
+  cases.bear.total = Number((cases.bear.j1 + cases.bear.j2 + cases.bear.j3).toFixed(2));
 
-  // --- Skeptic Multiplier ---
-  // Removed redeclared skeptic multiplier
-  const candlesForMathEngine = ohlcSeries.map((c, i) => ({ ...c, prevClose: i > 0 ? ohlcSeries[i-1].close : c.open }));
-  
+  // --- Step 3: J4 Skeptic Multiplier & Penalties ---
+  let skepticMultiplier = 1.0;
+  const skepticReasons: string[] = [];
 
-
-
-  const zScoreData = calculateZScoreSignificance(candlesForMathEngine.slice(-21));
-  if (Math.abs(zScoreData.zScore) > 2.5) skepticMultiplier *= 0.6;
-
-  const atrAvgSlice = atrVals.slice(-20).filter(v => !isNaN(v));
-  const atrMean = atrAvgSlice.length > 0 ? atrAvgSlice.reduce((a, b) => a + b, 0) / atrAvgSlice.length : 0;
-  if (!isNaN(atrVals[last]) && atrMean > 0 && atrVals[last] > 2 * atrMean) skepticMultiplier *= 0.7;
-
-  const rqa = calculateRQA(Array.from(closes).slice(-20));
-  if (rqa.laminarity < 0.1 && rqa.determinism < 0.15) skepticMultiplier *= 0.5;
-
-
-
-
-
-  const slopeSeries = emaSlope(Array.from(closes), 9);
-  const slopeStrength = slopeSeries.length > 0 ? Math.abs(slopeSeries[slopeSeries.length - 1]) : 0;
-
-  // R6: Slope strength gate
-  if (slopeStrength < 0.15) {
-     skepticMultiplier *= 0.7; // Reduce confidence
+  // 1. Z-Score explosive deviation (>2.5) => mult 0.60
+  if (Math.abs(zScoreData.zScore) > 2.5) {
+    skepticMultiplier *= 0.60;
+    skepticReasons.push(`Explosive candle volatility (Z-score=${zScoreData.zScore.toFixed(2)} > 2.5)`);
   }
 
-  skepticMultiplier = Math.max(0, Math.min(1, skepticMultiplier));
+  // 2. ATR expansion Check (>1.8x average) => mult 0.70
+  const atrMean = techCache.atrVals.slice(-20).filter((v: number) => !isNaN(v)).reduce((sum: number, v: number) => sum + v, 0) / 20;
+  const currentAtr = techCache.atrVals[last];
+  if (!isNaN(currentAtr) && atrMean > 0 && currentAtr > 1.8 * atrMean) {
+    skepticMultiplier *= 0.70;
+    skepticReasons.push(`ATR volatility spike (${currentAtr.toFixed(4)} > 1.8x average ${atrMean.toFixed(4)})`);
+  }
 
-  // --- Decision Logic ---
+  // 3. Slope strength gate (<0.15) => mult 0.70
+  if (Math.abs(lastSlope) < 0.15) {
+    skepticMultiplier *= 0.70;
+    skepticReasons.push(`Flat Trend Slope (${lastSlope.toFixed(3)} belongs to stagnation range)`);
+  }
 
-  // 2.1 Confirm Raw Totals
-  const bullTotal = Number(Math.min(11.0, cases.bull.total).toFixed(2));
-  const bearTotal = Number(Math.min(11.0, cases.bear.total).toFixed(2));
+  // 4. RQA stability limits (Laminarity < 0.1, Determinism < 0.15) => mult 0.50
+  const rqa = calculateRQA(Array.from(closes).slice(-20));
+  if (rqa.laminarity < 0.1 && rqa.determinism < 0.15) {
+    skepticMultiplier *= 0.50;
+    skepticReasons.push(`Extreme low RQA structural stability (laminarity=${rqa.laminarity.toFixed(2)}, determinism=${rqa.determinism.toFixed(2)})`);
+  }
 
-  // 2.2 Identify Raw Winner
-  let rawWinner: 'BULL' | 'BEAR' | 'TIE' = 'TIE';
-  if (bullTotal > bearTotal) rawWinner = 'BULL';
-  else if (bearTotal > bullTotal) rawWinner = 'BEAR';
+  // 5. Timeframe Trend Stability adjustment: Higher timeframes (e.g. 15m or 30m) are structurally more reliable and less noisy than low timeframes
+  let tfMultiplier = 1.0;
+  if (graphTimeframeMinutes >= 30) {
+    tfMultiplier = 1.15;
+    skepticReasons.push(`30-Minute High Timeframe trend stability boost (1.15x multiplier)`);
+  } else if (graphTimeframeMinutes >= 15) {
+    tfMultiplier = 1.05;
+    skepticReasons.push(`15-Minute Structural trend stability boost (1.05x multiplier)`);
+  } else {
+    tfMultiplier = 0.90;
+    skepticReasons.push(`Low Timeframe noise correction (0.90x modifier)`);
+  }
+  skepticMultiplier *= tfMultiplier;
 
-  // 2.3 Calculate Margin
-  const margin = Number(Math.abs(bullTotal - bearTotal).toFixed(2));
+  skepticMultiplier = Math.max(0.30, Math.min(1.20, skepticMultiplier));
 
-  // 2.4 Raw Winning Total
-  let rawWinningTotal = 0;
-  if (rawWinner === 'BULL') rawWinningTotal = bullTotal;
-  else if (rawWinner === 'BEAR') rawWinningTotal = bearTotal;
-
-  // Clamp skeptic multiplier 0.30 - 1.00
-  skepticMultiplier = Math.max(0.30, Math.min(1.00, skepticMultiplier));
-
-  // Determine Skeptic Verdict
   let skepticVerdict: 'ACCEPT' | 'CAUTION' | 'WEAK' = 'ACCEPT';
   if (skepticMultiplier < 0.60) skepticVerdict = 'WEAK';
   else if (skepticMultiplier < 0.85) skepticVerdict = 'CAUTION';
 
-  // 2.6 Calculate Final Confidence Percentage
-  const finalConfidence = Math.round((rawWinningTotal * skepticMultiplier / 11) * 100);
+  // --- Step 4: Margin and Decision Resolution ---
+  const bullTotal = Number(cases.bull.total.toFixed(2));
+  const bearTotal = Number(cases.bear.total.toFixed(2));
 
-  // --- Step 3: Apply NO_TRADE Rules ---
+  let rawWinner: 'BULL' | 'BEAR' | 'TIE' = 'TIE';
+  if (bullTotal > bearTotal) rawWinner = 'BULL';
+  else if (bearTotal > bullTotal) rawWinner = 'BEAR';
+
+  const margin = Number(Math.abs(bullTotal - bearTotal).toFixed(2));
+
+  let rawWinningTotal = 0;
+  if (rawWinner === 'BULL') rawWinningTotal = bullTotal;
+  else if (rawWinner === 'BEAR') rawWinningTotal = bearTotal;
+
+  // Scale the confidence denominator and dynamic thresholds based on custom list size if applicable
+  const scaleThresholdFactor = isCustomList ? Math.max(0.08, Math.min(1.0, activeList.length / 12)) : 1.0;
+  const confidenceDenominator = isCustomList ? Math.max(1, activeList.length) : 11;
+  
+  const minMarginThreshold = 3.0 * scaleThresholdFactor;
+  const minStrengthThreshold = 4.0 * scaleThresholdFactor;
+  const minSkepticMarginThreshold = 4.0 * scaleThresholdFactor;
+  const minConfidenceThreshold = 25 * scaleThresholdFactor;
+
+  const finalConfidence = Math.round((rawWinningTotal * skepticMultiplier / confidenceDenominator) * 100);
+
   let finalSignal: 'CALL' | 'PUT' | 'NO_TRADE' = rawWinner === 'BULL' ? 'CALL' : (rawWinner === 'BEAR' ? 'PUT' : 'NO_TRADE');
   let noTradeReason: string | null = null;
 
@@ -400,42 +585,39 @@ export function evaluateSignal(
   } else if (rawWinner === 'TIE') {
     finalSignal = 'NO_TRADE';
     noTradeReason = "Bull and Bear scored identically. No directional edge.";
-  } else if (margin < 3.0) {
+  } else if (margin < minMarginThreshold) {
     finalSignal = 'NO_TRADE';
-    noTradeReason = `Margin of ${margin.toFixed(1)} is below minimum threshold of 3.0. Scores of Bulldog and Peer are too close to extract a reliable signal (minimum difference of 3 required).`;
-  } else if (rawWinningTotal < 4.0) {
+    noTradeReason = `Margin of ${margin.toFixed(1)} is below minimum threshold of ${minMarginThreshold.toFixed(1)}. Scores of Bulldog and Peer are too close to extract a reliable signal (minimum difference of ${minMarginThreshold.toFixed(1)} required).`;
+  } else if (rawWinningTotal < minStrengthThreshold) {
     finalSignal = 'NO_TRADE';
-    noTradeReason = `Winning total of ${rawWinningTotal.toFixed(1)} is below minimum strength threshold of 4.0/11. Evidence too weak to trade.`;
-  } else if (skepticVerdict === 'WEAK' && margin < 4.0) {
+    noTradeReason = `Winning total of ${rawWinningTotal.toFixed(1)} is below minimum strength threshold of ${minStrengthThreshold.toFixed(1)}/11. Evidence too weak to trade.`;
+  } else if (skepticVerdict === 'WEAK' && margin < minSkepticMarginThreshold) {
     finalSignal = 'NO_TRADE';
-    noTradeReason = "Skeptic issued WEAK verdict with insufficient margin. Combined risk too high (minimum margin 4.0 required under WEAK skeptic verdict).";
-  } else if (finalConfidence < 25) {
+    noTradeReason = `Skeptic issued WEAK verdict with insufficient margin. High risk environment requires minimum margin of ${minSkepticMarginThreshold.toFixed(1)} (found ${margin.toFixed(1)}).`;
+  } else if (finalConfidence < minConfidenceThreshold) {
     finalSignal = 'NO_TRADE';
-    noTradeReason = `Final confidence of ${finalConfidence}% falls below minimum actionable threshold of 25%.`;
+    noTradeReason = `Final confidence of ${finalConfidence}% falls below minimum actionable threshold of ${minConfidenceThreshold.toFixed(0)}%.`;
   }
 
-  // --- Step 4: Calculate Final Score ---
   let finalScore = 0;
   if (finalSignal === 'CALL') finalScore = bullTotal * skepticMultiplier;
   else if (finalSignal === 'PUT') finalScore = -(bearTotal * skepticMultiplier);
 
-  // --- Step 5: Determine Decision Label ---
   const decisionLabel: 'STRONG SIGNAL' | 'WEAK' = (finalSignal === 'CALL' || finalSignal === 'PUT') ? 'STRONG SIGNAL' : 'WEAK';
 
-  // --- Step 6: Write the Ruling ---
   const primaryEvidence = rawWinner === 'BULL'
-    ? 'Bullish momentum'
-    : 'Bearish momentum';
+    ? 'Bullish momentum structure dominant'
+    : 'Bearish momentum structure dominant';
 
   let ruling = '';
   if (finalSignal === 'NO_TRADE') {
-    ruling = `NO_TRADE — ${noTradeReason} A clearer trend or pattern confirmation would unlock a signal.`;
+    ruling = `NO_TRADE — ${noTradeReason} A clearer trend or score divergence is required to safely trade options signals.`;
   } else {
-    const skepticNote = skepticMultiplier < 0.75 ? ` Skeptic noted risks; multiplied by ${skepticMultiplier.toFixed(2)}.` : '';
+    const skepticNote = skepticMultiplier < 0.85 ? ` Skeptic flagged concerns; multiplied score by ${skepticMultiplier.toFixed(2)}.` : '';
     ruling = `${finalSignal} — ${primaryEvidence}. Margin ${margin.toFixed(1)}, Confidence ${finalConfidence}%.${skepticNote}`;
   }
 
-  // --- Step 7: Formatted Report ---
+  // --- Step 5: Formatted Report Layout ---
   const wrapText = (text: string, width: number): string[] => {
     if (text.length <= width) return [text.padEnd(width)];
     const words = text.split(' ');
@@ -463,14 +645,14 @@ export function evaluateSignal(
 │  Confidence: ${finalConfidence.toString().padEnd(3)}%                 │
 ├─────────────────────────────────────┤
 │  CASE 1 — BULL                      │
-│  J1 Momentum:  ${cases.bull.j1.toFixed(1).padEnd(5)}/ 6.0         │
-│  J2 Oscillator:${cases.bull.j2.toFixed(1).padEnd(5)}/ 2.0         │
+│  J1 Momentum:  ${cases.bull.j1.toFixed(1).padEnd(5)}/ 4.0         │
+│  J2 Oscillator:${cases.bull.j2.toFixed(1).padEnd(5)}/ 4.0         │
 │  J3 Boundary:  ${cases.bull.j3.toFixed(1).padEnd(5)}/ 3.0         │
 │  Total:        ${cases.bull.total.toFixed(1).padEnd(5)}/ 11.0        │
 ├─────────────────────────────────────┤
 │  CASE 2 — BEAR                      │
-│  J1 Momentum:  ${cases.bear.j1.toFixed(1).padEnd(5)}/ 6.0         │
-│  J2 Oscillator:${cases.bear.j2.toFixed(1).padEnd(5)}/ 2.0         │
+│  J1 Momentum:  ${cases.bear.j1.toFixed(1).padEnd(5)}/ 4.0         │
+│  J2 Oscillator:${cases.bear.j2.toFixed(1).padEnd(5)}/ 4.0         │
 │  J3 Boundary:  ${cases.bear.j3.toFixed(1).padEnd(5)}/ 3.0         │
 │  Total:        ${cases.bear.total.toFixed(1).padEnd(5)}/ 11.0        │
 ├─────────────────────────────────────┤
@@ -482,15 +664,110 @@ export function evaluateSignal(
 ${rulingStr}
 └─────────────────────────────────────┘`;
 
-  const techniquesUsed = activeList.map(t => typeof t === 'string' ? t : (t.name || 'Custom')).join(', ');
-  const skepticPenalty = (1 - skepticMultiplier) * 100;
+  const techniquesUsedNameList = activeList.map(t => typeof t === 'string' ? t : (t.name || 'Custom')).join(', ');
+  const skepticPenalty = Math.round((1 - skepticMultiplier) * 100);
+
+  // Populate patterns and gaps exactly as per Rule F requirement
+  const topPatterns = {
+    bull: [
+      ..._confirmedPatterns.filter(p => p.direction === 'BULL').map(p => p.pattern),
+      ..._confirmedGaps.filter(g => g.direction === 'BULL').map(g => g.type)
+    ],
+    bear: [
+      ..._confirmedPatterns.filter(p => p.direction === 'BEAR').map(p => p.pattern),
+      ..._confirmedGaps.filter(g => g.direction === 'BEAR').map(g => g.type)
+    ]
+  };
+
+  const runtimeMs = Number((performance.now() - tStart).toFixed(2));
+
+  // Build rigorous deterministic Audit Trail mapping every single decision parameter
+  const auditTrail = {
+    temporalFiltering: {
+      graphTimeframeMinutes,
+      durationMinutes,
+      nCandles,
+      nCut,
+      totalCandles: ohlcSeries.length
+    },
+    preFlightIntegrity: {
+      violations: physicsViolations,
+      outOfBounds: outOfBoundsCount,
+      nonFinite: sensorAnomalies,
+      totalChecked: ohlcSeries.length,
+      anomaliesRatio,
+      decision: anomaliesRatio > 0.05 ? 'BLOCK' : 'PASS'
+    },
+    techniquesEvaluated: evaluationVotes.map(v => ({
+      id: v.id,
+      name: v.name,
+      vote: v.vote,
+      score: v.score,
+      bullPoints: v.bullPoints ?? (v.vote === 'BULL' ? v.score : 0),
+      bearPoints: v.bearPoints ?? (v.vote === 'BEAR' ? v.score : 0),
+      reason: v.reason
+    })),
+    judges: {
+      J1: {
+        rawBull: techBullJ1,
+        rawBear: techBearJ1,
+        cappedBull: bullJ1,
+        cappedBear: bearJ1,
+        finalBull: cases.bull.j1,
+        finalBear: cases.bear.j1
+      },
+      J2: {
+        rawBull: techBullJ2,
+        rawBear: techBearJ2,
+        cappedBull: bullJ2,
+        cappedBear: bearJ2,
+        finalBull: cases.bull.j2,
+        finalBear: cases.bear.j2
+      },
+      J3: {
+        rawBull: bullJ3Raw,
+        rawBear: bearJ3Raw,
+        cappedBull: bullJ3,
+        cappedBear: bearJ3,
+        finalBull: cases.bull.j3,
+        finalBear: cases.bear.j3,
+        components: {
+          zScore: zScoreData.zScore,
+          zScoreBullPts: zScoreData.bullPoints,
+          zScoreBearPts: zScoreData.bearPoints,
+          priceYPercent: yPercent,
+          boundaryLabel: boundaryRes.label,
+          boundaryBullPts: boundaryRes.bullPoints,
+          boundaryBearPts: boundaryRes.bearPoints
+        }
+      }
+    },
+    hurstRegime: {
+      H_exp,
+      explanation: hurstExplanation
+    },
+    j4Skeptic: {
+      penalties: skepticReasons,
+      finalMultiplier: skepticMultiplier,
+      verdict: skepticVerdict
+    },
+    finalResolution: {
+      rawWinner,
+      margin,
+      rawWinningTotal,
+      finalConfidence,
+      finalSignal,
+      noTradeReason,
+      finalScore
+    }
+  };
 
   return {
     agent: 'JUDGE',
     signal: finalSignal,
     decision: decisionLabel,
     cases,
-    winner: rawWinner === 'TIE' ? 'NO_TRADE' : rawWinner,
+    winner: finalSignal === 'NO_TRADE' ? 'NO_TRADE' : rawWinner,
     margin,
     skepticMultiplier,
     skepticPenalty,
@@ -500,10 +777,7 @@ ${rulingStr}
     ruling,
     primaryEvidence,
     noTradeReason,
-    topPatterns: {
-      bull: [],
-      bear: []
-    },
+    topPatterns,
     techniquesUsed: "Execution Driven Only",
     techUsedCount: activeList.length,
     formattedReport,
@@ -511,32 +785,31 @@ ${rulingStr}
     hallucinationMetrics,
     tradeDetails: {
       latencyAdjustedForecast: `Signal: ${finalSignal}`,
-      techniquesUsed,
-      executionTimeMs: 0
+      techniquesUsed: techniquesUsedNameList,
+      executionTimeMs: runtimeMs
     },
     j1Score: cases.bull.j1 + cases.bear.j1,
     j2Score: cases.bull.j2 + cases.bear.j2,
     j3Score: cases.bull.j3 + cases.bear.j3,
     j4Score: skepticPenalty,
     techniquesEvaluation,
+    auditTrail,
 
     // Legacy fields
     confidence: finalConfidence,
     bullScore: cases.bull.total,
     bearScore: cases.bear.total,
     boundaryBias: 0,
-
-    
     evidence: {
-      rsi: rsiVals[last],
-      macd: macdVals.macd[last],
-      macdHist: macdVals.hist[last],
-      bollMiddle: bollVals.middle[last],
-      bollLower: bollVals.lower[last],
-      bollUpper: bollVals.upper[last],
+      rsi: techCache.rsiVals?.[last] ?? 50,
+      macd: techCache.macdVals?.macd?.[last] ?? 0,
+      macdHist: techCache.macdVals?.hist?.[last] ?? 0,
+      bollMiddle: techCache.bollVals?.middle?.[last] ?? 0,
+      bollLower: techCache.bollVals?.lower?.[last] ?? 0,
+      bollUpper: techCache.bollVals?.upper?.[last] ?? 0,
       localSupport: Math.min(...Array.from(lows.slice(-15))),
       localResistance: Math.max(...Array.from(highs.slice(-15))),
-      lastClose: closes[last]
+      lastClose: ohlcSeries[last].close
     }
   };
 }

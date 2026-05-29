@@ -72,10 +72,11 @@ export function buildPipelineResult(imageData: ImageData): PipelineResult {
   for (const rc of rawCandles) {
     let o, h, l, c;
     if (axisFallback) {
-      o = -rc.openY / Math.max(rectifiedFrame.height, EPSILON);
-      h = -rc.highY / Math.max(rectifiedFrame.height, EPSILON);
-      l = -rc.lowY / Math.max(rectifiedFrame.height, EPSILON);
-      c = -rc.closeY / Math.max(rectifiedFrame.height, EPSILON);
+      const height = Math.max(rectifiedFrame.height, EPSILON);
+      o = 100.0 * (rectifiedFrame.height - rc.openY) / height + 10.0;
+      h = 100.0 * (rectifiedFrame.height - rc.highY) / height + 10.0;
+      l = 100.0 * (rectifiedFrame.height - rc.lowY) / height + 10.0;
+      c = 100.0 * (rectifiedFrame.height - rc.closeY) / height + 10.0;
     } else {
       const transform = axis as PriceAxisTransform;
       o = transform.mSlope * rc.openY + transform.bIntercept;
