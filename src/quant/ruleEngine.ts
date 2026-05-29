@@ -77,6 +77,23 @@ export function evaluateSignal(
 ): DecisionResult {
   const tStart = performance.now();
 
+  const judgeContribs: Array<{
+    judge: 'J1'|'J2'|'J3';
+    side: 'BULL'|'BEAR';
+    contributor: string;
+    value: number;
+    reason: string;
+  }> = [];
+  const auditPush = (
+    judge: 'J1'|'J2'|'J3',
+    side: 'BULL'|'BEAR',
+    contributor: string,
+    value: number,
+    reason: string
+  ) => {
+    if (value > 0) judgeContribs.push({ judge, side, contributor, value, reason });
+  };
+
   const defaultCases = { bull: { j1: 0, j2: 0, j3: 0, total: 0 }, bear: { j1: 0, j2: 0, j3: 0, total: 0 } };
   const getEmptyNoTradeResult = (reasonText: string): DecisionResult => {
     return {
@@ -93,7 +110,7 @@ export function evaluateSignal(
       primaryEvidence: 'Insufficient or Invalid Data',
       noTradeReason: reasonText,
       topPatterns: { bull: [], bear: [] },
-      formattedReport: `┌─────────────────────────────────────┐\n│  ARBITRATOR FINAL VERDICT           │\n│  Signal: NO_TRADE                   │\n│  Confidence: 0%                     │\n├─────────────────────────────────────┤\n│  CASE 1 — BULL                      │\n│  J1 Momentum:  0.0 / 4.0           │\n│  J2 Oscillator:0.0 / 4.0           │\n│  J3 Boundary:  0.0 / 3.0           │\n│  Total:        0.0 / 11.0          │\n├─────────────────────────────────────┤\n│  CASE 2 — BEAR                      │\n│  J1 Momentum:  0.0 / 4.0           │\n│  J2 Oscillator:0.0 / 4.0           │\n│  J3 Boundary:  0.0 / 3.0           │\n│  Total:        0.0 / 11.0          │\n├─────────────────────────────────────┤\n│  SKEPTIC VETO:  0.30 (WEAK)        │\n│  Margin:        0.0                 │\n│  Final Score:   0.0                 │\n├─────────────────────────────────────┤\n│  RULING:                            │\n│  NO_TRADE — ${reasonText.substring(0, 20)}...   │\n└─────────────────────────────────────┘`,
+      formattedReport: `┌─────────────────────────────────────┐\n│  ARBITRATOR FINAL VERDICT           │\n│  Signal: NO_TRADE                   │\n│  Confidence: 0%                     │\n├─────────────────────────────────────┤\n│  CASE 1 — BULL                      │\n│  J1 Reasoning: 0.0 / 4.0           │\n│  J2 Vehicle:   0.0 / 4.0           │\n│  J3 Reversal:  0.0 / 3.0           │\n│  Total:        0.0 / 11.0          │\n├─────────────────────────────────────┤\n│  CASE 2 — BEAR                      │\n│  J1 Reasoning: 0.0 / 4.0           │\n│  J2 Vehicle:   0.0 / 4.0           │\n│  J3 Reversal:  0.0 / 3.0           │\n│  Total:        0.0 / 11.0          │\n├─────────────────────────────────────┤\n│  SKEPTIC VETO:  0.30 (WEAK)        │\n│  Margin:        0.0                 │\n│  Final Score:   0.0                 │\n├─────────────────────────────────────┤\n│  RULING:                            │\n│  NO_TRADE — ${reasonText.substring(0, 20)}...   │\n└─────────────────────────────────────┘`,
       tradeDetails: {
         latencyAdjustedForecast: 'Signal: NO_TRADE',
         techniquesUsed: '',
@@ -147,12 +164,11 @@ export function evaluateSignal(
   let sensorAnomalies = 0;
 
   ohlcSeries.forEach((c) => {
-    if (c.high < c.low) physicsViolations++;
-    if (c.open > c.high || c.open < c.low) physicsViolations++;
-    if (c.close > c.high || c.close < c.low) physicsViolations++;
-    if (c.open <= 0 || c.close <= 0 || c.high <= 0 || c.low <= 0) {
-      outOfBoundsCount++;
-    }
+    const eps = Math.max(1e-6, 1e-6 * Math.max(c.high - c.low, 1e-9));
+    if (c.high < c.low - eps) physicsViolations++;
+    if (c.open > c.high + eps || c.open < c.low - eps) physicsViolations++;
+    if (c.close > c.high + eps || c.close < c.low - eps) physicsViolations++;
+    if (c.open <= 0 || c.close <= 0 || c.high <= 0 || c.low <= 0) outOfBoundsCount++;
   });
 
   const totalChecked = ohlcSeries.length;
@@ -335,126 +351,245 @@ export function evaluateSignal(
   const slopeSeries = emaSlope(Array.from(closes), 9);
   const lastSlope = slopeSeries.length > 0 ? slopeSeries[slopeSeries.length - 1] : 0;
 
-  // --- J1 Momentum Consensus (capped at 4.0) ---
-  let bullJ1Raw = techBullJ1;
-  let bearJ1Raw = techBearJ1;
+  // ═════════════════════════════════════════════════════════════
+  // J1 REASONING — MOMENTUM CONSENSUS (max 4.0 per side)
+  //   Contributor A: engineIntrinsic (always runs)
+  //   Contributor B: user technique points classified as J1
+  // ═════════════════════════════════════════════════════════════
+  let bullJ1Intrinsic = 0;
+  let bearJ1Intrinsic = 0;
+  {
+    const m   = techCache.macdVals?.macd?.[last]   ?? 0;
+    const sig = techCache.macdVals?.signal?.[last] ?? 0;
+    const hst = techCache.macdVals?.hist?.[last]   ?? 0;
+    const prevHst = techCache.macdVals?.hist?.[last - 1] ?? 0;
+    const histVel = hst - prevHst;
 
-  if (techniquesList === null || techniquesList === undefined) {
-    const isStrongUpTrend = lastSlope > 0.15;
-    const isStrongDownTrend = lastSlope < -0.15;
-    if (isStrongUpTrend) {
-      bullJ1Raw = 4.0;
-      bearJ1Raw = 0;
-    } else if (isStrongDownTrend) {
-      bullJ1Raw = 0;
-      bearJ1Raw = 4.0;
-    } else {
-      let fBullJ1 = 0;
-      let fBearJ1 = 0;
-      const m = techCache.macdVals?.macd?. [last] || 0;
-      const s = techCache.macdVals?.signal?. [last] || 0;
-      const h = techCache.macdVals?.hist?. [last] || 0;
-      if (m > s && h > 0) fBullJ1 += 2.0;
-      if (m < s && h < 0) fBearJ1 += 2.0;
-      if (lastSlope > 0.05) fBullJ1 += Math.min(2.0, lastSlope * 10);
-      else if (lastSlope < -0.05) fBearJ1 += Math.min(2.0, -lastSlope * 10);
+    // MACD bull stack
+    if (m > sig && hst > 0) {
+      bullJ1Intrinsic += 1.5;
+      auditPush('J1', 'BULL', 'intrinsic.macd_bull_stack',
+        1.5, `MACD=${m.toFixed(4)} > Signal=${sig.toFixed(4)}, hist=${hst.toFixed(4)}>0`);
+    }
+    if (m < sig && hst < 0) {
+      bearJ1Intrinsic += 1.5;
+      auditPush('J1', 'BEAR', 'intrinsic.macd_bear_stack',
+        1.5, `MACD=${m.toFixed(4)} < Signal=${sig.toFixed(4)}, hist=${hst.toFixed(4)}<0`);
+    }
 
-      const slopeDamp = Math.abs(lastSlope) < 0.05 ? 0.3 : 1.0;
-      bullJ1Raw = Math.max(0, fBullJ1 * slopeDamp);
-      bearJ1Raw = Math.max(0, fBearJ1 * slopeDamp);
+    // MACD acceleration
+    if (hst > 0 && histVel > 0) {
+      bullJ1Intrinsic += 0.75;
+      auditPush('J1', 'BULL', 'intrinsic.macd_accel_up',
+        0.75, `MACD hist accelerating up (Δ=${histVel.toFixed(5)})`);
+    }
+    if (hst < 0 && histVel < 0) {
+      bearJ1Intrinsic += 0.75;
+      auditPush('J1', 'BEAR', 'intrinsic.macd_accel_dn',
+        0.75, `MACD hist accelerating down (Δ=${histVel.toFixed(5)})`);
+    }
+
+    // EMA slope as momentum proxy
+    if (lastSlope > 0.05) {
+      const pts = Math.min(1.75, lastSlope * 10);
+      bullJ1Intrinsic += pts;
+      auditPush('J1', 'BULL', 'intrinsic.ema9_slope_up',
+        pts, `EMA9 slope=${lastSlope.toFixed(4)} > 0.05`);
+    }
+    if (lastSlope < -0.05) {
+      const pts = Math.min(1.75, -lastSlope * 10);
+      bearJ1Intrinsic += pts;
+      auditPush('J1', 'BEAR', 'intrinsic.ema9_slope_dn',
+        pts, `EMA9 slope=${lastSlope.toFixed(4)} < -0.05`);
     }
   }
+
+  const bullJ1Raw = bullJ1Intrinsic + techBullJ1;   // intrinsic + user techniques
+  const bearJ1Raw = bearJ1Intrinsic + techBearJ1;
   const bullJ1 = Math.min(4.0, bullJ1Raw);
   const bearJ1 = Math.min(4.0, bearJ1Raw);
 
-  // --- J2 Oscillator Consensus (capped at 4.0) ---
-  let bullJ2Raw = techBullJ2;
-  let bearJ2Raw = techBearJ2;
+  // ═════════════════════════════════════════════════════════════
+  // J2 VEHICLE — OSCILLATOR CONSENSUS (max 4.0 per side)
+  // ═════════════════════════════════════════════════════════════
+  let bullJ2Intrinsic = 0;
+  let bearJ2Intrinsic = 0;
+  {
+    // RSI extremes
+    const rVal = techCache.rsiVals?.[last] ?? 50;
+    if (rVal < 30) {
+      const pts = rVal < 20 ? 2.0 : 1.25;
+      bullJ2Intrinsic += pts;
+      auditPush('J2', 'BULL', 'intrinsic.rsi_oversold',
+        pts, `RSI(14)=${rVal.toFixed(2)} < 30 oversold`);
+    }
+    if (rVal > 70) {
+      const pts = rVal > 80 ? 2.0 : 1.25;
+      bearJ2Intrinsic += pts;
+      auditPush('J2', 'BEAR', 'intrinsic.rsi_overbought',
+        pts, `RSI(14)=${rVal.toFixed(2)} > 70 overbought`);
+    }
 
-  if (techniquesList === null || techniquesList === undefined) {
-    const isStrongUpTrend = lastSlope > 0.15;
-    const isStrongDownTrend = lastSlope < -0.15;
-    if (isStrongUpTrend) {
-      bullJ2Raw = 4.0;
-      bearJ2Raw = 0;
-    } else if (isStrongDownTrend) {
-      bullJ2Raw = 0;
-      bearJ2Raw = 4.0;
-    } else {
-      let fBullJ2 = 0;
-      let fBearJ2 = 0;
-      const rVal = techCache.rsiVals?. [last] ?? 50;
-      if (rVal < 30) fBullJ2 += 2.5;
-      if (rVal > 70) fBearJ2 += 2.5;
-
-      const kVal = techCache.stochVals?.k?. [last];
-      const dVal = techCache.stochVals?.d?. [last];
-      if (kVal !== undefined && dVal !== undefined && kVal !== null && dVal !== null) {
-        if (kVal < 20) fBullJ2 += 1.5;
-        if (kVal > 80) fBearJ2 += 1.5;
+    // Stochastic
+    const kVal = techCache.stochVals?.k?.[last];
+    const dVal = techCache.stochVals?.d?.[last];
+    if (kVal != null && dVal != null && !isNaN(kVal) && !isNaN(dVal)) {
+      if (kVal < 20 && dVal < 20) {
+        bullJ2Intrinsic += 1.0;
+        auditPush('J2', 'BULL', 'intrinsic.stoch_oversold',
+          1.0, `Stoch K=${kVal.toFixed(1)} D=${dVal.toFixed(1)} < 20`);
       }
-      const slopeDamp = Math.abs(lastSlope) < 0.05 ? 0.3 : 1.0;
-      bullJ2Raw = fBullJ2 * slopeDamp;
-      bearJ2Raw = fBearJ2 * slopeDamp;
+      if (kVal > 80 && dVal > 80) {
+        bearJ2Intrinsic += 1.0;
+        auditPush('J2', 'BEAR', 'intrinsic.stoch_overbought',
+          1.0, `Stoch K=${kVal.toFixed(1)} D=${dVal.toFixed(1)} > 80`);
+      }
+      // Crossovers
+      const prevK = techCache.stochVals?.k?.[last - 1];
+      const prevD = techCache.stochVals?.d?.[last - 1];
+      if (prevK != null && prevD != null) {
+        if (prevK <= prevD && kVal > dVal && kVal < 50) {
+          bullJ2Intrinsic += 0.75;
+          auditPush('J2', 'BULL', 'intrinsic.stoch_bull_cross',
+            0.75, `Stoch K/D bull cross at K=${kVal.toFixed(1)}`);
+        }
+        if (prevK >= prevD && kVal < dVal && kVal > 50) {
+          bearJ2Intrinsic += 0.75;
+          auditPush('J2', 'BEAR', 'intrinsic.stoch_bear_cross',
+            0.75, `Stoch K/D bear cross at K=${kVal.toFixed(1)}`);
+        }
+      }
+    }
+
+    // RSI divergence (uses existing detectRSIDivergence)
+    try {
+      const div = detectRSIDivergence(Array.from(closes), techCache.rsiVals);
+      if (div === 'BULLISH') {
+        bullJ2Intrinsic += 1.5;
+        auditPush('J2', 'BULL', 'intrinsic.rsi_bull_divergence',
+          1.5, 'RSI bullish divergence detected');
+      }
+      if (div === 'BEARISH') {
+        bearJ2Intrinsic += 1.5;
+        auditPush('J2', 'BEAR', 'intrinsic.rsi_bear_divergence',
+          1.5, 'RSI bearish divergence detected');
+      }
+    } catch {
+      // Bypassed if insufficient rsi data length
+    }
+
+    // Z-score breakout
+    try {
+      const z = calculateZScore(Array.from(closes), 20);
+      const zVal = Array.isArray(z) ? z[z.length - 1] : z;
+      if (typeof zVal === 'number' && !isNaN(zVal)) {
+        if (zVal > 2.0) {
+          bullJ2Intrinsic += 0.75;
+          auditPush('J2', 'BULL', 'intrinsic.z_breakout_up',
+            0.75, `Z=${zVal.toFixed(2)} > 2.0`);
+        }
+        if (zVal < -2.0) {
+          bearJ2Intrinsic += 0.75;
+          auditPush('J2', 'BEAR', 'intrinsic.z_breakout_dn',
+            0.75, `Z=${zVal.toFixed(2)} < -2.0`);
+        }
+      }
+    } catch {
+      // Bypassed if insufficient price series data length
     }
   }
+
+  const bullJ2Raw = bullJ2Intrinsic + techBullJ2;
+  const bearJ2Raw = bearJ2Intrinsic + techBearJ2;
   const bullJ2 = Math.min(4.0, bullJ2Raw);
   const bearJ2 = Math.min(4.0, bearJ2Raw);
 
-  // --- J3 Dynamic Reversal Context (sliding window, capped at 3.0) ---
-  const visibleSeries = ohlcSeries.slice(-nCut);
-  const zScoreData = calculateZScoreSignificance(visibleSeries);
-
-  const lastClose = ohlcSeries[last].close;
+  // ═════════════════════════════════════════════════════════════
+  // J3 REVERSAL — BOUNDARY + WICK + Z-SCORE SIGNIFICANCE (max 3.0)
+  // ═════════════════════════════════════════════════════════════
+  const visibleSeries = ohlcSeries.slice(-Math.max(20, nCandles * 5));
+  const zScoreData    = calculateZScoreSignificance(visibleSeries);
+  const lastClose     = ohlcSeries[last].close;
   const visibleCloses = visibleSeries.map(c => c.close);
-  const minClose = Math.min(...visibleCloses);
-  const maxClose = Math.max(...visibleCloses);
-  const yPercent = maxClose !== minClose ? ((lastClose - minClose) / (maxClose - minClose)) * 100 : 50;
+  const minClose      = Math.min(...visibleCloses);
+  const maxClose      = Math.max(...visibleCloses);
+  const yPercent      = maxClose !== minClose
+                          ? ((lastClose - minClose) / (maxClose - minClose)) * 100
+                          : 50;
+  const boundaryRes   = calculateBoundaryReversal(yPercent, visibleSeries);
 
-  const boundaryRes = calculateBoundaryReversal(yPercent, visibleSeries);
-
-  let bullJ3Raw = techBullJ3;
-  let bearJ3Raw = techBearJ3;
-
-  if (techniquesList === null || techniquesList === undefined) {
-    const isStrongUpTrend = lastSlope > 0.15;
-    const isStrongDownTrend = lastSlope < -0.15;
-    if (isStrongUpTrend) {
-      bullJ3Raw = 3.0;
-      bearJ3Raw = 0;
-    } else if (isStrongDownTrend) {
-      bullJ3Raw = 0;
-      bearJ3Raw = 3.0;
-    } else {
-      let fBullJ3 = 0;
-      let fBearJ3 = 0;
-      const mid = techCache.bollVals?.middle?. [last] || 0;
-      const bLower = techCache.bollVals?.lower?. [last] || 0;
-      const bUpper = techCache.bollVals?.upper?. [last] || 0;
-      const price = closes[last];
-
-      if (price < bLower + (mid - bLower) * 0.2) fBullJ3 += 1.5;
-      if (price > bUpper - (bUpper - mid) * 0.2) fBearJ3 += 1.5;
-
-      const c = ohlcSeries[last];
-      if (c) {
-        const bodyRange = Math.abs(c.close - c.open);
-        const upperWick = c.high - Math.max(c.open, c.close);
-        const lowerWick = Math.min(c.open, c.close) - c.low;
-        if (lowerWick > bodyRange * 1.5) fBullJ3 += 1.0;
-        if (upperWick > bodyRange * 1.5) fBearJ3 += 1.0;
-      }
-      const slopeDamp = Math.abs(lastSlope) < 0.05 ? 0.3 : 1.0;
-      bullJ3Raw = fBullJ3 * slopeDamp;
-      bearJ3Raw = fBearJ3 * slopeDamp;
+  let bullJ3Intrinsic = 0;
+  let bearJ3Intrinsic = 0;
+  {
+    // Boundary reversal contribution
+    if (boundaryRes.bullPoints > 0) {
+      bullJ3Intrinsic += boundaryRes.bullPoints;
+      auditPush('J3', 'BULL', 'intrinsic.boundary_reversal',
+        boundaryRes.bullPoints,
+        `${boundaryRes.label}, yPercent=${yPercent.toFixed(1)}`);
     }
-  } else {
-    bullJ3Raw += Math.max(0, zScoreData.bullPoints) + Math.max(0, boundaryRes.bullPoints);
-    bearJ3Raw += Math.max(0, zScoreData.bearPoints) + Math.max(0, boundaryRes.bearPoints);
+    if (boundaryRes.bearPoints > 0) {
+      bearJ3Intrinsic += boundaryRes.bearPoints;
+      auditPush('J3', 'BEAR', 'intrinsic.boundary_reversal',
+        boundaryRes.bearPoints,
+        `${boundaryRes.label}, yPercent=${yPercent.toFixed(1)}`);
+    }
+
+    // Z-score significance
+    if (zScoreData.bullPoints > 0) {
+      bullJ3Intrinsic += zScoreData.bullPoints;
+      auditPush('J3', 'BULL', 'intrinsic.z_significance',
+        zScoreData.bullPoints,
+        `Z=${zScoreData.zScore}, type=${zScoreData.signalType}`);
+    }
+    if (zScoreData.bearPoints > 0) {
+      bearJ3Intrinsic += zScoreData.bearPoints;
+      auditPush('J3', 'BEAR', 'intrinsic.z_significance',
+        zScoreData.bearPoints,
+        `Z=${zScoreData.zScore}, type=${zScoreData.signalType}`);
+    }
+
+    // Bollinger band edge
+    const bUp = techCache.bollVals?.upper?.[last];
+    const bMd = techCache.bollVals?.middle?.[last];
+    const bLo = techCache.bollVals?.lower?.[last];
+    const px  = closes[last];
+    if (bUp != null && bMd != null && bLo != null) {
+      if (px < bLo + (bMd - bLo) * 0.15) {
+        bullJ3Intrinsic += 0.75;
+        auditPush('J3', 'BULL', 'intrinsic.boll_lower_edge',
+          0.75, `Price ${px.toFixed(2)} near lower BB ${bLo.toFixed(2)}`);
+      }
+      if (px > bUp - (bUp - bMd) * 0.15) {
+        bearJ3Intrinsic += 0.75;
+        auditPush('J3', 'BEAR', 'intrinsic.boll_upper_edge',
+          0.75, `Price ${px.toFixed(2)} near upper BB ${bUp.toFixed(2)}`);
+      }
+    }
+
+    // Wick rejection on last candle
+    const lc = ohlcSeries[last];
+    if (lc) {
+      const body = Math.abs(lc.close - lc.open);
+      const uW   = lc.high - Math.max(lc.open, lc.close);
+      const lW   = Math.min(lc.open, lc.close) - lc.low;
+      if (lW > body * 1.8 && lW > 0) {
+        bullJ3Intrinsic += 0.5;
+        auditPush('J3', 'BULL', 'intrinsic.lower_wick_rejection',
+          0.5, `Lower wick ${lW.toFixed(4)} > 1.8×body ${body.toFixed(4)}`);
+      }
+      if (uW > body * 1.8 && uW > 0) {
+        bearJ3Intrinsic += 0.5;
+        auditPush('J3', 'BEAR', 'intrinsic.upper_wick_rejection',
+          0.5, `Upper wick ${uW.toFixed(4)} > 1.8×body ${body.toFixed(4)}`);
+      }
+    }
   }
 
-  const bullJ3 = Math.min(3.0, bullJ3Raw);
-  const bearJ3 = Math.min(3.0, bearJ3Raw);
+  const bullJ3Raw = bullJ3Intrinsic + techBullJ3;
+  const bearJ3Raw = bearJ3Intrinsic + techBearJ3;
+  const bullJ3 = Math.min(3.0, Math.max(0, bullJ3Raw));
+  const bearJ3 = Math.min(3.0, Math.max(0, bearJ3Raw));
 
   // --- Hurst regime balancer (Macrosynergy study) ---
   let bullJ1Final = bullJ1;
@@ -545,7 +680,7 @@ export function evaluateSignal(
   }
   skepticMultiplier *= tfMultiplier;
 
-  skepticMultiplier = Math.max(0.30, Math.min(1.20, skepticMultiplier));
+  skepticMultiplier = Math.max(0.30, Math.min(1.00, skepticMultiplier));
 
   let skepticVerdict: 'ACCEPT' | 'CAUTION' | 'WEAK' = 'ACCEPT';
   if (skepticMultiplier < 0.60) skepticVerdict = 'WEAK';
@@ -645,15 +780,15 @@ export function evaluateSignal(
 │  Confidence: ${finalConfidence.toString().padEnd(3)}%                 │
 ├─────────────────────────────────────┤
 │  CASE 1 — BULL                      │
-│  J1 Momentum:  ${cases.bull.j1.toFixed(1).padEnd(5)}/ 4.0         │
-│  J2 Oscillator:${cases.bull.j2.toFixed(1).padEnd(5)}/ 4.0         │
-│  J3 Boundary:  ${cases.bull.j3.toFixed(1).padEnd(5)}/ 3.0         │
+│  J1 Reasoning: ${cases.bull.j1.toFixed(1).padEnd(5)}/ 4.0         │
+│  J2 Vehicle:   ${cases.bull.j2.toFixed(1).padEnd(5)}/ 4.0         │
+│  J3 Reversal:  ${cases.bull.j3.toFixed(1).padEnd(5)}/ 3.0         │
 │  Total:        ${cases.bull.total.toFixed(1).padEnd(5)}/ 11.0        │
 ├─────────────────────────────────────┤
 │  CASE 2 — BEAR                      │
-│  J1 Momentum:  ${cases.bear.j1.toFixed(1).padEnd(5)}/ 4.0         │
-│  J2 Oscillator:${cases.bear.j2.toFixed(1).padEnd(5)}/ 4.0         │
-│  J3 Boundary:  ${cases.bear.j3.toFixed(1).padEnd(5)}/ 3.0         │
+│  J1 Reasoning: ${cases.bear.j1.toFixed(1).padEnd(5)}/ 4.0         │
+│  J2 Vehicle:   ${cases.bear.j2.toFixed(1).padEnd(5)}/ 4.0         │
+│  J3 Reversal:  ${cases.bear.j3.toFixed(1).padEnd(5)}/ 3.0         │
 │  Total:        ${cases.bear.total.toFixed(1).padEnd(5)}/ 11.0        │
 ├─────────────────────────────────────┤
 │  SKEPTIC VETO:  ${skepticMultiplier.toFixed(2)} (${skepticVerdict.padEnd(7)}) │
@@ -683,6 +818,7 @@ ${rulingStr}
 
   // Build rigorous deterministic Audit Trail mapping every single decision parameter
   const auditTrail = {
+    judgeContribs,
     temporalFiltering: {
       graphTimeframeMinutes,
       durationMinutes,
@@ -761,6 +897,23 @@ ${rulingStr}
       finalScore
     }
   };
+
+  if (typeof console !== 'undefined' && (globalThis as any).CHARTLENS_DEBUG !== false) {
+    console.groupCollapsed(`[CHARTLENS] decision: ${finalSignal} conf=${finalConfidence}%`);
+    console.log('Cases:', cases);
+    console.log('Intrinsic J1:', { bull: bullJ1Intrinsic, bear: bearJ1Intrinsic });
+    console.log('Intrinsic J2:', { bull: bullJ2Intrinsic, bear: bearJ2Intrinsic });
+    console.log('Intrinsic J3:', { bull: bullJ3Intrinsic, bear: bearJ3Intrinsic });
+    console.log('Technique J1/J2/J3:', { bullJ1: techBullJ1, bullJ2: techBullJ2, bullJ3: techBullJ3,
+                                         bearJ1: techBearJ1, bearJ2: techBearJ2, bearJ3: techBearJ3 });
+    console.log('Skeptic mult:', skepticMultiplier, 'verdict:', skepticVerdict);
+    console.log('Techniques evaluated:', evaluationVotes.length,
+                'matched:', evaluationVotes.filter(v => v.vote === 'BULL' || v.vote === 'BEAR').length,
+                'skipped:', evaluationVotes.filter(v => v.vote === 'SKIP').length,
+                'unknown:', evaluationVotes.filter(v => /unknown technique/.test(v.reason)).length);
+    console.log('judgeContribs:', judgeContribs);
+    console.groupEnd();
+  }
 
   return {
     agent: 'JUDGE',

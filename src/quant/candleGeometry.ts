@@ -27,17 +27,17 @@ function isBearish(c: NumericOHLC) {
 export function isHammer(ohlc: NumericOHLC[]): { match: boolean; score: number } {
   if (ohlc.length < 1) return { match: false, score: 0 };
   const c = ohlc[ohlc.length - 1];
-  const body = getBody(c);
-  const lw = getLowerWick(c);
-  const uw = getUpperWick(c);
+  const body  = getBody(c);
+  const lw    = getLowerWick(c);
+  const uw    = getUpperWick(c);
   const range = getRange(c);
-
   if (range === 0) return { match: false, score: 0 };
 
-  const bodyUpper30 = Math.min(c.open, c.close) >= c.low + (range * 0.7);
+  const tol = range * 0.10;        // 10% of full range tolerance for upper wick
+  const bodyInUpper60 = Math.min(c.open, c.close) >= c.low + range * 0.60;
 
-  if (lw >= 2 * body && uw <= (body + 0.01) && bodyUpper30) {
-    const score = Math.min(1.0, lw / (2.5 * (body || 0.001)));
+  if (lw >= 1.8 * body && uw <= body + tol && bodyInUpper60) {
+    const score = Math.min(1.0, lw / Math.max(2.0 * body, range * 0.1));
     return { match: true, score };
   }
   return { match: false, score: 0 };
@@ -46,17 +46,17 @@ export function isHammer(ohlc: NumericOHLC[]): { match: boolean; score: number }
 export function isShootingStar(ohlc: NumericOHLC[]): { match: boolean; score: number } {
   if (ohlc.length < 1) return { match: false, score: 0 };
   const c = ohlc[ohlc.length - 1];
-  const body = getBody(c);
-  const lw = getLowerWick(c);
-  const uw = getUpperWick(c);
+  const body  = getBody(c);
+  const lw    = getLowerWick(c);
+  const uw    = getUpperWick(c);
   const range = getRange(c);
-
   if (range === 0) return { match: false, score: 0 };
 
-  const bodyLower30 = Math.max(c.open, c.close) <= c.low + (range * 0.3);
+  const tol = range * 0.10;        // 10% of full range tolerance for lower wick
+  const bodyInLower40 = Math.max(c.open, c.close) <= c.low + range * 0.40;
 
-  if (uw >= 2 * body && lw <= 0.3 * body && bodyLower30) {
-    const score = Math.min(1.0, uw / (2.5 * (body || 0.001)));
+  if (uw >= 1.8 * body && lw <= body + tol && bodyInLower40) {
+    const score = Math.min(1.0, uw / Math.max(2.0 * body, range * 0.1));
     return { match: true, score };
   }
   return { match: false, score: 0 };
@@ -137,11 +137,12 @@ export function isMarubozu(ohlc: NumericOHLC[]): { bullish: boolean; bearish: bo
   const body = getBody(c);
   const lw = getLowerWick(c);
   const uw = getUpperWick(c);
+  const range = getRange(c);
 
-  if (body === 0) return { bullish: false, bearish: false, score: 0 };
+  if (body === 0 || range === 0) return { bullish: false, bearish: false, score: 0 };
 
-  if (uw <= 0.05 * body && lw <= 0.05 * body) {
-    const score = Math.max(0, Math.min(1.0, 1.0 - ((uw + lw) / body)));
+  if (uw <= range * 0.07 && lw <= range * 0.07) {
+    const score = Math.max(0, Math.min(1.0, 1.0 - ((uw + lw) / range)));
     if (isBullish(c)) return { bullish: true, bearish: false, score };
     if (isBearish(c)) return { bullish: false, bearish: true, score };
   }

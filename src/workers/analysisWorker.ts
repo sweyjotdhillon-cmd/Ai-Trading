@@ -13,7 +13,6 @@ import { detectLatestGap, GapEvidence } from '../quant/gapDetector';
 import { GapStabilityManager } from '../quant/gapStability';
 import { applyTemporalFilter, resetTemporalFilter } from '../quant/temporalFilter';
 import { extractChartJSON } from '../quant/dataExtractor';
-import { evaluateTechniques } from '../quant/techniqueEngine';
 
 const patternStabilityManager = new PatternStabilityManager();
 const gapStabilityManager = new GapStabilityManager();
@@ -144,17 +143,27 @@ self.onmessage = async (e: MessageEvent) => {
       );
       console.log(`[PERF] evaluateSignal: ${(performance.now()-t1Worker).toFixed(1)}ms`);
       console.log(`[PERF] TOTAL worker: ${(performance.now()-t0Worker).toFixed(1)}ms`);
+
+      // SANITY: the decision result MUST have the canonical type contract.
+      if (typeof decision.signal !== 'string' ||
+          typeof decision.winner !== 'string' ||
+          typeof decision.finalConfidence !== 'number' ||
+          !decision.cases || typeof decision.cases.bull?.total !== 'number') {
+        console.error('[CHARTLENS][TYPE_LEAK] decision missing canonical fields', decision);
+        throw new Error('Decision result type contract violated. Engine corrupted.');
+      }
+
       const stab = emitStability(decision);
 
       let finalSignal = decision.signal;
-      let finalConfidence = decision.confidence;
+      let finalConfidence = decision.finalConfidence;
       let finalScore = decision.finalScore;
       let finalStable = stab.stable;
 
       if (featureFlags.enableTemporalFiltering) {
         const tfResult = applyTemporalFilter(
           decision.signal,
-          decision.confidence,
+          decision.finalConfidence,
           decision.finalScore,
           stab.stable
         );
@@ -164,96 +173,24 @@ self.onmessage = async (e: MessageEvent) => {
         finalStable = tfResult.stable;
       }
 
-      let engineResult: any = undefined;
       const incidents: any[] = [];
-
       const extractedChartData = extractChartJSON(pipe.ohlcSeries, data.graphTimeframe || '30:00', durationMinutes, incidents);
 
-      if (data.techniquesList && data.techniquesList.length > 0 && typeof data.techniquesList[0] === 'object' && 'callConditions' in data.techniquesList[0]) {
-        try {
-          engineResult = evaluateTechniques(extractedChartData, data.techniquesList);
-          finalSignal = engineResult.verdict;
-          finalConfidence = Math.max(engineResult.callConfidence, engineResult.putConfidence);
-          finalScore = engineResult.margin;
-          
-          // Partition techniqueBreakdown results into J1, J2, and J3 for visual presentation!
-          let bullJ1 = 0, bearJ1 = 0;
-          let bullJ2 = 0, bearJ2 = 0;
-          let bullJ3 = 0, bearJ3 = 0;
-
-          const getTechniqueJudgeCategory = (name: string): 'J1' | 'J2' | 'J3' => {
-            const k = name.toLowerCase().replace(/[\s_-]/g, '');
-            if (k.includes('rsi') || k.includes('stoch') || k.includes('oscillator')) {
-              return 'J2';
-            }
-            if (k.includes('boll') || k.includes('reversal') || k.includes('hammer') || k.includes('doji') || k.includes('candle') || k.includes('support') || k.includes('resistance') || k.includes('boundary') || k.includes('wick') || k.includes('shadow')) {
-              return 'J3';
-            }
-            return 'J1';
-          };
-
-          if (engineResult.techniqueBreakdown) {
-            engineResult.techniqueBreakdown.forEach((b: any) => {
-              if (b.status === "EVALUATED") {
-                const cat = getTechniqueJudgeCategory(b.name || '');
-                if (cat === 'J1') {
-                  bullJ1 += b.callScore || 0;
-                  bearJ1 += b.putScore || 0;
-                } else if (cat === 'J2') {
-                  bullJ2 += b.callScore || 0;
-                  bearJ2 += b.putScore || 0;
-                } else if (cat === 'J3') {
-                  bullJ3 += b.callScore || 0;
-                  bearJ3 += b.putScore || 0;
-                }
-              }
-            });
-          }
-
-          const totalBull = bullJ1 + bullJ2 + bullJ3 || 0.0001;
-          const totalBear = bearJ1 + bearJ2 + bearJ3 || 0.0001;
-
-          // Scale to fit our maximum judge caps (J1=4, J2=4, J3=3)
-          const finalBullJ1 = Number(Math.min(4.0, (bullJ1 / totalBull) * engineResult.callTotal).toFixed(2)) || 0;
-          const finalBearJ1 = Number(Math.min(4.0, (bearJ1 / totalBear) * engineResult.putTotal).toFixed(2)) || 0;
-          const finalBullJ2 = Number(Math.min(4.0, (bullJ2 / totalBull) * engineResult.callTotal).toFixed(2)) || 0;
-          const finalBearJ2 = Number(Math.min(4.0, (bearJ2 / totalBear) * engineResult.putTotal).toFixed(2)) || 0;
-          const finalBullJ3 = Number(Math.min(3.0, (bullJ3 / totalBull) * engineResult.callTotal).toFixed(2)) || 0;
-          const finalBearJ3 = Number(Math.min(3.0, (bearJ3 / totalBear) * engineResult.putTotal).toFixed(2)) || 0;
-
-          decision.cases = {
-            bull: { 
-              j1: finalBullJ1, 
-              j2: finalBullJ2, 
-              j3: finalBullJ3, 
-              total: Number((finalBullJ1 + finalBullJ2 + finalBullJ3).toFixed(2))
-            },
-            bear: { 
-              j1: finalBearJ1, 
-              j2: finalBearJ2, 
-              j3: finalBearJ3, 
-              total: Number((finalBearJ1 + finalBearJ2 + finalBearJ3).toFixed(2))
-            }
-          };
-          decision.winner = engineResult.verdict === 'CALL' ? 'BULL' : (engineResult.verdict === 'PUT' ? 'BEAR' : 'NO_TRADE');
-          decision.margin = engineResult.margin;
-          decision.finalConfidence = finalConfidence;
-          decision.ruling = engineResult.noTradeReason ? `NO_TRADE - ${engineResult.noTradeReason}` : `Signal from matched techniques (${engineResult.callTotal} vs ${engineResult.putTotal})`;
-          decision.signal = finalSignal;
-          decision.finalScore = finalScore;
-
-          if (engineResult.skipped > 0) {
-            incidents.push({ type: 'BYPASS', module: 'techniqueEngine', message: `Engine skipped ${engineResult.skipped} techniques due to missing data` });
-          }
-        } catch (e: any) {
-          incidents.push({ type: 'ERROR', module: 'techniqueEngine', message: `Evaluation failed with error: ${e.message}`, details: String(e) });
-        }
+      let absoluteMin = 0;
+      let absoluteMax = 100;
+      if (pipe.ohlcSeries && pipe.ohlcSeries.length > 0) {
+        const lows = pipe.ohlcSeries.map((c: any) => c.low);
+        const highs = pipe.ohlcSeries.map((c: any) => c.high);
+        absoluteMin = Math.min(...lows);
+        absoluteMax = Math.max(...highs);
       }
 
       const debugTrace = {
         meta: pipe.meta,
-        decision: engineResult || decision,
+        decision: decision,
         extractedJSON: extractedChartData,
+        absoluteMin,
+        absoluteMax,
         temporalFiltering: featureFlags.enableTemporalFiltering ? {
           smoothedConfidence: finalConfidence,
           smoothedScore: finalScore

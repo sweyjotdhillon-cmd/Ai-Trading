@@ -73,11 +73,7 @@ import { CalibrationOverlay } from './CalibrationOverlay';
 
 
 
-let _seed = 0xC0FFEE;
-function pseudoRandom() {
-  _seed = (_seed * 1664525 + 1013904223) % 4294967296;
-  return _seed / 4294967296;
-};
+
 
 // Utility to downscale images on the web before sending to server
 
@@ -247,6 +243,10 @@ export function LiveAnalysis() {
   const [autoGradeReason, setAutoGradeReason] = useState<string>('');
   const [autoGradeConfidence, setAutoGradeConfidence] = useState<number>(0);
   const [autoGradeRawOutcome, setAutoGradeRawOutcome] = useState<string>('');
+  const [entryClose, setEntryClose] = useState<number | null>(null);
+  const [exitClose, setExitClose] = useState<number | null>(null);
+  const [absoluteMin, setAbsoluteMin] = useState<number | null>(null);
+  const [absoluteMax, setAbsoluteMax] = useState<number | null>(null);
   const actualDirection: 'UP' | 'DOWN' | null =
     confirmedOutcome === 'WIN' ? 'UP' : confirmedOutcome === 'LOSS' ? 'DOWN' : null;
   const [statsData, setStatsData] = useState<any[]>(() => {
@@ -272,7 +272,7 @@ export function LiveAnalysis() {
       };
     }
   }, []);
-  const [sessionIndex] = useState<number>(() => Math.floor(pseudoRandom() * 1000));
+  const [sessionIndex] = useState<number>(() => Math.floor(Math.random() * 1000));
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -401,6 +401,10 @@ export function LiveAnalysis() {
     setAutoGradeReason('');
     setAutoGradeConfidence(0);
     setAutoGradeRawOutcome('');
+    setEntryClose(null);
+    setExitClose(null);
+    setAbsoluteMin(null);
+    setAbsoluteMax(null);
     setMode('live');
     setStockName('Bitcoin');
     setGraphTimeframe('30:00');
@@ -812,6 +816,10 @@ export function LiveAnalysis() {
           clearTimeout(timeoutId);
 
           setAnalysis(result.analysis);
+          setEntryClose(result.entryClose !== undefined ? result.entryClose : null);
+          setExitClose(result.exitClose !== undefined ? result.exitClose : null);
+          setAbsoluteMin(result.absoluteMin !== undefined ? result.absoluteMin : null);
+          setAbsoluteMax(result.absoluteMax !== undefined ? result.absoluteMax : null);
 
           if (mode === 'test') {
              if (result.testModeRightSlice) {
@@ -1178,6 +1186,10 @@ export function LiveAnalysis() {
           buttonHoverProps={buttonHoverProps}
           buttonTapProps={buttonTapProps}
           springProps={springProps}
+          entryClose={entryClose}
+          exitClose={exitClose}
+          absoluteMin={absoluteMin}
+          absoluteMax={absoluteMax}
         />
       </View>
     </ScrollView>
@@ -1214,7 +1226,7 @@ const AnimatedArrows = ({ direction }: { direction: 'UP' | 'DOWN' | 'NO_TRADE' }
               transition={{ 
                 duration: 2, 
                 repeat: Infinity, 
-                delay: pseudoRandom() * 2,
+                delay: Math.random() * 2,
                 ease: "linear"
               }}
               style={{ fontSize: 120 }}

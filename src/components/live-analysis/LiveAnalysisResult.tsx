@@ -30,6 +30,10 @@ interface Props {
   buttonHoverProps: any;
   buttonTapProps: any;
   springProps: any;
+  entryClose?: number | null;
+  exitClose?: number | null;
+  absoluteMin?: number | null;
+  absoluteMax?: number | null;
 }
 
 export function LiveAnalysisResult({
@@ -37,7 +41,8 @@ export function LiveAnalysisResult({
   confirmedOutcome, saveToStats, setMode, tradingDirection, actualDirection,
   testModeLeftSlice, testModeRightSlice, autoGradeStatus, autoGradeReason,
   autoGradeRawOutcome, autoGradeConfidence, handleRegrade, setConfirmedOutcome,
-  setAutoGradeStatus, handleReset, buttonHoverProps, buttonTapProps, springProps
+  setAutoGradeStatus, handleReset, buttonHoverProps, buttonTapProps, springProps,
+  entryClose, exitClose, absoluteMin, absoluteMax
 }: Props) {
   const [isAutopsyOpen, setIsAutopsyOpen] = useState(false);
   const [showTechniques, setShowTechniques] = useState(mode === 'test' || mode === 'bulk');
@@ -53,6 +58,11 @@ export function LiveAnalysisResult({
   const j1ScoreValue = judgeObj.j1Score !== undefined ? judgeObj.j1Score : 0;
   const j2ScoreValue = judgeObj.j2Score !== undefined ? judgeObj.j2Score : 0;
   const j3ScoreValue = judgeObj.j3Score !== undefined ? judgeObj.j3Score : 0;
+
+  const totalBull = casesObj?.bull?.total ?? 0;
+  const totalBear = casesObj?.bear?.total ?? 0;
+  const maxTotal  = Math.max(totalBull, totalBear);
+  const isStrong  = decisionValue === 'STRONG SIGNAL' && maxTotal >= 4.0;
 
   return (
     <motion.div
@@ -78,12 +88,12 @@ export function LiveAnalysisResult({
         </div>
         <motion.div
           whileHover={{ scale: 1.05 }}
-          className={`px-3 py-1 rounded-full flex flex-row items-center ${decisionValue === 'STRONG SIGNAL' ? 'bg-green-500/10' : (decisionValue === 'MODERATE' ? 'bg-yellow-500/10' : 'bg-red-500/10')}`}
+          className={`px-3 py-1 rounded-full flex flex-row items-center ${isStrong ? 'bg-green-500/10' : (decisionValue === 'MODERATE' ? 'bg-yellow-500/10' : 'bg-red-500/10')}`}
         >
-          {decisionValue === 'STRONG SIGNAL' ? <CheckCircle size={14} color="#22C55E" /> : (decisionValue === 'MODERATE' ? <AlertTriangle size={14} color="#EAB308" /> : <XCircle size={14} color="#EF4444" />)}
+          {isStrong ? <CheckCircle size={14} color="#22C55E" /> : (decisionValue === 'MODERATE' ? <AlertTriangle size={14} color="#EAB308" /> : <XCircle size={14} color="#EF4444" />)}
           <Text style={[
             tw`ml-1 text-[10px] font-black`,
-            decisionValue === 'STRONG SIGNAL' ? tw`text-green-500` : (decisionValue === 'MODERATE' ? tw`text-yellow-500` : tw`text-red-500`)
+            isStrong ? tw`text-green-500` : (decisionValue === 'MODERATE' ? tw`text-yellow-500` : tw`text-red-500`)
           ]}>{decisionValue}</Text>
         </motion.div>
       </div>
@@ -497,57 +507,243 @@ export function LiveAnalysisResult({
               <View style={tw`flex-row justify-center relative w-full h-[300px]`}>
                 {testModeLeftSlice && (
                   <View style={tw`flex-auto pr-[1px] relative h-full flex flex-col`}>
-                    <Text style={tw`text-white text-opacity-60 text-xs font-bold text-center uppercase mb-2 absolute -top-6 w-full`}>Analyzed (Past)</Text>
+                    <Text style={tw`text-white text-opacity-60 text-[10px] tracking-widest font-black text-center uppercase mb-2 absolute -top-6 w-full`}>Analyzed (Past)</Text>
                     <img src={testModeLeftSlice} style={{ width: '100%', height: '100%', objectFit: 'cover', borderTopLeftRadius: 6, borderBottomLeftRadius: 6, border: '2px solid rgba(217,179,130,0.4)', borderRightWidth: 0, display: 'block' }} />
                   </View>
                 )}
                 
                 {testModeLeftSlice && testModeRightSlice && (
                   <View style={tw`w-[0px] relative items-center justify-center z-20`}>
-                    <View style={tw`absolute top-0 bottom-0 w-[2px] border-l-2 border-dashed border-[#38bdf8] opacity-100 z-10`} />
+                    <View style={tw`absolute top-0 bottom-0 w-[2.5px] bg-[#38bdf8] opacity-80 z-10`} />
                     <View style={tw`absolute top-1/2 -translate-y-1/2 bg-[#0f172a] border border-[#38bdf8] px-2 py-1 rounded-full z-20 shadow-lg whitespace-nowrap`}>
-                        <Text style={tw`text-[#38bdf8] text-[9px] font-black uppercase tracking-widest leading-none`}>Analysis Line</Text>
+                        <Text style={tw`text-[#38bdf8] text-[8px] font-black uppercase tracking-widest leading-none`}>Boundary Cut</Text>
                     </View>
                   </View>
                 )}
 
                 {testModeRightSlice && (
                   <View style={tw`flex-1 pl-[1px] relative h-full flex flex-col`}>
-                    <Text style={tw`text-yellow-400 text-xs font-bold text-center uppercase mb-2 absolute -top-6 w-full`}>Outcome</Text>
+                    <Text style={tw`text-[#38bdf8] text-[10px] tracking-widest font-black text-center uppercase mb-2 absolute -top-6 w-full`}>Outcome Timeline</Text>
                     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-                      <img src={testModeRightSlice} style={{ width: '100%', height: '100%', objectFit: 'cover', borderTopRightRadius: 6, borderBottomRightRadius: 6, border: '2px solid rgba(239,68,68,0.5)', borderLeftWidth: 0, display: 'block' }} />
+                      <img src={testModeRightSlice} style={{ width: '100%', height: '100%', objectFit: 'cover', borderTopRightRadius: 6, borderBottomRightRadius: 6, border: '2px solid rgba(56,189,248,0.3)', borderLeftWidth: 0, display: 'block' }} />
                       
-                      {analysis?.judge?.winner && analysis.judge.winner !== 'NO_TRADE' && analysis.judge.winner !== 'NONE' && (
-                         <svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 10 }}>
-                            <line
+                      {analysis?.judge?.winner && analysis.judge.winner !== 'NO_TRADE' && analysis.judge.winner !== 'NONE' && (() => {
+                        const predictedBull = analysis.judge.winner === 'BULL';
+                        const actualUp = exitClose !== undefined && entryClose !== undefined && exitClose !== null && entryClose !== null && exitClose > entryClose;
+                        const isWin = predictedBull ? actualUp : !actualUp;
+                        const indicatorColor = isWin ? '#10b981' : '#f43f5e';
+                        
+                        // Use calculated coordinates if available
+                        const heightRange = (absoluteMax && absoluteMin) ? (absoluteMax - absoluteMin) : null;
+                        const entryPercentVal = (heightRange && entryClose !== undefined && entryClose !== null && absoluteMin !== null)
+                          ? 100 - ((entryClose - absoluteMin) / heightRange * 100)
+                          : 50;
+                        const exitPercentVal = (heightRange && exitClose !== undefined && exitClose !== null && absoluteMin !== null)
+                          ? 100 - ((exitClose - absoluteMin) / heightRange * 100)
+                          : (predictedBull ? 30 : 70);
+
+                        const yEntry = Math.max(15, Math.min(85, entryPercentVal));
+                        const yExit  = Math.max(15, Math.min(85, exitPercentVal));
+
+                        return (
+                          <svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 10 }}>
+                             <defs>
+                               <filter id="glowGreen" x="-20%" y="-20%" width="140%" height="140%">
+                                 <feGaussianBlur stdDeviation="3" result="blur" />
+                                 <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                               </filter>
+                               <filter id="glowRed" x="-20%" y="-20%" width="140%" height="140%">
+                                 <feGaussianBlur stdDeviation="3" result="blur" />
+                                 <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                               </filter>
+                             </defs>
+
+                             {/* Horizontal entry level line */}
+                             <line
                                x1="0%"
-                               y1="50%"
-                               x2="70%"
-                               y2={analysis.judge.winner === 'BULL' ? '20%' : '80%'}
-                               stroke={analysis.judge.winner === 'BULL' ? '#22c55e' : '#ef4444'}
-                               strokeWidth="3"
-                               strokeDasharray="6,4"
-                            />
-                            <circle cx="70%" cy={analysis.judge.winner === 'BULL' ? '20%' : '80%'} r="6" fill={analysis.judge.winner === 'BULL' ? '#22c55e' : '#ef4444'} />
-                            <text
-                               x="70%"
-                               y={analysis.judge.winner === 'BULL' ? '12%' : '88%'}
-                               fill={analysis.judge.winner === 'BULL' ? '#22c55e' : '#ef4444'}
-                               fontSize="12"
+                               y1={`${yEntry}%`}
+                               x2="100%"
+                               y2={`${yEntry}%`}
+                               stroke="#eab308"
+                               strokeWidth="1.5"
+                               strokeDasharray="4,4"
+                               opacity="0.8"
+                             />
+                             <rect
+                               x="2"
+                               y={yEntry > 15 ? yEntry - 14 : yEntry + 2}
+                               width="70"
+                               height="12"
+                               rx="2"
+                               fill="#0f172a"
+                               stroke="#eab308"
+                               strokeWidth="1"
+                               opacity="0.9"
+                             />
+                             <text
+                               x="5"
+                               y={yEntry > 15 ? yEntry - 5 : yEntry + 11}
+                               fill="#eab308"
+                               fontSize="7.5"
                                fontWeight="bold"
+                               fontFamily="monospace"
+                             >
+                               ENTRY: {entryClose ? entryClose.toFixed(1) : '50.0'}
+                             </text>
+
+                             {/* Trajectory / closing prediction line */}
+                             <line
+                               x1="0%"
+                               y1={`${yEntry}%`}
+                               x2="100%"
+                               y2={`${yExit}%`}
+                               stroke={indicatorColor}
+                               strokeWidth="3.5"
+                               filter={isWin ? "url(#glowGreen)" : "url(#glowRed)"}
+                             />
+
+                             {/* Horizontal exit level line */}
+                             <line
+                               x1="0%"
+                               y1={`${yExit}%`}
+                               x2="100%"
+                               y2={`${yExit}%`}
+                               stroke={indicatorColor}
+                               strokeWidth="1.5"
+                               strokeDasharray="4,4"
+                               opacity="0.6"
+                             />
+                             <rect
+                               x="50%"
+                               y={yExit > 15 ? yExit - 14 : yExit + 2}
+                               width="65"
+                               height="12"
+                               rx="2"
+                               fill="#0f172a"
+                               stroke={indicatorColor}
+                               strokeWidth="1"
+                               opacity="0.9"
+                             />
+                             <text
+                               x="53%"
+                               y={yExit > 15 ? yExit - 5 : yExit + 11}
+                               fill={indicatorColor}
+                               fontSize="7.5"
+                               fontWeight="bold"
+                               fontFamily="monospace"
+                             >
+                               EXIT: {exitClose ? exitClose.toFixed(1) : '70.0'}
+                             </text>
+
+                             {/* Target Node circle */}
+                             <circle cx="100%" cy={`${yExit}%`} r="5" fill={indicatorColor} stroke="#ffffff" strokeWidth="1.5" />
+
+                             {/* Text verdict */}
+                             <rect
+                               x="30%"
+                               y="10"
+                               width="40%"
+                               height="16"
+                               rx="3"
+                               fill="#0f172a"
+                               stroke={indicatorColor}
+                               strokeWidth="1.2"
+                             />
+                             <text
+                               x="50%"
+                               y="21"
+                               fill={indicatorColor}
+                               fontSize="8.5"
+                               fontWeight="extrabold"
                                textAnchor="middle"
-                            >
-                               Predicted {analysis.judge.winner === 'BULL' ? 'UP' : 'DOWN'}
-                            </text>
-                            {/* Adding explanation of the prediction */}
-                            <text x="70%" y={analysis.judge.winner === 'BULL' ? '28%' : '73%'} fill={analysis.judge.winner === 'BULL' ? '#22c55e' : '#ef4444'} fontSize="10" textAnchor="middle" style={{ opacity: 0.8 }}>
-                               {analysis.judge.winner === 'BULL' ? 'Target Reached' : 'Support Broken'}
-                            </text>
-                         </svg>
-                      )}
+                               fontFamily="monospace"
+                             >
+                               {isWin ? "WORTH IT 💰" : "LOSS ⚠️"}
+                             </text>
+                          </svg>
+                        );
+                      })()}
                     </div>
                   </View>
                 )}
+              </View>
+            </View>
+          )}
+
+          {/* Real Prices / Generative Math Engine Details */}
+          {entryClose !== undefined && exitClose !== undefined && entryClose !== null && exitClose !== null && (
+            <View style={tw`bg-[#1e293b]/40 border border-[#38bdf8]/10 rounded-xl p-4 mb-4`}>
+              <View style={tw`flex-row justify-between items-center mb-3`}>
+                <View style={tw`flex-row items-center`}>
+                  <Terminal size={14} color="#38bdf8" style={tw`mr-1.5`} />
+                  <Text style={tw`text-[#38bdf8] text-[10px] font-black uppercase tracking-wider`}>
+                    MATH RECOGNITION METRICS
+                  </Text>
+                </View>
+                <View style={tw`bg-[#38bdf8]/10 px-2 py-0.5 rounded`}>
+                  <Text style={tw`text-[#38bdf8] text-[9px] font-bold uppercase`}>
+                    100% Dynamic Engine
+                  </Text>
+                </View>
+              </View>
+
+              <View style={tw`flex-row justify-between mb-2`}>
+                <View style={tw`flex-1 mr-3 bg-[#0f172a]/70 p-2.5 rounded-lg border border-white/5`}>
+                  <Text style={tw`text-white/40 text-[9px] font-black uppercase tracking-wider mb-1`}>
+                    Entry Candle Close
+                  </Text>
+                  <Text style={tw`text-yellow-400 text-base font-black font-mono`}>
+                    {entryClose.toFixed(2)}
+                  </Text>
+                  <Text style={tw`text-white/50 text-[8px] font-bold font-mono mt-0.5`}>
+                     (Boundary Cut line)
+                  </Text>
+                </View>
+
+                <View style={tw`flex-1 bg-[#0f172a]/70 p-2.5 rounded-lg border border-white/5`}>
+                  <Text style={tw`text-white/40 text-[9px] font-black uppercase tracking-wider mb-1`}>
+                    Nearest Candle Close
+                  </Text>
+                  <Text style={tw`text-green-400 text-base font-black font-mono`}>
+                    {exitClose.toFixed(2)}
+                  </Text>
+                  <Text style={tw`text-white/50 text-[8px] font-bold font-mono mt-0.5`}>
+                     (Post-boundary index)
+                  </Text>
+                </View>
+              </View>
+
+              <View style={tw`h-[1px] bg-white/5 my-3`} />
+
+              <View style={tw`flex-row justify-between items-center`}>
+                <View>
+                  <Text style={tw`text-white/40 text-[8px] font-bold uppercase`}>
+                    Absolute price variation
+                  </Text>
+                  <View style={tw`flex-row items-center mt-0.5`}>
+                    <Text style={tw`text-white text-xs font-bold font-mono`}>
+                      {(exitClose - entryClose) >= 0 ? '+' : ''}{(exitClose - entryClose).toFixed(2)}
+                    </Text>
+                    <Text style={tw`text-xs ml-1 font-bold ${exitClose >= entryClose ? 'text-green-500' : 'text-red-500'}`}>
+                      ({exitClose >= entryClose ? '▲ UP' : '▼ DOWN'})
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={tw`items-end`}>
+                  <Text style={tw`text-white/40 text-[8px] font-bold uppercase`}>
+                    Decision Consistency
+                  </Text>
+                  <Text style={tw`text-xs font-black uppercase mt-0.5 ${
+                    ((analysis?.judge?.winner === 'BULL' && exitClose >= entryClose) || (analysis?.judge?.winner === 'BEAR' && exitClose < entryClose))
+                      ? 'text-green-400'
+                      : 'text-red-400'
+                  }`}>
+                    {((analysis?.judge?.winner === 'BULL' && exitClose >= entryClose) || (analysis?.judge?.winner === 'BEAR' && exitClose < entryClose))
+                      ? 'WORTH IT (MATCH)'
+                      : 'LOSS (CONTRARY)'}
+                  </Text>
+                </View>
               </View>
             </View>
           )}

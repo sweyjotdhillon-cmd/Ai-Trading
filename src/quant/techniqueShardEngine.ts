@@ -3,7 +3,7 @@ import { NumericOHLC } from '../vision/pipeline';
 import { rsi, stochastic, macd, atr, bollinger, ema } from './indicators';
 import { emaSlope, emaCurvature } from './calculus';
 
-import { TECHNIQUE_LIBRARY } from './techniqueLibrary';
+import { TECHNIQUE_LIBRARY, resolveLibraryKey } from './techniqueLibrary';
 
 export type VoteResult = 'BULL' | 'BEAR' | 'NEUTRAL' | 'SKIP';
 
@@ -317,7 +317,8 @@ export function evaluateShard(
         reason = `Code Exec Error: ${err.message}`;
       }
     } else {
-      const libFn = TECHNIQUE_LIBRARY[key];
+      const canonical = resolveLibraryKey(rawName);
+      const libFn = canonical ? TECHNIQUE_LIBRARY[canonical] : undefined;
       if (libFn) {
         const res = libFn(ohlc, cache);
         vote = res.vote;

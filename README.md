@@ -43,10 +43,10 @@ Operates entirely deterministically on the output of the vision pipeline. The en
 *   **The Rule Engine (`evaluateSignal` in `src/quant/ruleEngine.ts`)**: The heart of the decision matrix. It requires a parsed OHLC series, horizon context, user-selected techniques, and confirmed patterns.
 *   **Flexible Custom Content Verification**: For user custom uploaded lists, ChartLens accepts any count of custom rules down to 1. For default configurations, standard consensus requires 10 matching rules.
 *   **Scoring Rubric (4-Judge Matrix)**:
-    *   **Judge 1 (Trend/Momentum)**: Correlates parsed user techniques (e.g., Engulfing, Marubozu) with the underlying trend via `PATTERN_WEIGHTS_BY_HORIZON`.
-    *   **Judge 2 (Oscillator Consensus)**: Aggregates RSI divergence, MACD histogram velocity, and Stochastic boundaries for confirmation logic.
-    *   **Judge 3 (Boundary/Reversal)**: Employs percentile mapping (`yPercent`) of the current close against local highs/lows combined with wick-to-body ratio analysis.
-    *   **Judge 4 (The Skeptic Multiplier)**: A gating penalty. Evaluates high-order derivatives (Z-Scores, Volatility Regimes, ATR, RQA Determinism/Laminarity) and heavily dampens the final confidence score if erratic market chop or explosive fluctuations are detected.
+    *   **Judge 1 (Reasoning)**: Correlates parsed user techniques (e.g., Engulfing, Marubozu, Hammer) with the underlying trend and price structures in the pattern repository.
+    *   **Judge 2 (Vehicle)**: Aggregates technical Indicators, trend momentum, and bullish/bearish vehicles for confirmation.
+    *   **Judge 3 (Reversal)**: Employs percentile mapping (`yPercent`) of the current close against local highs/lows combined with wick/volatility analysis to gauge statistical reversal boundaries.
+    *   **Skeptic Veto (The Judge 4 Penalty)**: A gating penalty mechanism. Evaluates high-order derivatives (Z-Scores, Volatility Regimes, ATR, RQA Determinism) and applies veto multipliers to dampen standard confidence scores in hyper-volatile environments.
 *   **Hurst Exponent Balancer**: A Hurst Exponent (`rescaledRangeHurst`) dynamically adjusts scoring logic mid-execution, scaling momentum weights upwards during `H > 0.55` (Trending Regimes) and boundary/reversal weights during `H < 0.45` (Mean-Reverting Regimes).
 *   **Pattern Recognition & Stability**:
     *   **`patternAdapter.ts`**: Extracts raw candlestick geometries using the `candlestick` library against the synthesized OHLC data.
@@ -137,4 +137,12 @@ All live and batch/bulk trade statistics (wins, losses, predictions, confidences
   - **Robust Colon Parsers**: Extended the baseline duration string parser to correctly extract minutes from custom digital clock formats (e.g. `30:00` -> 30, `3:00` -> 3).
 - **Comprehensive Candlestick Data Enrichment**: Every processed candlestick is now explicitly stuffed with both categorized indicators and raw numerical values (`ema9`, `ema21`, Bollinger bands `upper`/`middle`/`lower`/`width` prices, and `atr`).
 - **Resilient Key Mapper and Neutral Fallbacks**: Built a powerful, multi-stage recursive keyword lookup to match custom naming patterns (e.g. `rsi_14`, `macd_line`) alongside a fallback solver that assigns neutral defaults (e.g., `50.0` for missing oscillators, `current close` for missing signals) rather than skipping uploaded techniques due to indicator misalignment.
+- **Unbiased Math Standardizations**: Replaced the previous `pseudoRandom` seeding logic with native hardware `Math.random` across all math calculation systems and UI animation render layers, enhancing performance and unbiased entropy distribution.
+
+### G. Dynamic Spliced Outcome Trajectory & Real-Price Visualizations
+ChartLens now integrates a precision-engineered 100% dynamic math trajectory visualizer:
+- **Boundary Cut Indicator**: Clearly identifies the transition point (representing the first 3 candles of the analysis window) where past context is separated from subsequent price action.
+- **Dynamic Trajectory Computation**: Calculates the relative Y coordinates on the SVG frame directly using the detected extreme high/low prices (`absoluteMin` / `absoluteMax`), producing a pixel-perfect, proportional rendering of price changes.
+- **Live Level Stickers**: Draws interactive horizontal stickers for the entry level closing price and nearest subsequent candle close price with standard trading application font alignment.
+- **Visual Worth Indicator**: Dynamically color-codes trajectory overlays in glow-enabled emerald green (indicating "WORTH IT 💰" outcomes) or crimson red (indicating "LOSS ⚠️" outcomes), ensuring the generated technical outputs are instantly legible and human-scalable.
 

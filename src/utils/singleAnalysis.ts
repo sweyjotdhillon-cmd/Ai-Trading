@@ -331,7 +331,9 @@ export async function runSingleAnalysis(params: {
   let candlesCut: number | undefined;
 
   if (isTestMode && meta.candlesLength && meta.candlesLength > 10) {
-    const nCut = parseInt(params.investmentDuration) || 5;
+    const tfMinTest  = parseDurationToMinutes(params.graphTimeframe);
+    const durMinTest = parseDurationToMinutes(params.investmentDuration);
+    const nCut = Math.max(1, Math.ceil(durMinTest / tfMinTest));
     candlesCut = nCut;
     const cropRatio = nCut / meta.candlesLength;
     
@@ -475,6 +477,8 @@ export async function runSingleAnalysis(params: {
     frameStable,
     entryClose,
     exitClose,
-    candlesCut
+    candlesCut,
+    absoluteMin: debugTrace?.absoluteMin !== undefined ? debugTrace.absoluteMin : null,
+    absoluteMax: debugTrace?.absoluteMax !== undefined ? debugTrace.absoluteMax : null
   };
 }

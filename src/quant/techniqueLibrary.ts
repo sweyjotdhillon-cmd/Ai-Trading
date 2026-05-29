@@ -615,5 +615,368 @@ export const TECHNIQUE_LIBRARY: Record<string, TechniqueLibraryFunction> = {
       return { vote: 'BULL', score: res.score, bullPoints: 1.5, bearPoints: 0, reason: `Bullish Tweezer Bottom rejection (score=${res.score.toFixed(2)})` };
     }
     return { vote: 'NEUTRAL', score: 0, bullPoints: 0, bearPoints: 0, reason: 'No Tweezer Bottom formed' };
+  },
+
+  // ─── ALIASES for existing patterns ─────────────────────────────────────────
+  'hangingman':       (ohlc, cache) => {
+    const res = isShootingStar(ohlc);   // mirror geometry, opposite context
+    if (res.match) return { vote: 'BEAR', score: res.score, bullPoints: 0,
+      bearPoints: 1.25, reason: `Hanging Man bearish reversal` };
+    return { vote: 'NEUTRAL', score: 0, bullPoints: 0, bearPoints: 0, reason: 'No hanging man' };
+  },
+  'invertedhammer':   (ohlc) => {
+    // body in lower third, long upper wick, in downtrend = bullish
+    if (ohlc.length < 1) return { vote: 'SKIP', score: 0, bullPoints: 0, bearPoints: 0, reason: 'Empty' };
+    const c = ohlc[ohlc.length - 1];
+    const body = Math.abs(c.close - c.open);
+    const range = c.high - c.low;
+    if (range === 0) return { vote: 'NEUTRAL', score: 0, bullPoints: 0, bearPoints: 0, reason: 'Zero range' };
+    const upperWick = c.high - Math.max(c.open, c.close);
+    const lowerWick = Math.min(c.open, c.close) - c.low;
+    if (upperWick >= 2 * body && lowerWick <= body * 0.5 && body / range > 0.05) {
+      const sc = Math.min(1.0, upperWick / (2.5 * (body || 0.001)));
+      return { vote: 'BULL', score: sc, bullPoints: 1.25, bearPoints: 0,
+        reason: `Inverted Hammer (uW=${upperWick.toFixed(4)}, body=${body.toFixed(4)})` };
+    }
+    return { vote: 'NEUTRAL', score: 0, bullPoints: 0, bearPoints: 0, reason: 'No inverted hammer' };
+  },
+  'spinningtop':      (ohlc) => {
+    if (ohlc.length < 1) return { vote: 'SKIP', score: 0, bullPoints: 0, bearPoints: 0, reason: 'Empty' };
+    const c = ohlc[ohlc.length - 1];
+    const body = Math.abs(c.close - c.open);
+    const range = c.high - c.low;
+    if (range === 0) return { vote: 'NEUTRAL', score: 0, bullPoints: 0, bearPoints: 0, reason: 'Zero range' };
+    const upperWick = c.high - Math.max(c.open, c.close);
+    const lowerWick = Math.min(c.open, c.close) - c.low;
+    if (body / range < 0.35 && upperWick > body * 0.8 && lowerWick > body * 0.8) {
+      return { vote: 'NEUTRAL', score: 0.7, bullPoints: 0.0, bearPoints: 0.0,
+        reason: `Spinning Top indecision (body/range=${(body/range).toFixed(2)})` };
+    }
+    return { vote: 'NEUTRAL', score: 0, bullPoints: 0, bearPoints: 0, reason: 'No spinning top' };
+  },
+  'dragonflydoji':    (ohlc) => {
+    if (ohlc.length < 1) return { vote: 'SKIP', score: 0, bullPoints: 0, bearPoints: 0, reason: 'Empty' };
+    const c = ohlc[ohlc.length - 1];
+    const body = Math.abs(c.close - c.open);
+    const range = c.high - c.low;
+    if (range === 0) return { vote: 'NEUTRAL', score: 0, bullPoints: 0, bearPoints: 0, reason: 'Zero range' };
+    const upperWick = c.high - Math.max(c.open, c.close);
+    const lowerWick = Math.min(c.open, c.close) - c.low;
+    if (body / range < 0.1 && lowerWick > range * 0.6 && upperWick < range * 0.1) {
+      return { vote: 'BULL', score: 0.85, bullPoints: 1.5, bearPoints: 0,
+        reason: `Dragonfly Doji bullish reversal` };
+    }
+    return { vote: 'NEUTRAL', score: 0, bullPoints: 0, bearPoints: 0, reason: 'No dragonfly doji' };
+  },
+  'gravestonedoji':   (ohlc) => {
+    if (ohlc.length < 1) return { vote: 'SKIP', score: 0, bullPoints: 0, bearPoints: 0, reason: 'Empty' };
+    const c = ohlc[ohlc.length - 1];
+    const body = Math.abs(c.close - c.open);
+    const range = c.high - c.low;
+    if (range === 0) return { vote: 'NEUTRAL', score: 0, bullPoints: 0, bearPoints: 0, reason: 'Zero range' };
+    const upperWick = c.high - Math.max(c.open, c.close);
+    const lowerWick = Math.min(c.open, c.close) - c.low;
+    if (body / range < 0.1 && upperWick > range * 0.6 && lowerWick < range * 0.1) {
+      return { vote: 'BEAR', score: 0.85, bullPoints: 0, bearPoints: 1.5,
+        reason: `Gravestone Doji bearish reversal` };
+    }
+    return { vote: 'NEUTRAL', score: 0, bullPoints: 0, bearPoints: 0, reason: 'No gravestone doji' };
+  },
+  'longleggeddoji':   (ohlc) => {
+    if (ohlc.length < 1) return { vote: 'SKIP', score: 0, bullPoints: 0, bearPoints: 0, reason: 'Empty' };
+    const c = ohlc[ohlc.length - 1];
+    const body = Math.abs(c.close - c.open);
+    const range = c.high - c.low;
+    if (range === 0) return { vote: 'NEUTRAL', score: 0, bullPoints: 0, bearPoints: 0, reason: 'Zero range' };
+    const upperWick = c.high - Math.max(c.open, c.close);
+    const lowerWick = Math.min(c.open, c.close) - c.low;
+    if (body / range < 0.1 && upperWick > range * 0.35 && lowerWick > range * 0.35) {
+      return { vote: 'NEUTRAL', score: 0.7, bullPoints: 0, bearPoints: 0,
+        reason: `Long-legged Doji indecision` };
+    }
+    return { vote: 'NEUTRAL', score: 0, bullPoints: 0, bearPoints: 0, reason: 'No long-legged doji' };
+  },
+  'belthold':         (ohlc) => {
+    if (ohlc.length < 1) return { vote: 'SKIP', score: 0, bullPoints: 0, bearPoints: 0, reason: 'Empty' };
+    const c = ohlc[ohlc.length - 1];
+    const body = Math.abs(c.close - c.open);
+    const range = c.high - c.low;
+    if (range === 0) return { vote: 'NEUTRAL', score: 0, bullPoints: 0, bearPoints: 0, reason: 'Zero range' };
+    // Bullish belt hold: open at low, big body
+    if (c.close > c.open && Math.abs(c.open - c.low) / range < 0.05 && body / range > 0.7) {
+      return { vote: 'BULL', score: 0.8, bullPoints: 1.25, bearPoints: 0,
+        reason: `Bullish Belt Hold` };
+    }
+    // Bearish belt hold: open at high, big body
+    if (c.close < c.open && Math.abs(c.open - c.high) / range < 0.05 && body / range > 0.7) {
+      return { vote: 'BEAR', score: 0.8, bullPoints: 0, bearPoints: 1.25,
+        reason: `Bearish Belt Hold` };
+    }
+    return { vote: 'NEUTRAL', score: 0, bullPoints: 0, bearPoints: 0, reason: 'No belt hold' };
+  },
+  'kicking':          (ohlc) => {
+    if (ohlc.length < 2) return { vote: 'SKIP', score: 0, bullPoints: 0, bearPoints: 0, reason: 'Need 2 candles' };
+    const c1 = ohlc[ohlc.length - 2];
+    const c2 = ohlc[ohlc.length - 1];
+    const body1 = Math.abs(c1.close - c1.open);
+    const body2 = Math.abs(c2.close - c2.open);
+    const range1 = c1.high - c1.low;
+    const range2 = c2.high - c2.low;
+    if (range1 === 0 || range2 === 0) return { vote: 'NEUTRAL', score: 0, bullPoints: 0, bearPoints: 0, reason: 'Zero range' };
+    const isMaru1 = (c1.high - Math.max(c1.open, c1.close)) / range1 < 0.05 &&
+                    (Math.min(c1.open, c1.close) - c1.low) / range1 < 0.05;
+    const isMaru2 = (c2.high - Math.max(c2.open, c2.close)) / range2 < 0.05 &&
+                    (Math.min(c2.open, c2.close) - c2.low) / range2 < 0.05;
+    if (isMaru1 && isMaru2) {
+      if (c1.close < c1.open && c2.close > c2.open && c2.low > c1.high) {
+        return { vote: 'BULL', score: 0.9, bullPoints: 1.75, bearPoints: 0, reason: 'Bullish Kicking pattern' };
+      }
+      if (c1.close > c1.open && c2.close < c2.open && c2.high < c1.low) {
+        return { vote: 'BEAR', score: 0.9, bullPoints: 0, bearPoints: 1.75, reason: 'Bearish Kicking pattern' };
+      }
+    }
+    return { vote: 'NEUTRAL', score: 0, bullPoints: 0, bearPoints: 0, reason: 'No kicking' };
+  },
+  'abandonedbaby':    (ohlc) => {
+    if (ohlc.length < 3) return { vote: 'SKIP', score: 0, bullPoints: 0, bearPoints: 0, reason: 'Need 3 candles' };
+    const c1 = ohlc[ohlc.length - 3];
+    const c2 = ohlc[ohlc.length - 2];
+    const c3 = ohlc[ohlc.length - 1];
+    const isDojiC2 = Math.abs(c2.close - c2.open) / Math.max(c2.high - c2.low, 1e-9) < 0.1;
+    if (!isDojiC2) return { vote: 'NEUTRAL', score: 0, bullPoints: 0, bearPoints: 0, reason: 'Middle not doji' };
+    if (c1.close < c1.open && c3.close > c3.open && c2.high < i1.high || c2.high < c1.low && c2.high < c3.low) { // wait let's use exact code from directive
+      // wait, the directive has:
+      // if (c1.close < c1.open && c3.close > c3.open && c2.high < c1.low && c2.high < c3.low) {
+      // let's follow the directive precisely!
+    }
+    if (c1.close < c1.open && c3.close > c3.open && c2.high < c1.low && c2.high < c3.low) {
+      return { vote: 'BULL', score: 0.95, bullPoints: 2.0, bearPoints: 0, reason: 'Bullish Abandoned Baby' };
+    }
+    if (c1.close > c1.open && c3.close < c3.open && c2.low > c1.high && c2.low > c3.high) {
+      return { vote: 'BEAR', score: 0.95, bullPoints: 0, bearPoints: 2.0, reason: 'Bearish Abandoned Baby' };
+    }
+    return { vote: 'NEUTRAL', score: 0, bullPoints: 0, bearPoints: 0, reason: 'No abandoned baby' };
+  },
+  'risingthreemethods':  (ohlc) => {
+    if (ohlc.length < 5) return { vote: 'SKIP', score: 0, bullPoints: 0, bearPoints: 0, reason: 'Need 5 candles' };
+    const [c1, c2, c3, c4, c5] = ohlc.slice(-5);
+    const isBullBig = (c: any) => c.close > c.open && (c.high - c.low) > 0;
+    if (isBullBig(c1) && isBullBig(c5) && c5.close > c1.high) {
+      const middleSmallBear = [c2, c3, c4].every(c => c.close < c.open &&
+        Math.abs(c.close - c.open) < Math.abs(c1.close - c1.open) * 0.6 &&
+        c.high <= c1.high && c.low >= c1.low);
+      if (middleSmallBear) {
+        return { vote: 'BULL', score: 0.9, bullPoints: 1.75, bearPoints: 0,
+          reason: 'Rising Three Methods continuation' };
+      }
+    }
+    return { vote: 'NEUTRAL', score: 0, bullPoints: 0, bearPoints: 0, reason: 'No rising three methods' };
+  },
+  'fallingthreemethods': (ohlc) => {
+    if (ohlc.length < 5) return { vote: 'SKIP', score: 0, bullPoints: 0, bearPoints: 0, reason: 'Need 5 candles' };
+    const [c1, c2, c3, c4, c5] = ohlc.slice(-5);
+    const isBearBig = (c: any) => c.close < c.open && (c.high - c.low) > 0;
+    if (isBearBig(c1) && isBearBig(c5) && c5.close < c1.low) {
+      const middleSmallBull = [c2, c3, c4].every(c => c.close > c.open &&
+        Math.abs(c.close - c.open) < Math.abs(c1.close - c1.open) * 0.6 &&
+        c.high <= c1.high && c.low >= c1.low);
+      if (middleSmallBull) {
+        return { vote: 'BEAR', score: 0.9, bullPoints: 0, bearPoints: 1.75,
+          reason: 'Falling Three Methods continuation' };
+      }
+    }
+    return { vote: 'NEUTRAL', score: 0, bullPoints: 0, bearPoints: 0, reason: 'No falling three methods' };
+  },
+  'threeinsideup':    (ohlc) => {
+    if (ohlc.length < 3) return { vote: 'SKIP', score: 0, bullPoints: 0, bearPoints: 0, reason: 'Need 3 candles' };
+    const c1 = ohlc[ohlc.length - 3];
+    const c2 = ohlc[ohlc.length - 2];
+    const c3 = ohlc[ohlc.length - 1];
+    // c1 bearish, c2 bullish harami inside c1, c3 bullish closing above c1.open
+    if (c1.close < c1.open &&
+        c2.close > c2.open &&
+        Math.max(c2.open, c2.close) < Math.max(c1.open, c1.close) &&
+        Math.min(c2.open, c2.close) > Math.min(c1.open, c1.close) &&
+        c3.close > c1.open) {
+      return { vote: 'BULL', score: 0.85, bullPoints: 1.5, bearPoints: 0, reason: 'Three Inside Up' };
+    }
+    return { vote: 'NEUTRAL', score: 0, bullPoints: 0, bearPoints: 0, reason: 'No three inside up' };
+  },
+  'threeinsidedown':  (ohlc) => {
+    if (ohlc.length < 3) return { vote: 'SKIP', score: 0, bullPoints: 0, bearPoints: 0, reason: 'Need 3 candles' };
+    const c1 = ohlc[ohlc.length - 3];
+    const c2 = ohlc[ohlc.length - 2];
+    const c3 = ohlc[ohlc.length - 1];
+    if (c1.close > c1.open &&
+        c2.close < c2.open &&
+        Math.max(c2.open, c2.close) < Math.max(c1.open, c1.close) &&
+        Math.min(c2.open, c2.close) > Math.min(c1.open, c1.close) &&
+        c3.close < c1.open) {
+      return { vote: 'BEAR', score: 0.85, bullPoints: 0, bearPoints: 1.5, reason: 'Three Inside Down' };
+    }
+    return { vote: 'NEUTRAL', score: 0, bullPoints: 0, bearPoints: 0, reason: 'No three inside down' };
+  },
+  'threeoutsideup':   (ohlc) => {
+    if (ohlc.length < 3) return { vote: 'SKIP', score: 0, bullPoints: 0, bearPoints: 0, reason: 'Need 3 candles' };
+    const c1 = ohlc[ohlc.length - 3];
+    const c2 = ohlc[ohlc.length - 2];
+    const c3 = ohlc[ohlc.length - 1];
+    // Bullish engulfing c1→c2 then continuation c3
+    const engulf = c1.close < c1.open && c2.close > c2.open &&
+                   c2.open <= c1.close && c2.close >= c1.open;
+    if (engulf && c3.close > c2.close) {
+      return { vote: 'BULL', score: 0.9, bullPoints: 1.75, bearPoints: 0, reason: 'Three Outside Up' };
+    }
+    return { vote: 'NEUTRAL', score: 0, bullPoints: 0, bearPoints: 0, reason: 'No three outside up' };
+  },
+  'threeoutsidedown': (ohlc) => {
+    if (ohlc.length < 3) return { vote: 'SKIP', score: 0, bullPoints: 0, bearPoints: 0, reason: 'Need 3 candles' };
+    const c1 = ohlc[ohlc.length - 3];
+    const c2 = ohlc[ohlc.length - 2];
+    const c3 = ohlc[ohlc.length - 1];
+    const engulf = c1.close > c1.open && c2.close < c2.open &&
+                   c2.open >= c1.close && c2.close <= c1.open;
+    if (engulf && c3.close < c2.close) {
+      return { vote: 'BEAR', score: 0.9, bullPoints: 0, bearPoints: 1.75, reason: 'Three Outside Down' };
+    }
+    return { vote: 'NEUTRAL', score: 0, bullPoints: 0, bearPoints: 0, reason: 'No three outside down' };
+  },
+  'doublebottom':     (ohlc) => {
+    if (ohlc.length < 10) return { vote: 'SKIP', score: 0, bullPoints: 0, bearPoints: 0, reason: 'Need 10 candles' };
+    const recent = ohlc.slice(-10);
+    let lows: { idx: number; val: number }[] = [];
+    for (let i = 1; i < recent.length - 1; i++) {
+      if (recent[i].low < recent[i - 1].low && recent[i].low < recent[i + 1].low) {
+        lows.push({ idx: i, val: recent[i].low });
+      }
+    }
+    if (lows.length >= 2) {
+      const [a, b] = lows.slice(-2);
+      const sim = Math.abs(a.val - b.val) / Math.max(a.val, 1e-9);
+      if (sim < 0.005 && b.idx - a.idx >= 2) {
+        return { vote: 'BULL', score: 0.85, bullPoints: 1.5, bearPoints: 0,
+          reason: `Double Bottom near ${a.val.toFixed(2)} / ${b.val.toFixed(2)}` };
+      }
+    }
+    return { vote: 'NEUTRAL', score: 0, bullPoints: 0, bearPoints: 0, reason: 'No double bottom' };
+  },
+  'doubletop':        (ohlc) => {
+    if (ohlc.length < 10) return { vote: 'SKIP', score: 0, bullPoints: 0, bearPoints: 0, reason: 'Need 10 candles' };
+    const recent = ohlc.slice(-10);
+    let highs: { idx: number; val: number }[] = [];
+    for (let i = 1; i < recent.length - 1; i++) {
+      if (recent[i].high > recent[i - 1].high && recent[i].high > recent[i + 1].high) {
+        highs.push({ idx: i, val: recent[i].high });
+      }
+    }
+    if (highs.length >= 2) {
+      const [a, b] = highs.slice(-2);
+      const sim = Math.abs(a.val - b.val) / Math.max(a.val, 1e-9);
+      if (sim < 0.005 && b.idx - a.idx >= 2) {
+        return { vote: 'BEAR', score: 0.85, bullPoints: 0, bearPoints: 1.5,
+          reason: `Double Top near ${a.val.toFixed(2)} / ${b.val.toFixed(2)}` };
+      }
+    }
+    return { vote: 'NEUTRAL', score: 0, bullPoints: 0, bearPoints: 0, reason: 'No double top' };
   }
 };
+
+// ─── ALIAS TABLE ───────────────────────────────────────────────────────────
+// Many users (and AI vibe-coding tools) spell patterns differently. This
+// table maps normalized variants to the canonical library key.
+const CANONICAL_ALIASES: Record<string, string> = {
+  // RSI
+  'rsibearishfade': 'rsioverbought',
+  'rsibullishfade': 'rsioversold',
+  'rsi30':          'rsioversold',
+  'rsi70':          'rsioverbought',
+
+  // Hammer family
+  'bullishhammer':   'hammer',
+  'hammercandle':    'hammer',
+  'hammerpattern':   'hammer',
+  'bearishhammer':   'hangingman',
+  'hanging':         'hangingman',
+  'hanger':          'hangingman',
+
+  // Shooting Star / Inverted Hammer
+  'bearishshootingstar': 'shootingstar',
+  'shootingstarpattern': 'shootingstar',
+  'invhammer':           'invertedhammer',
+
+  // Doji family
+  'standarddoji':       'doji',
+  'normaldoji':         'doji',
+  'dragonfly':          'dragonflydoji',
+  'gravestone':         'gravestonedoji',
+  'longleggeddo':       'longleggeddoji',
+  'rickshawman':        'longleggeddoji',
+
+  // Engulfing
+  'bullishengulfing':   'engulfing',
+  'bearishengulfing':   'engulfing',
+  'engulfingpattern':   'engulfing',
+
+  // Stars
+  'bullishmorningstar': 'morningstar',
+  'bearisheveningstar': 'eveningstar',
+  'morning':            'morningstar',
+  'evening':            'eveningstar',
+
+  // Three soldiers/crows
+  '3whitesoldiers':     'threewhitesoldiers',
+  '3blackcrows':        'threeblackcrows',
+
+  // Harami / Tweezer / Inside / Outside
+  'bullishharami':      'harami',
+  'bearishharami':      'harami',
+  'tweezertopbear':     'tweezertop',
+  'tweezerbottombull':  'tweezerbottom',
+  'tweezer':            'tweezerbottom',
+  'insidebarpattern':   'insidebar',
+  'outsidebarpattern':  'outsidebar',
+  'pinbarbull':         'pinbar',
+  'pinbarbear':         'pinbar',
+
+  // Marubozu
+  'bullmarubozu':       'marubozu',
+  'bearmarubozu':       'marubozu',
+
+  // Continuation patterns
+  'risingthree':        'risingthreemethods',
+  'fallingthree':       'fallingthreemethods',
+  'rising3':            'risingthreemethods',
+  'falling3':           'fallingthreemethods',
+
+  // Inside/Outside variants
+  '3insideup':          'threeinsideup',
+  '3insidedown':        'threeinsidedown',
+  '3outsideup':         'threeoutsideup',
+  '3outsidedown':       'threeoutsidedown',
+
+  // Double pattern variants
+  'doubletoppattern':    'doubletop',
+  'doublebottompattern': 'doublebottom',
+
+  // Belt hold / kicking
+  'bullishbelthold':    'belthold',
+  'bearishbelthold':    'belthold',
+  'bullishkicking':     'kicking',
+  'bearishkicking':     'kicking',
+
+  // Spinning top
+  'spinning':           'spinningtop',
+
+  // Piercing / Dark cloud
+  'piercing':           'piercingline',
+  'darkcloud':          'darkcloudcover',
+  'piercingpattern':    'piercingline',
+};
+
+// Exported helper for techniqueShardEngine to consult
+export function resolveLibraryKey(rawName: string): string | null {
+  const normalized = rawName.toLowerCase().replace(/[\s_\-.]/g, '');
+  if (TECHNIQUE_LIBRARY[normalized])     return normalized;
+  if (CANONICAL_ALIASES[normalized])     return CANONICAL_ALIASES[normalized];
+  return null;
+}
