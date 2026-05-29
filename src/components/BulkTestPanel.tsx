@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, Pressable, ScrollView, Platform } from 'react-native';
 import tw from 'twrnc';
 import { motion } from 'motion/react';
-import { FileJson, UploadCloud, Play, AlertTriangle, Activity, X } from 'lucide-react';
+import { FileJson, UploadCloud, Play, AlertTriangle, Activity, X, Terminal } from 'lucide-react';
 import { BatchManifest, BatchManifestEntry, validateBatchManifest } from '../types/batchManifest';
 
 import { BatchAutopsyReport } from './BatchAutopsyReport';
@@ -798,20 +798,235 @@ export function BulkTestPanel({
                         </Pressable>
                         {expandedIdx === idx && !!item.result && (
                           <View style={tw`px-4 pb-4 pt-1 gap-3`}>
-                            <View style={tw`flex-row gap-2`}>
+                            <View style={tw`flex-row justify-center relative w-full h-[180px] mt-4`}>
                               {!!item.result.finalImageForAnalysis && (
-                                <View style={tw`flex-1`}>
-                                  <Text style={tw`text-white text-opacity-50 text-[8px] uppercase tracking-widest mb-1`}>Analyzed Past</Text>
-                                  <img src={item.result.finalImageForAnalysis} style={{ width: '100%', height: 60, objectFit: 'cover', borderRadius: 4, border: '1px solid rgba(255,255,255,0.1)' }} />
+                                <View style={tw`flex-auto pr-[1px] relative h-full flex flex-col`}>
+                                  <Text style={tw`text-white text-opacity-65 text-[8px] tracking-widest font-black text-center uppercase mb-1 absolute -top-5 w-full`}>Analyzed (Past)</Text>
+                                  <img src={item.result.finalImageForAnalysis} style={{ width: '100%', height: '100%', objectFit: 'cover', borderTopLeftRadius: 6, borderBottomLeftRadius: 6, border: '1px solid rgba(217,179,130,0.3)', borderRightWidth: 0, display: 'block' }} />
                                 </View>
                               )}
-                              {!!item.result.testModeRightSlice && (
-                                <View style={tw`flex-1`}>
-                                  <Text style={tw`text-yellow-400 text-opacity-70 text-[8px] uppercase tracking-widest mb-1`}>Outcome Window</Text>
-                                  <img src={item.result.testModeRightSlice} style={{ width: '100%', height: 60, objectFit: 'cover', borderRadius: 4, border: '1px solid rgba(239,68,68,0.3)' }} />
+
+                              {!!item.result.finalImageForAnalysis && !!item.result.testModeRightSlice && (
+                                <View style={tw`w-[0px] relative items-center justify-center z-20`}>
+                                  <View style={tw`absolute top-0 bottom-0 w-[2px] bg-[#38bdf8] opacity-80 z-10`} />
+                                  <View style={tw`absolute top-1/2 -translate-y-1/2 bg-[#0f172a] border border-[#38bdf8] px-1.5 py-0.5 rounded-full z-20 shadow-lg whitespace-nowrap`}>
+                                      <Text style={tw`text-[#38bdf8] text-[7px] font-black uppercase tracking-widest leading-none`}>Boundary Cut</Text>
+                                  </View>
                                 </View>
                               )}
+
+                              {!!item.result.testModeRightSlice && (() => {
+                                const entryClose = item.result.entryClose;
+                                const exitClose = item.result.exitClose;
+                                const absoluteMin = item.result.absoluteMin;
+                                const absoluteMax = item.result.absoluteMax;
+                                const direction = item.result.direction;
+
+                                const predictedBull = direction === 'UP';
+                                const actualUp = exitClose !== undefined && entryClose !== undefined && exitClose !== null && entryClose !== null && exitClose > entryClose;
+                                const isWin = predictedBull ? actualUp : !actualUp;
+                                const indicatorColor = isWin ? '#10b981' : '#f43f5e';
+
+                                const heightRange = (absoluteMax && absoluteMin) ? (absoluteMax - absoluteMin) : null;
+                                const entryPercentVal = (heightRange && entryClose !== undefined && entryClose !== null && absoluteMin !== null)
+                                  ? 100 - ((entryClose - absoluteMin) / heightRange * 100)
+                                  : 50;
+                                const exitPercentVal = (heightRange && exitClose !== undefined && exitClose !== null && absoluteMin !== null)
+                                  ? 100 - ((exitClose - absoluteMin) / heightRange * 100)
+                                  : (predictedBull ? 30 : 70);
+
+                                const yEntry = Math.max(15, Math.min(85, entryPercentVal));
+                                const yExit  = Math.max(15, Math.min(85, exitPercentVal));
+
+                                return (
+                                  <View style={tw`flex-1 pl-[1px] relative h-full flex flex-col`}>
+                                    <Text style={tw`text-[#38bdf8] text-[8px] tracking-widest font-black text-center uppercase mb-1 absolute -top-5 w-full`}>Outcome Timeline</Text>
+                                    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+                                      <img src={item.result.testModeRightSlice} style={{ width: '100%', height: '100%', objectFit: 'cover', borderTopRightRadius: 6, borderBottomRightRadius: 6, border: '1px solid rgba(56,189,248,0.2)', borderLeftWidth: 0, display: 'block' }} />
+                                      
+                                      <svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 10 }}>
+                                         <defs>
+                                           <filter id="glowGreenBulk" x="-20%" y="-20%" width="140%" height="140%">
+                                             <feGaussianBlur stdDeviation="2" result="blur" />
+                                             <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                                           </filter>
+                                           <filter id="glowRedBulk" x="-20%" y="-20%" width="140%" height="140%">
+                                             <feGaussianBlur stdDeviation="2" result="blur" />
+                                             <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                                           </filter>
+                                         </defs>
+
+                                         {/* Horizontal entry level line */}
+                                         <line
+                                           x1="0%"
+                                           y1={`${yEntry}%`}
+                                           x2="100%"
+                                           y2={`${yEntry}%`}
+                                           stroke="#eab308"
+                                           strokeWidth="1.2"
+                                           strokeDasharray="4,4"
+                                           opacity="0.8"
+                                         />
+                                         <rect
+                                           x="2"
+                                           y={yEntry > 15 ? yEntry - 12 : yEntry + 2}
+                                           width="55"
+                                           height="10"
+                                           rx="1.5"
+                                           fill="#0f172a"
+                                           stroke="#eab308"
+                                           strokeWidth="0.8"
+                                           opacity="0.9"
+                                         />
+                                         <text
+                                           x="4"
+                                           y={yEntry > 15 ? yEntry - 4 : yEntry + 9}
+                                           fill="#eab308"
+                                           fontSize="6.5"
+                                           fontWeight="bold"
+                                           fontFamily="monospace"
+                                         >
+                                           ENT: {entryClose ? entryClose.toFixed(1) : '50.0'}
+                                         </text>
+
+                                         {/* Trajectory prediction line */}
+                                         <line
+                                           x1="0%"
+                                           y1={`${yEntry}%`}
+                                           x2="100%"
+                                           y2={`${yExit}%`}
+                                           stroke={indicatorColor}
+                                           strokeWidth="2.5"
+                                           filter={isWin ? "url(#glowGreenBulk)" : "url(#glowRedBulk)"}
+                                         />
+
+                                         {/* Horizontal exit level line */}
+                                         <line
+                                           x1="0%"
+                                           y1={`${yExit}%`}
+                                           x2="100%"
+                                           y2={`${yExit}%`}
+                                           stroke={indicatorColor}
+                                           strokeWidth="1.2"
+                                           strokeDasharray="3,3"
+                                           opacity="0.6"
+                                         />
+                                         <rect
+                                           x="50%"
+                                           y={yExit > 15 ? yExit - 12 : yExit + 2}
+                                           width="50"
+                                           height="10"
+                                           rx="1.5"
+                                           fill="#0f172a"
+                                           stroke={indicatorColor}
+                                           strokeWidth="0.8"
+                                           opacity="0.9"
+                                         />
+                                         <text
+                                           x="52%"
+                                           y={yExit > 15 ? yExit - 4 : yExit + 9}
+                                           fill={indicatorColor}
+                                           fontSize="6.5"
+                                           fontWeight="bold"
+                                           fontFamily="monospace"
+                                         >
+                                           EXT: {exitClose ? exitClose.toFixed(1) : '70.0'}
+                                         </text>
+
+                                         {/* Target Node circle */}
+                                         <circle cx="100%" cy={`${yExit}%`} r="3.5" fill={indicatorColor} stroke="#ffffff" strokeWidth="1" />
+
+                                         {/* Text verdict popup inside chart */}
+                                         <rect
+                                           x="32%"
+                                           y="6"
+                                           width="36%"
+                                           height="13"
+                                           rx="2"
+                                           fill="#0f172a"
+                                           stroke={indicatorColor}
+                                           strokeWidth="1"
+                                         />
+                                         <text
+                                           x="50%"
+                                           y="15"
+                                           fill={indicatorColor}
+                                           fontSize="7"
+                                           fontWeight="extrabold"
+                                           textAnchor="middle"
+                                           fontFamily="monospace"
+                                         >
+                                           {isWin ? "WORTH IT 💰" : "LOSS ⚠️"}
+                                         </text>
+                                      </svg>
+                                    </div>
+                                  </View>
+                                );
+                              })()}
                             </View>
+
+                            {/* Dynamic Real Prices / Math Engine Box */}
+                            {item.result.entryClose !== undefined && item.result.exitClose !== undefined && item.result.entryClose !== null && item.result.exitClose !== null && (
+                              <View style={tw`bg-[#1e293b]/35 border border-[#38bdf8]/10 rounded-xl p-3 mt-1`}>
+                                <View style={tw`flex-row justify-between items-center mb-2`}>
+                                  <View style={tw`flex-row items-center`}>
+                                    <Terminal size={12} color="#38bdf8" style={tw`mr-1`} />
+                                    <Text style={tw`text-[#38bdf8] text-[9px] font-black uppercase tracking-wider`}>
+                                      MATH ENGINE EVALUATION
+                                    </Text>
+                                  </View>
+                                  <Text style={tw`text-[#38bdf8] text-[8px] font-bold uppercase tracking-widest opacity-80`}>
+                                    Batch Entry Run
+                                  </Text>
+                                </View>
+
+                                <View style={tw`flex-row justify-between mb-2 gap-2`}>
+                                  <View style={tw`flex-1 bg-[#0f172a]/70 p-2 rounded-lg border border-white/5`}>
+                                    <Text style={tw`text-white/40 text-[8px] font-black uppercase tracking-wider`}>
+                                      Entry Close Value (Cut Point)
+                                    </Text>
+                                    <Text style={tw`text-yellow-400 text-sm font-black font-mono mt-0.5`}>
+                                      {item.result.entryClose.toFixed(2)}
+                                    </Text>
+                                  </View>
+
+                                  <View style={tw`flex-1 bg-[#0f172a]/70 p-2 rounded-lg border border-white/5`}>
+                                    <Text style={tw`text-white/40 text-[8px] font-black uppercase tracking-wider`}>
+                                      Spliced Exit Close Value
+                                    </Text>
+                                    <Text style={tw`text-green-400 text-sm font-black font-mono mt-0.5`}>
+                                      {item.result.exitClose.toFixed(2)}
+                                    </Text>
+                                  </View>
+                                </View>
+
+                                <View style={tw`flex-row justify-between items-center bg-[#070b12]/50 p-2 rounded-lg border border-white/5`}>
+                                  <View>
+                                    <Text style={tw`text-white/40 text-[8px] font-bold uppercase`}>Price Delta</Text>
+                                    <Text style={tw`text-white text-xs font-bold font-mono mt-0.5`}>
+                                      {(item.result.exitClose - item.result.entryClose) >= 0 ? '+' : ''}{(item.result.exitClose - item.result.entryClose).toFixed(2)}
+                                      <Text style={tw`text-[10px] ml-1 font-bold ${item.result.exitClose >= item.result.entryClose ? 'text-green-500' : 'text-red-500'}`}>
+                                        ({item.result.exitClose >= item.result.entryClose ? '▲ UP' : '▼ DOWN'})
+                                      </Text>
+                                    </Text>
+                                  </View>
+
+                                  <View style={tw`items-end`}>
+                                    <Text style={tw`text-white/40 text-[8px] font-bold uppercase`}>Alignment Verdict</Text>
+                                    <Text style={tw`text-xs font-black uppercase mt-0.5 ${
+                                      ((item.result.direction === 'UP' && item.result.exitClose >= item.result.entryClose) || (item.result.direction === 'DOWN' && item.result.exitClose < item.result.entryClose))
+                                        ? 'text-green-400'
+                                        : 'text-red-400'
+                                    }`}>
+                                      {((item.result.direction === 'UP' && item.result.exitClose >= item.result.entryClose) || (item.result.direction === 'DOWN' && item.result.exitClose < item.result.entryClose))
+                                        ? 'WORTH IT (MATCH)'
+                                        : 'LOSS (CONTRARY)'}
+                                    </Text>
+                                  </View>
+                                </View>
+                              </View>
+                            )}
+
                             <View style={tw`bg-black bg-opacity-30 rounded-lg p-3 border border-white border-opacity-5`}>
                                <Text style={tw`text-white text-[10px] font-bold mb-1`}>
                                  Trade Direction: <Text style={tw`${item.result.direction === 'UP' ? 'text-green-400' : 'text-red-400'}`}>{item.result.direction}</Text>
