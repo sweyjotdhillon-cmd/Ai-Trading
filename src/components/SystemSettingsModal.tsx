@@ -80,6 +80,8 @@ export function SystemSettingsModal({ show, onClose }: Props) {
                 <Pressable 
                   onPress={() => setTimeout(onClose, 10)} 
                   style={({ pressed }) => [tw`p-2 hover:bg-white bg-opacity-20 rounded-full`, { opacity: pressed ? 0.7 : 1 }]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close system settings"
                 >
                   <X size={20} color="#8B95B0" />
                 </Pressable>

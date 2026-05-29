@@ -86,6 +86,8 @@ export function UserProfileModal({ show, onClose, userEmail, onResetHero }: Prop
                     onClose();
                   }} 
                   style={({ pressed }) => [tw`p-2 bg-white bg-opacity-5 rounded-full`, { opacity: pressed ? 0.7 : 1 }]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close user profile"
                 >
                   <X size={16} color="#8E9299" />
                 </Pressable>
