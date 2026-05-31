@@ -107,6 +107,7 @@ function generateId() {
 }
 
 import { parseDurationToMinutes } from '../quant/horizon';
+import { buildAutoGradeGeometry, AutoGradeGeometry } from '../quant/autoGradeGeometry';
 
 export async function runSingleAnalysis(params: {
   imageDataUrl: string;
@@ -138,6 +139,12 @@ export async function runSingleAnalysis(params: {
   entryClose?: number;
   exitClose?: number;
   candlesCut?: number;
+  startCandle?: any;
+  threePriorCandles?: any[];
+  autoGradeGeometry?: AutoGradeGeometry | null;
+  splitXPercent?: number | null;
+  absoluteMin?: number | null;
+  absoluteMax?: number | null;
 }> {
   const t0 = performance.now();
   const { imageDataUrl, onJudgeLogs, isTestMode, onDirectionFound } = params;
@@ -175,21 +182,74 @@ export async function runSingleAnalysis(params: {
         const ohlc = pipe.ohlcSeries || [];
         
         let actualDir: 'UP' | 'DOWN' | 'FLAT' | null = null;
+        let startCandle: any = null;
+        const threePriorCandles: any[] = [];
+        let autoGradeGeometry: AutoGradeGeometry | null = null;
+        
         if (ohlc.length > 0) {
-          const cutoff = Math.max(1, Math.floor(durM / tfM));
-          if (ohlc.length > cutoff) {
-             // Look back entry compared to exit
-             const exitNode = ohlc[ohlc.length - 1];
-             const entryNode = ohlc[ohlc.length - 1 - cutoff];
-             if (exitNode.close > entryNode.close) {
+          const cutoff = Math.max(1, Math.round(durM || 3));
+          const N = ohlc.length;
+          
+          if (N > cutoff) {
+             startCandle = ohlc[N - cutoff];
+
+             const exitNode = ohlc[N - 1];
+             if (exitNode.close > startCandle.open) {
                actualDir = 'UP';
-             } else if (exitNode.close < entryNode.close) {
+             } else if (exitNode.close < startCandle.open) {
                actualDir = 'DOWN';
              } else {
                actualDir = 'FLAT';
              }
+             
+             // In manifest check, we need to extract right slice and build autoGradeGeometry
+             try {
+               const rawCandles = pipe.rawCandles;
+               let leftWidth = imgData.width;
+               if (rawCandles && rawCandles.length > 5) {
+                 const entryIndex = N - 1 - cutoff;
+                 if (entryIndex >= 0 && entryIndex < N - 1) {
+                   const cEntry = rawCandles[entryIndex];
+                   const cNext = rawCandles[entryIndex + 1];
+                   if (cEntry && cNext && typeof cEntry.xCenter === 'number' && typeof cNext.xCenter === 'number') {
+                     leftWidth = Math.floor((cEntry.xCenter + cNext.xCenter) / 2);
+                   }
+                 }
+               }
+               if (leftWidth > 20 && leftWidth < imgData.width - 20) {
+                 const rightWidth = imgData.width - leftWidth;
+                 const canvas = document.createElement('canvas');
+                 canvas.width = imgData.width;
+                 canvas.height = imgData.height;
+                 const ctx = canvas.getContext('2d')!;
+                 ctx.putImageData(imgData, 0, 0);
+
+                 const rightCanvas = document.createElement('canvas');
+                 rightCanvas.width = rightWidth;
+                 rightCanvas.height = imgData.height;
+                 rightCanvas.getContext('2d')!.drawImage(canvas, leftWidth, 0, rightWidth, imgData.height, 0, 0, rightWidth, imgData.height);
+                 
+                 const rightDataUrl = rightCanvas.toDataURL('image/jpeg', 0.5);
+                 const rightImgData = await dataUrlToImageData(rightDataUrl);
+                 const rightPipe = buildPipelineResult(rightImgData);
+                 
+                 autoGradeGeometry = buildAutoGradeGeometry(
+                   rightPipe.ohlcSeries, 
+                   rightPipe.meta.candleCentersX || [], 
+                   startCandle.open
+                 );
+               }
+             } catch(e) {}
+             
+             // Extract 3 candles prior to startCandle (indices N-cutoff-1, N-cutoff-2, N-cutoff-3)
+             for (let idx = 3; idx >= 1; idx--) {
+               const pIdx = N - cutoff - idx;
+               if (pIdx >= 0) {
+                 threePriorCandles.push(ohlc[pIdx]);
+               }
+             }
           } else {
-             const lastCandle = ohlc[ohlc.length - 1];
+             const lastCandle = ohlc[N - 1];
              if (lastCandle.close > lastCandle.open) {
                actualDir = 'UP';
              } else if (lastCandle.close < lastCandle.open) {
@@ -197,6 +257,7 @@ export async function runSingleAnalysis(params: {
              } else {
                actualDir = 'FLAT';
              }
+             startCandle = lastCandle;
           }
         }
         
@@ -211,7 +272,10 @@ export async function runSingleAnalysis(params: {
           finalImageForAnalysis: imageDataUrl,
           entryAnchorBase64: null,
           rawOutcome: 'FAST_CHECK',
-          frameStable: true
+          frameStable: true,
+          startCandle,
+          threePriorCandles,
+          autoGradeGeometry
         };
       } catch (e: any) {
         throw new Error(e.message || 'Error running fast manifest check');
@@ -221,6 +285,16 @@ export async function runSingleAnalysis(params: {
     const payloadPromise = new Promise<any>((resolve, reject) => {
   messageResolvers.set(msgId, { resolve, reject });
   try {
+    const strictNeutrality = typeof localStorage !== 'undefined'
+      ? localStorage.getItem('strict_neutrality_mode') !== 'false'
+      : true;
+    const biasCorrectionStrength = typeof localStorage !== 'undefined'
+      ? parseFloat(localStorage.getItem('bias_correction_strength') || '0.05')
+      : 0.05;
+    const noTradePreference = typeof localStorage !== 'undefined'
+      ? parseFloat(localStorage.getItem('no_trade_preference') || '0.05')
+      : 0.05;
+
     w.postMessage({
       type: 'ANALYZE',
       msgId,
@@ -229,6 +303,13 @@ export async function runSingleAnalysis(params: {
       graphTimeframe: params.graphTimeframe,
       investmentDurationMinutes: durM,
       techniquesList: params.techniquesList,
+      isTestMode: params.isTestMode,
+      isManifestCheck: params.isManifestCheck,
+      neutralityConfig: {
+        strictNeutrality,
+        biasCorrectionStrength,
+        noTradePreference
+      }
     });
   } catch (e: any) {
     messageResolvers.delete(msgId);
@@ -259,7 +340,11 @@ export async function runSingleAnalysis(params: {
       },
       direction: 'NO_TRADE', outcome: 'NEUTRAL', confidence: 0, reason: payload.message,
       testModeRightSlice: null, finalImageForAnalysis: imageDataUrl, entryAnchorBase64: null, rawOutcome: 'ERROR', frameStable: false,
-      actualDirection: null
+      actualDirection: null,
+      startCandle: undefined,
+      threePriorCandles: undefined,
+      autoGradeGeometry: undefined,
+      splitXPercent: undefined
     };
   }
 
@@ -314,7 +399,11 @@ export async function runSingleAnalysis(params: {
       entryAnchorBase64: null, 
       rawOutcome: 'NO_CANDLES_DETECTED', 
       frameStable: false,
-      actualDirection: null
+      actualDirection: null,
+      startCandle: undefined,
+      threePriorCandles: undefined,
+      autoGradeGeometry: undefined,
+      splitXPercent: undefined
     };
   }
   
@@ -329,13 +418,19 @@ export async function runSingleAnalysis(params: {
   let exitClose: number | undefined;
   let actualDirection: 'UP' | 'DOWN' | 'FLAT' | null = null;
   let candlesCut: number | undefined;
+  let splitXPercent: number | null = null;
+  let autoGradeGeometry: AutoGradeGeometry | null = null;
+  let tempRightPipe: any = null;
 
   if (isTestMode && meta.candlesLength && meta.candlesLength > 10) {
     const tfMinTest  = parseDurationToMinutes(params.graphTimeframe);
     const durMinTest = parseDurationToMinutes(params.investmentDuration);
-    const nCut = Math.max(1, Math.ceil(durMinTest / tfMinTest));
-    candlesCut = nCut;
-    const cropRatio = nCut / meta.candlesLength;
+    
+    // User request: Determine the step back purely and directly from the investment duration in minutes.
+    // If investment duration is 3 min, move back exactly 3 candles. If 5 min, move back exactly 5 candles.
+    const targetCutCount = Math.max(1, Math.round(durMinTest || 3));
+    candlesCut = targetCutCount;
+    const cropRatio = targetCutCount / meta.candlesLength;
     
     if (cropRatio < 0.5) {
         const canvas = document.createElement('canvas');
@@ -344,22 +439,53 @@ export async function runSingleAnalysis(params: {
         const ctx = canvas.getContext('2d')!;
         ctx.putImageData(imgData, 0, 0);
 
-        const clampedRatio = Math.max(0.05, Math.min(0.40, cropRatio));
-        const cutWidth = Math.floor(imgData.width * clampedRatio);
-        const leftWidth = imgData.width - cutWidth;
+        let leftWidth = imgData.width;
+        let hasCustomSlice = false;
+
+        const rawCandles = debugTrace?.rawCandles;
+        if (rawCandles && Array.isArray(rawCandles) && rawCandles.length > 5) {
+          const N = rawCandles.length;
+          const entryIndex = N - 1 - targetCutCount;
+          if (entryIndex >= 0 && entryIndex < N - 1) {
+            const cEntry = rawCandles[entryIndex];
+            const cNext = rawCandles[entryIndex + 1];
+            if (cEntry && cNext && typeof cEntry.xCenter === 'number' && typeof cNext.xCenter === 'number') {
+              leftWidth = Math.floor((cEntry.xCenter + cNext.xCenter) / 2);
+              if (leftWidth > 20 && leftWidth < imgData.width - 20) {
+                hasCustomSlice = true;
+              }
+            }
+          }
+        }
+
+        if (!hasCustomSlice) {
+          const clampedRatio = Math.max(0.05, Math.min(0.40, cropRatio));
+          const cutWidth = Math.floor(imgData.width * clampedRatio);
+          leftWidth = imgData.width - cutWidth;
+        }
+
+        splitXPercent = (leftWidth / imgData.width) * 100;
 
         const leftCanvas = document.createElement('canvas');
         leftCanvas.width = leftWidth;
         leftCanvas.height = imgData.height;
         leftCanvas.getContext('2d')!.drawImage(canvas, 0, 0, leftWidth, imgData.height, 0, 0, leftWidth, imgData.height);
         
-        const rightWidth = cutWidth;
+        const rightWidth = imgData.width - leftWidth;
         const rightCanvas = document.createElement('canvas');
         rightCanvas.width = rightWidth;
         rightCanvas.height = imgData.height;
         rightCanvas.getContext('2d')!.drawImage(canvas, leftWidth, 0, rightWidth, imgData.height, 0, 0, rightWidth, imgData.height);
         
-        testModeRightSlice = rightCanvas.toDataURL('image/jpeg', 0.5);
+        const rightDataUrl = rightCanvas.toDataURL('image/jpeg', 0.5);
+        testModeRightSlice = rightDataUrl;
+        
+        // Build autoGradeGeometry
+        try {
+          const rightImgDataRaw = await dataUrlToImageData(rightDataUrl);
+          tempRightPipe = buildPipelineResult(rightImgDataRaw);
+        } catch(e) {}
+        
         finalImageForAnalysis = leftCanvas.toDataURL('image/jpeg', 0.5);
 
         canvas.width = 0; canvas.height = 0;
@@ -379,6 +505,7 @@ export async function runSingleAnalysis(params: {
               graphTimeframeMinutes: tfM,
               investmentDurationMinutes: durM,
               techniquesList: params.techniquesList,
+              isTestMode: true,
             });
           } catch (e: any) {
             reject(e);
@@ -395,8 +522,37 @@ export async function runSingleAnalysis(params: {
            finalDecision = payload2.debugTrace?.decision || payload2.decision || finalDecision;
            FS = finalDecision.finalScore || 0;
            
-           exitClose = decision?.evidence?.lastClose;
-           entryClose = finalDecision?.evidence?.lastClose;
+           const backtestOhlc = debugTrace?.ohlcSeries || [];
+           const N_backtest = backtestOhlc.length;
+           let triggerCandle: any = null;
+           if (N_backtest > 0) {
+             const targetCutCount = candlesCut !== undefined ? candlesCut : Math.max(1, Math.round(parseDurationToMinutes(params.investmentDuration) || 3));
+             if (N_backtest > targetCutCount) {
+               triggerCandle = backtestOhlc[N_backtest - targetCutCount];
+             } else {
+               triggerCandle = backtestOhlc[N_backtest - 1];
+             }
+           }
+           if (triggerCandle) {
+             // In bull candle, the broad bottom is the opening point (open)
+             // In bear candle, the broad top is the opening point (open)
+             entryClose = triggerCandle.open;
+           } else {
+             entryClose = finalDecision?.evidence?.lastClose;
+           }
+           if (N_backtest > 0) {
+             exitClose = backtestOhlc[N_backtest - 1].close;
+           } else {
+             exitClose = decision?.evidence?.lastClose;
+           }
+           
+           if (tempRightPipe && entryClose !== undefined) {
+             autoGradeGeometry = buildAutoGradeGeometry(
+               tempRightPipe.ohlcSeries,
+               tempRightPipe.meta.candleCentersX || [],
+               entryClose
+             );
+           }
            
            if (entryClose !== undefined && exitClose !== undefined) {
              if (exitClose > entryClose) {
@@ -415,7 +571,35 @@ export async function runSingleAnalysis(params: {
                  outcome = actualDirection === 'DOWN' ? 'WIN' : 'LOSS';
              }
            }
+         }
+       }
+     }
+
+  // Populate startCandle and threePriorCandles from the full image detection payload
+  const fullOhlc = debugTrace?.ohlcSeries || [];
+  const N_ohlc = fullOhlc.length;
+  let startCandle: any = null;
+  const threePriorCandles: any[] = [];
+  
+  if (N_ohlc > 0) {
+    const targetCutCount = candlesCut !== undefined ? candlesCut : (isTestMode ? Math.max(1, Math.round(parseDurationToMinutes(params.investmentDuration) || 3)) : 1);
+    if (isTestMode && N_ohlc > targetCutCount) {
+      startCandle = fullOhlc[N_ohlc - targetCutCount];
+      for (let idx = 3; idx >= 1; idx--) {
+        const pIdx = N_ohlc - targetCutCount - idx;
+        if (pIdx >= 0) {
+          threePriorCandles.push(fullOhlc[pIdx]);
         }
+      }
+    } else {
+      // Live/standard mode baseline: last candle of the series
+      startCandle = fullOhlc[N_ohlc - 1];
+      for (let idx = 3; idx >= 1; idx--) {
+        const pIdx = N_ohlc - 1 - idx;
+        if (pIdx >= 0) {
+          threePriorCandles.push(fullOhlc[pIdx]);
+        }
+      }
     }
   }
 
@@ -467,18 +651,22 @@ export async function runSingleAnalysis(params: {
     },
     direction: mappedDirection,
     actualDirection,
-    outcome,
+    outcome: (autoGradeGeometry && !autoGradeGeometry.valid) ? 'NEUTRAL' : outcome,
     confidence: finalDecision.finalConfidence,
-    reason: `Engine completed with finalScore=${FS}`,
+    reason: (autoGradeGeometry && !autoGradeGeometry.valid) ? `AutoGrade Geometry Invalid: ${autoGradeGeometry.invalidReason}` : `Engine completed with finalScore=${FS}`,
     testModeRightSlice,
     finalImageForAnalysis,
     entryAnchorBase64: null,
-    rawOutcome: finalDecision.signal,
+    rawOutcome: (autoGradeGeometry && !autoGradeGeometry.valid) ? 'AUTO_GRADE_INVALID' : finalDecision.signal,
     frameStable,
     entryClose,
     exitClose,
     candlesCut,
+    splitXPercent,
+    startCandle,
+    threePriorCandles,
     absoluteMin: debugTrace?.absoluteMin !== undefined ? debugTrace.absoluteMin : null,
-    absoluteMax: debugTrace?.absoluteMax !== undefined ? debugTrace.absoluteMax : null
+    absoluteMax: debugTrace?.absoluteMax !== undefined ? debugTrace.absoluteMax : null,
+    autoGradeGeometry
   };
 }

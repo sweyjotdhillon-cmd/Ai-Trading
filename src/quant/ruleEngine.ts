@@ -1,7 +1,9 @@
 import { HorizonContext } from './horizon';
 import { evaluateShard } from './techniqueShardEngine';
-import { rsi, macd, bollinger, atr, stochastic } from './indicators';
-import { calculateZScore, calculateEMADerivatives, calculateMicroMomentumScore, calculateVolatilityRegime, detectRSIDivergence, calculateZScoreSignificance, calculateRQA, calculateBoundaryReversal } from './mathEngine';
+import { enforceNeutrality, recordDecision } from './neutralityGuard';
+import { rsi, macd, bollinger, atr, stochastic, adx } from './indicators';
+import { calculateZScore, calculateEMADerivatives, calculateMicroMomentumScore, calculateVolatilityRegime, detectRSIDivergence, calculateZScoreSignificance, calculateRQA, calculateBoundaryReversal, detectMACDDivergence } from './mathEngine';
+import { detectStructureSignal, detectDoubleTopBottom, findSwingPivots, getTrendState } from './marketStructure';
 import { emaSlope, emaCurvature } from './calculus';
 import { NumericOHLC } from '../vision/pipeline';
 import { rescaledRangeHurst, PATTERN_WEIGHTS_BY_HORIZON } from './horizon';
@@ -73,7 +75,12 @@ export function evaluateSignal(
   horizonArg?: any,
   _confirmedPatterns: any[] = [],
   _confirmedGaps: any[] = [],
-  onLog?: (key: string, text: string) => void
+  onLog?: (key: string, text: string) => void,
+  neutralityConfig?: {
+    strictNeutrality?: boolean;
+    biasCorrectionStrength?: number;
+    noTradePreference?: number;
+  }
 ): DecisionResult {
   const tStart = performance.now();
 
@@ -91,7 +98,7 @@ export function evaluateSignal(
     value: number,
     reason: string
   ) => {
-    if (value > 0) judgeContribs.push({ judge, side, contributor, value, reason });
+    if (value !== 0) judgeContribs.push({ judge, side, contributor, value, reason });
   };
 
   const defaultCases = { bull: { j1: 0, j2: 0, j3: 0, total: 0 }, bear: { j1: 0, j2: 0, j3: 0, total: 0 } };
@@ -110,7 +117,7 @@ export function evaluateSignal(
       primaryEvidence: 'Insufficient or Invalid Data',
       noTradeReason: reasonText,
       topPatterns: { bull: [], bear: [] },
-      formattedReport: `┌─────────────────────────────────────┐\n│  ARBITRATOR FINAL VERDICT           │\n│  Signal: NO_TRADE                   │\n│  Confidence: 0%                     │\n├─────────────────────────────────────┤\n│  CASE 1 — BULL                      │\n│  J1 Reasoning: 0.0 / 4.0           │\n│  J2 Vehicle:   0.0 / 4.0           │\n│  J3 Reversal:  0.0 / 3.0           │\n│  Total:        0.0 / 11.0          │\n├─────────────────────────────────────┤\n│  CASE 2 — BEAR                      │\n│  J1 Reasoning: 0.0 / 4.0           │\n│  J2 Vehicle:   0.0 / 4.0           │\n│  J3 Reversal:  0.0 / 3.0           │\n│  Total:        0.0 / 11.0          │\n├─────────────────────────────────────┤\n│  SKEPTIC VETO:  0.30 (WEAK)        │\n│  Margin:        0.0                 │\n│  Final Score:   0.0                 │\n├─────────────────────────────────────┤\n│  RULING:                            │\n│  NO_TRADE — ${reasonText.substring(0, 20)}...   │\n└─────────────────────────────────────┘`,
+      formattedReport: `┌─────────────────────────────────────┐\n│  ARBITRATOR FINAL VERDICT           │\n│  Signal: NO_TRADE                   │\n│  Confidence: 0%                     │\n├─────────────────────────────────────┤\n│  CASE 1 — BULL                      │\n│  J1 Reasoning: 0.0 / 4.0           │\n│  J2 Vehicle:   0.0 / 4.0           │\n│  J3 Reversal:  0.0 / 4.0           │\n│  Total:        0.0 / 12.0          │\n├─────────────────────────────────────┤\n│  CASE 2 — BEAR                      │\n│  J1 Reasoning: 0.0 / 4.0           │\n│  J2 Vehicle:   0.0 / 4.0           │\n│  J3 Reversal:  0.0 / 4.0           │\n│  Total:        0.0 / 12.0          │\n├─────────────────────────────────────┤\n│  SKEPTIC VETO:  0.30 (WEAK)        │\n│  Margin:        0.0                 │\n│  Final Score:   0.0                 │\n├─────────────────────────────────────┤\n│  RULING:                            │\n│  NO_TRADE — ${reasonText.substring(0, 20)}...   │\n└─────────────────────────────────────┘`,
       tradeDetails: {
         latencyAdjustedForecast: 'Signal: NO_TRADE',
         techniquesUsed: '',
@@ -222,12 +229,25 @@ export function evaluateSignal(
   function getTechniqueJudgeCategory(name: string, code?: string): 'J1' | 'J2' | 'J3' {
     const k = name.toLowerCase().replace(/[\s_-]/g, '');
     const c = (code || '').toLowerCase();
-    if (k.includes('rsi') || k.includes('stoch') || k.includes('oscillator') || c.includes('getrsi') || c.includes('getstoch')) {
-      return 'J2';
-    }
-    if (k.includes('boll') || k.includes('reversal') || k.includes('hammer') || k.includes('doji') || k.includes('candle') || k.includes('support') || k.includes('resistance') || k.includes('boundary') || k.includes('wick') || k.includes('shadow') || c.includes('getbollinger')) {
-      return 'J3';
-    }
+
+    // J2 — Oscillators
+    if (k.includes('rsi') || k.includes('stoch') || k.includes('oscillator')
+        || k.includes('cci') || k.includes('williamsr')
+        || c.includes('getrsi') || c.includes('getstoch')) return 'J2';
+
+    // J3 — Reversal / Boundary / Pattern reversals / Divergences / Structure
+    const J3_KEYS = [
+      'boll','reversal','hammer','invertedhammer','shootingstar','doji',
+      'engulfing','morningstar','eveningstar','piercing','piercingline',
+      'darkcloud','darkcloudcover','harami','tweezer','tweezertop',
+      'tweezerbottom','pinbar','abandonedbaby','support','resistance',
+      'boundary','wick','shadow','divergence','choch','changeofcharacter',
+      'doubletop','doublebottom','headandshoulders','hns','exhaustion',
+      'blowoff','climactic','adxpeak','adxdivergence'
+    ];
+    if (J3_KEYS.some(key => k.includes(key))) return 'J3';
+
+    // J1 — Trend / Momentum / Continuation (default)
     return 'J1';
   }
 
@@ -250,6 +270,26 @@ export function evaluateSignal(
     ? stochastic(ohlcSeries, 14, 3)
     : { k: Array(ohlcSeries.length).fill(null), d: Array(ohlcSeries.length).fill(null) };
   techCache.atrVals = atr(ohlcSeries, 14);
+  techCache.adxVals = adx(ohlcSeries, 14);
+
+  // Precompute physical swing pivots and trend state
+  const pivots = findSwingPivots(highs, lows, 2);
+  const trendState = getTrendState(pivots);
+
+  // Precompute visual yPercent
+  const prepVisibleSeries = ohlcSeries.slice(-Math.max(20, nCandles * 5));
+  const prepLastCloseVal = ohlcSeries[ohlcSeries.length - 1].close;
+  const prepVisibleCloses = prepVisibleSeries.map(c => c.close);
+  const prepMinCloseVal = Math.min(...prepVisibleCloses);
+  const prepMaxCloseVal = Math.max(...prepVisibleCloses);
+  const currentYPercent = prepMaxCloseVal !== prepMinCloseVal
+    ? ((prepLastCloseVal - prepMinCloseVal) / (prepMaxCloseVal - prepMinCloseVal)) * 100
+    : 50;
+
+  techCache.context = {
+    trendState,
+    yPercent: currentYPercent
+  };
 
   // Exclude warmup mathematical anomalies
   if (techCache.rsiVals) {
@@ -287,7 +327,7 @@ export function evaluateSignal(
   let techBullJ3 = 0, techBearJ3 = 0;
 
   evaluationVotes.forEach(v => {
-    if (v.vote !== 'NEUTRAL' || v.score > 0) processedCount++;
+    if (v.vote !== 'SKIP') processedCount++;
     const isBull = v.vote === 'BULL';
     const isBear = v.vote === 'BEAR';
     const pointsEarned = v.score || 0;
@@ -329,7 +369,7 @@ export function evaluateSignal(
 
     if (isBull) {
       bullList.push(obj);
-    } else {
+    } else if (isBear) {
       bearList.push(obj);
     }
   });
@@ -339,7 +379,7 @@ export function evaluateSignal(
   }
 
   const techniquesEvaluation = {
-    totalTechniques: bullList.length + bearList.length,
+    totalTechniques: processedCount,
     bulldogPoints,
     peerPoints,
     bullList,
@@ -402,8 +442,34 @@ export function evaluateSignal(
       auditPush('J1', 'BEAR', 'intrinsic.ema9_slope_dn',
         pts, `EMA9 slope=${lastSlope.toFixed(4)} < -0.05`);
     }
+
+    // ADX Trend Corroboration (BUG #7 Component)
+    const lastADXVal = !isNaN(techCache.adxVals?.adx?.[last]) ? techCache.adxVals.adx[last] : 0;
+    const lastPlusDIVal = !isNaN(techCache.adxVals?.plusDI?.[last]) ? techCache.adxVals.plusDI[last] : 0;
+    const lastMinusDIVal = !isNaN(techCache.adxVals?.minusDI?.[last]) ? techCache.adxVals.minusDI[last] : 0;
+
+    if (lastADXVal > 25) {
+      if (lastPlusDIVal > lastMinusDIVal) {
+        bullJ1Intrinsic += 0.50;
+        bearJ1Intrinsic = Math.max(0, bearJ1Intrinsic - 0.50);
+        auditPush('J1', 'BULL', 'intrinsic.adx_trend_corroboration',
+          0.50, `ADX=${lastADXVal.toFixed(1)} confirms strong bullish trend (plusDI=${lastPlusDIVal.toFixed(1)} > minusDI=${lastMinusDIVal.toFixed(1)})`);
+      } else if (lastMinusDIVal > lastPlusDIVal) {
+        bearJ1Intrinsic += 0.50;
+        bullJ1Intrinsic = Math.max(0, bullJ1Intrinsic - 0.50);
+        auditPush('J1', 'BEAR', 'intrinsic.adx_trend_corroboration',
+          0.50, `ADX=${lastADXVal.toFixed(1)} confirms strong bearish trend (minusDI=${lastMinusDIVal.toFixed(1)} > plusDI=${lastPlusDIVal.toFixed(1)})`);
+      }
+    } else if (lastADXVal < 20) {
+      bullJ1Intrinsic = Math.max(0, bullJ1Intrinsic - 0.15);
+      bearJ1Intrinsic = Math.max(0, bearJ1Intrinsic - 0.15);
+    }
   }
 
+  if (isCustomList) {
+    bullJ1Intrinsic = 0;
+    bearJ1Intrinsic = 0;
+  }
   const bullJ1Raw = bullJ1Intrinsic + techBullJ1;   // intrinsic + user techniques
   const bearJ1Raw = bearJ1Intrinsic + techBearJ1;
   const bullJ1 = Math.min(4.0, bullJ1Raw);
@@ -461,21 +527,48 @@ export function evaluateSignal(
       }
     }
 
-    // RSI divergence (uses existing detectRSIDivergence)
+    // RSI divergence (uses enhanced detectRSIDivergence - BUG #5)
     try {
       const div = detectRSIDivergence(Array.from(closes), techCache.rsiVals);
-      if (div === 'BULLISH') {
-        bullJ2Intrinsic += 1.5;
+      if (div.type === 'BULLISH') {
+        const pts = parseFloat((1.5 * div.strength).toFixed(3));
+        bullJ2Intrinsic += pts;
         auditPush('J2', 'BULL', 'intrinsic.rsi_bull_divergence',
-          1.5, 'RSI bullish divergence detected');
-      }
-      if (div === 'BEARISH') {
-        bearJ2Intrinsic += 1.5;
+          pts, `RSI bullish divergence detected (strength=${div.strength.toFixed(2)})`);
+      } else if (div.type === 'BEARISH') {
+        const pts = parseFloat((1.5 * div.strength).toFixed(3));
+        bearJ2Intrinsic += pts;
         auditPush('J2', 'BEAR', 'intrinsic.rsi_bear_divergence',
-          1.5, 'RSI bearish divergence detected');
+          pts, `RSI bearish divergence detected (strength=${div.strength.toFixed(2)})`);
       }
     } catch {
       // Bypassed if insufficient rsi data length
+    }
+
+    // MACD divergence (uses new detectMACDDivergence - BUG #6)
+    try {
+      const mDiv = detectMACDDivergence(Array.from(closes), techCache.macdVals);
+      if (mDiv.type === 'BULLISH') {
+        bullJ2Intrinsic += 1.50;
+        auditPush('J2', 'BULL', 'intrinsic.macd_bull_divergence',
+          1.50, `MACD Bullish Divergence detected (strength=${mDiv.strength.toFixed(2)})`);
+          
+        // Contribute to J3 boundary conditions (reversal points)
+        bullJ3Intrinsic += 1.00;
+        auditPush('J3', 'BULL', 'intrinsic.macd_divergence_bounce',
+          1.00, `MACD Bullish divergence contributes to J3 floor strength`);
+      } else if (mDiv.type === 'BEARISH') {
+        bearJ2Intrinsic += 1.50;
+        auditPush('J2', 'BEAR', 'intrinsic.macd_bear_divergence',
+          1.50, `MACD Bearish Divergence detected (strength=${mDiv.strength.toFixed(2)})`);
+
+        // Contribute to J3 boundary conditions (reversal points)
+        bearJ3Intrinsic += 1.00;
+        auditPush('J3', 'BEAR', 'intrinsic.macd_divergence_bounce',
+          1.00, `MACD Bearish divergence contributes to J3 peak strength`);
+      }
+    } catch {
+      // Bypassed if insufficient macd data length
     }
 
     // Z-score breakout
@@ -499,6 +592,10 @@ export function evaluateSignal(
     }
   }
 
+  if (isCustomList) {
+    bullJ2Intrinsic = 0;
+    bearJ2Intrinsic = 0;
+  }
   const bullJ2Raw = bullJ2Intrinsic + techBullJ2;
   const bearJ2Raw = bearJ2Intrinsic + techBearJ2;
   const bullJ2 = Math.min(4.0, bullJ2Raw);
@@ -520,29 +617,31 @@ export function evaluateSignal(
 
   let bullJ3Intrinsic = 0;
   let bearJ3Intrinsic = 0;
+  let bullBlowOffSurplus = 0;
+  let bearBlowOffSurplus = 0;
   {
     // Boundary reversal contribution
-    if (boundaryRes.bullPoints > 0) {
+    if (boundaryRes.bullPoints !== 0) {
       bullJ3Intrinsic += boundaryRes.bullPoints;
       auditPush('J3', 'BULL', 'intrinsic.boundary_reversal',
         boundaryRes.bullPoints,
         `${boundaryRes.label}, yPercent=${yPercent.toFixed(1)}`);
     }
-    if (boundaryRes.bearPoints > 0) {
+    if (boundaryRes.bearPoints !== 0) {
       bearJ3Intrinsic += boundaryRes.bearPoints;
       auditPush('J3', 'BEAR', 'intrinsic.boundary_reversal',
         boundaryRes.bearPoints,
         `${boundaryRes.label}, yPercent=${yPercent.toFixed(1)}`);
     }
 
-    // Z-score significance
-    if (zScoreData.bullPoints > 0) {
+    // Z-score significance (allow negative penalties to be subtracted - Invariant I-4)
+    if (zScoreData.bullPoints !== 0) {
       bullJ3Intrinsic += zScoreData.bullPoints;
       auditPush('J3', 'BULL', 'intrinsic.z_significance',
         zScoreData.bullPoints,
         `Z=${zScoreData.zScore}, type=${zScoreData.signalType}`);
     }
-    if (zScoreData.bearPoints > 0) {
+    if (zScoreData.bearPoints !== 0) {
       bearJ3Intrinsic += zScoreData.bearPoints;
       auditPush('J3', 'BEAR', 'intrinsic.z_significance',
         zScoreData.bearPoints,
@@ -567,67 +666,179 @@ export function evaluateSignal(
       }
     }
 
-    // Wick rejection on last candle
+    // Wick rejection on last candle (BUG #4)
     const lc = ohlcSeries[last];
     if (lc) {
       const body = Math.abs(lc.close - lc.open);
       const uW   = lc.high - Math.max(lc.open, lc.close);
       const lW   = Math.min(lc.open, lc.close) - lc.low;
       if (lW > body * 1.8 && lW > 0) {
-        bullJ3Intrinsic += 0.5;
+        const ratio = lW / Math.max(1e-9, body);
+        const pts = parseFloat((0.55 + Math.log(1 + ratio - 1.8)).toFixed(3));
+        bullJ3Intrinsic += pts;
         auditPush('J3', 'BULL', 'intrinsic.lower_wick_rejection',
-          0.5, `Lower wick ${lW.toFixed(4)} > 1.8×body ${body.toFixed(4)}`);
+          pts, `Lower wick rejection (ratio=${ratio.toFixed(2)}, floor=0.55 + log topper)`);
+        if (ratio > 4.5) {
+          bullBlowOffSurplus = parseFloat(Math.min(1.0, 0.15 * (ratio - 4.5)).toFixed(3));
+        }
       }
       if (uW > body * 1.8 && uW > 0) {
-        bearJ3Intrinsic += 0.5;
+        const ratio = uW / Math.max(1e-9, body);
+        const pts = parseFloat((0.55 + Math.log(1 + ratio - 1.8)).toFixed(3));
+        bearJ3Intrinsic += pts;
         auditPush('J3', 'BEAR', 'intrinsic.upper_wick_rejection',
-          0.5, `Upper wick ${uW.toFixed(4)} > 1.8×body ${body.toFixed(4)}`);
+          pts, `Upper wick rejection (ratio=${ratio.toFixed(2)}, floor=0.55 + log topper)`);
+        if (ratio > 4.5) {
+          bearBlowOffSurplus = parseFloat(Math.min(1.0, 0.15 * (ratio - 4.5)).toFixed(3));
+        }
       }
+    }
+
+    // ADX Peak Exhaustion (BUG #7 Component)
+    const lastAD6Val = !isNaN(techCache.adxVals?.adx?.[last]) ? techCache.adxVals.adx[last] : 0;
+    if (lastAD6Val > 40) {
+      if (yPercent >= 50) {
+        bearJ3Intrinsic += 0.75;
+        auditPush('J3', 'BEAR', 'intrinsic.adx_exhaustion', 0.75, `ADX=${lastAD6Val.toFixed(1)} > 40 indicates strong peak trend exhaustion`);
+      } else {
+        bullJ3Intrinsic += 0.75;
+        auditPush('J3', 'BULL', 'intrinsic.adx_exhaustion', 0.75, `ADX=${lastAD6Val.toFixed(1)} > 40 indicates strong floor trend exhaustion`);
+      }
+    } else if (lastAD6Val < 15) {
+      bullJ3Intrinsic += 0.50;
+      bearJ3Intrinsic += 0.50;
+      auditPush('J3', 'BULL', 'intrinsic.adx_flat_range', 0.50, `ADX=${lastAD6Val.toFixed(1)} < 15 indicates high reversion probability`);
+      auditPush('J3', 'BEAR', 'intrinsic.adx_flat_range', 0.50, `ADX=${lastAD6Val.toFixed(1)} < 15 indicates high reversion probability`);
+    }
+
+    // Market Structure Reversion & Continuity (BUG #8 Component)
+    let structSignal = { type: 'NONE' };
+    try {
+      structSignal = detectStructureSignal(highs, lows, pivots);
+    } catch {
+      // safe bypass
+    }
+    const doubleTopBottom = detectDoubleTopBottom(closes, pivots);
+
+    if (structSignal.type === 'CHOCH_BULL') {
+      bullJ3Intrinsic += 1.50;
+      auditPush('J3', 'BULL', 'intrinsic.choch_rejection', 1.50, `CHoCH Bullish breakout indicates major reversion`);
+    } else if (structSignal.type === 'CHOCH_BEAR') {
+      bearJ3Intrinsic += 1.50;
+      auditPush('J3', 'BEAR', 'intrinsic.choch_rejection', 1.50, `CHoCH Bearish breakout indicates major reversion`);
+    } else if (structSignal.type === 'BOS_BULL') {
+      bearJ3Intrinsic = Math.max(0, bearJ3Intrinsic - 1.00);
+      auditPush('J3', 'BEAR', 'intrinsic.bos_continuity_penalty', -1.00, `BOS Bullish trend continuity penalizes counter-trend bear reversal`);
+    } else if (structSignal.type === 'BOS_BEAR') {
+      bullJ3Intrinsic = Math.max(0, bullJ3Intrinsic - 1.00);
+      auditPush('J3', 'BULL', 'intrinsic.bos_continuity_penalty', -1.00, `BOS Bearish trend continuity penalizes counter-trend bull reversal`);
+    }
+
+    if (doubleTopBottom === 'DOUBLE_TOP') {
+      bearJ3Intrinsic += 1.00;
+      auditPush('J3', 'BEAR', 'intrinsic.double_top', 1.00, `Reversion from peak resistance (Double Top)`);
+    } else if (doubleTopBottom === 'DOUBLE_BOTTOM') {
+      bullJ3Intrinsic += 1.00;
+      auditPush('J3', 'BULL', 'intrinsic.double_bottom', 1.00, `Reversion from floor support (Double Bottom)`);
     }
   }
 
+  if (isCustomList) {
+    bullJ3Intrinsic = 0;
+    bearJ3Intrinsic = 0;
+    bullBlowOffSurplus = 0;
+    bearBlowOffSurplus = 0;
+  }
   const bullJ3Raw = bullJ3Intrinsic + techBullJ3;
   const bearJ3Raw = bearJ3Intrinsic + techBearJ3;
-  const bullJ3 = Math.min(3.0, Math.max(0, bullJ3Raw));
-  const bearJ3 = Math.min(3.0, Math.max(0, bearJ3Raw));
+  let bullJ3 = Math.min(4.0, Math.max(0, bullJ3Raw));
+  let bearJ3 = Math.min(4.0, Math.max(0, bearJ3Raw));
 
-  // --- Hurst regime balancer (Macrosynergy study) ---
+  if (bullBlowOffSurplus > 0) {
+    bullJ3 = parseFloat((bullJ3 + bullBlowOffSurplus).toFixed(3));
+    auditPush('J3', 'BULL', 'intrinsic.blow_off_surplus', bullBlowOffSurplus, `Hyper-extended lower wick blow-off surplus breaks standard cap`);
+  }
+  if (bearBlowOffSurplus > 0) {
+    bearJ3 = parseFloat((bearJ3 + bearBlowOffSurplus).toFixed(3));
+    auditPush('J3', 'BEAR', 'intrinsic.blow_off_surplus', bearBlowOffSurplus, `Hyper-extended upper wick blow-off surplus breaks standard cap`);
+  }
+
+  // --- Hurst regime balancer (Macrosynergy study) (Zero-Sum - Deliverable 7) ---
   let bullJ1Final = bullJ1;
   let bearJ1Final = bearJ1;
+  let bullJ2Final = bullJ2;
+  let bearJ2Final = bearJ2;
   let bullJ3Final = bullJ3;
   let bearJ3Final = bearJ3;
 
   const H_exp = rescaledRangeHurst(Array.from(closes).slice(-32));
-  let hurstExplanation = "Neutral range";
+  const activeADX = !isNaN(techCache.adxVals?.adx?.[last]) ? techCache.adxVals.adx[last] : 0;
+  let hurstExplanation = "Neutral range_balanced";
 
   if (!isNaN(H_exp)) {
-    if (H_exp > 0.55) {
-      bullJ1Final = Math.min(4.0, bullJ1 * 1.15);
-      bearJ1Final = Math.min(4.0, bearJ1 * 1.15);
-      bullJ3Final = Math.min(3.0, bullJ3 * 0.85);
-      bearJ3Final = Math.min(3.0, bearJ3 * 0.85);
-      hurstExplanation = `Trending regime (H=${H_exp.toFixed(2)} > 0.55), J1 amplified, J3 dampened`;
-    } else if (H_exp < 0.45) {
-      bullJ1Final = Math.min(4.0, bullJ1 * 0.85);
-      bearJ1Final = Math.min(4.0, bearJ1 * 0.85);
-      bullJ3Final = Math.min(3.0, bullJ3 * 1.15);
-      bearJ3Final = Math.min(3.0, bearJ3 * 1.15);
-      hurstExplanation = `Mean-reverting regime (H=${H_exp.toFixed(2)} < 0.45), J1 dampened, J3 amplified`;
+    // BUG #3: Support synthetic trends taking over when ADX is explosive even if Hurst returns neutral 0.5
+    const isTrending = (H_exp > 0.53 || activeADX > 30) && activeADX > 25;
+    const isMeanReverting = H_exp < 0.45 || activeADX < 15;
+
+    if (isTrending) {
+      // Stage A: Trending regime alignment
+      // Stage B: Directional Gates for J1 (Winning trend-following vs losing trend-following)
+      if (lastSlope > 0) {
+        // Bullish Trend is active
+        bullJ1Final = Math.min(4.0, bullJ1 * 1.25);
+        bearJ1Final = Math.min(4.0, bearJ1 * 0.50);
+        // Suppress counter-trend overbought J2 vehicles
+        bearJ2Final = Math.min(4.0, bearJ2 * 0.35);
+      } else if (lastSlope < 0) {
+        // Bearish Trend is active
+        bearJ1Final = Math.min(4.0, bearJ1 * 1.25);
+        bullJ1Final = Math.min(4.0, bullJ1 * 0.50);
+        // Suppress counter-trend oversold J2 vehicles
+        bullJ2Final = Math.min(4.0, bullJ2 * 0.35);
+      }
+      
+      // Symmetrically dampen J3 (Reversals) by 30%
+      bullJ3Final = Math.min(4.0, bullJ3 * 0.70);
+      bearJ3Final = Math.min(4.0, bearJ3 * 0.70);
+      
+      hurstExplanation = `Trending regime (H=${H_exp.toFixed(2)}, ADX=${activeADX.toFixed(1)}), J1 amplified directionally, J3 recovery-blocked`;
+    } else if (isMeanReverting) {
+      // Stage A: Mean-reverting regime alignment
+      // Dampen J1 (Trend) on both sides by 30%
+      bullJ1Final = Math.min(4.0, bullJ1 * 0.70);
+      bearJ1Final = Math.min(4.0, bearJ1 * 0.70);
+
+      // Stage B: Directional Gates for J3 based on boundary position (yPercent)
+      if (yPercent >= 70) {
+        // Overbought peak -> BEAR J3 amplified by 1.30, BULL J3 dampened by 50%
+        bearJ3Final = Math.min(4.0, bearJ3 * 1.30);
+        bullJ3Final = Math.min(4.0, bullJ3 * 0.50);
+      } else if (yPercent <= 30) {
+        // Oversold valley -> BULL J3 amplified by 1.30, BEAR J3 dampened by 50%
+        bullJ3Final = Math.min(4.0, bullJ3 * 1.30);
+        bearJ3Final = Math.min(4.0, bearJ3 * 0.50);
+      } else {
+        // Not near boundaries, standard symmetrical mean-reversion
+        bullJ3Final = Math.min(4.0, bullJ3 * 1.15);
+        bearJ3Final = Math.min(4.0, bearJ3 * 1.15);
+      }
+      
+      hurstExplanation = `Mean-reverting regime (H=${H_exp.toFixed(2)}, ADX=${activeADX.toFixed(1)}), J1 dampened, J3 boundary-amplified`;
     } else {
-      hurstExplanation = `Balanced Hurst regime (H=${H_exp.toFixed(2)})`;
+      hurstExplanation = `Balanced Hurst regime (H=${H_exp.toFixed(2)}, ADX=${activeADX.toFixed(1)})`;
     }
   }
 
   const cases = {
     bull: {
       j1: Number(bullJ1Final.toFixed(2)),
-      j2: Number(bullJ2.toFixed(2)),
+      j2: Number(bullJ2Final.toFixed(2)),
       j3: Number(bullJ3Final.toFixed(2)),
       total: 0
     },
     bear: {
       j1: Number(bearJ1Final.toFixed(2)),
-      j2: Number(bearJ2.toFixed(2)),
+      j2: Number(bearJ2Final.toFixed(2)),
       j3: Number(bearJ3Final.toFixed(2)),
       total: 0
     }
@@ -686,46 +897,92 @@ export function evaluateSignal(
   if (skepticMultiplier < 0.60) skepticVerdict = 'WEAK';
   else if (skepticMultiplier < 0.85) skepticVerdict = 'CAUTION';
 
-  // --- Step 4: Margin and Decision Resolution ---
+  // --- Step 4: Margin and Decision Resolution (with NEL Integration) ---
   const bullTotal = Number(cases.bull.total.toFixed(2));
   const bearTotal = Number(cases.bear.total.toFixed(2));
 
-  let rawWinner: 'BULL' | 'BEAR' | 'TIE' = 'TIE';
-  if (bullTotal > bearTotal) rawWinner = 'BULL';
-  else if (bearTotal > bullTotal) rawWinner = 'BEAR';
-
-  const margin = Number(Math.abs(bullTotal - bearTotal).toFixed(2));
-
-  let rawWinningTotal = 0;
-  if (rawWinner === 'BULL') rawWinningTotal = bullTotal;
-  else if (rawWinner === 'BEAR') rawWinningTotal = bearTotal;
-
+  // Nest, directionally-blind margin computation to satisfy Invariant I-8
+  const initialMargin = Number(Math.abs(bullTotal - bearTotal).toFixed(2));
+  
   // Scale the confidence denominator and dynamic thresholds based on custom list size if applicable
   const scaleThresholdFactor = isCustomList ? Math.max(0.08, Math.min(1.0, activeList.length / 12)) : 1.0;
-  const confidenceDenominator = isCustomList ? Math.max(1, activeList.length) : 11;
   
-  const minMarginThreshold = 3.0 * scaleThresholdFactor;
-  const minStrengthThreshold = 4.0 * scaleThresholdFactor;
-  const minSkepticMarginThreshold = 4.0 * scaleThresholdFactor;
-  const minConfidenceThreshold = 25 * scaleThresholdFactor;
+  const signalSide = bullTotal > bearTotal ? 'bull' : 'bear';
+  const totalJ3 = signalSide === 'bull' ? cases.bull.j3 : cases.bear.j3;
+  const totalJ1 = signalSide === 'bull' ? cases.bull.j1 : cases.bear.j1;
+  const reversalDominant = totalJ3 >= 2.0 && totalJ3 > totalJ1;
 
-  const finalConfidence = Math.round((rawWinningTotal * skepticMultiplier / confidenceDenominator) * 100);
+  let confidenceDenominator = isCustomList ? Math.max(1, activeList.length) : 12;
+  if (reversalDominant) {
+    confidenceDenominator = isCustomList ? 8.5 : 10;
+  }
+  
+  // Scale thresholds down in testMode by a factor of 0.35 to allow diagnostic/backtest signals to emit
+  const testModeFactor = horizonArg?.isTestMode ? 0.35 : 1.0;
 
-  let finalSignal: 'CALL' | 'PUT' | 'NO_TRADE' = rawWinner === 'BULL' ? 'CALL' : (rawWinner === 'BEAR' ? 'PUT' : 'NO_TRADE');
+  const rawWinningTotal = bullTotal > bearTotal ? bullTotal : bearTotal;
+  const initialConfidence = Math.round((rawWinningTotal * skepticMultiplier / confidenceDenominator) * 100);
+
+  // Read Calibration settings of the system (Deliverable 8 / 3)
+  const isStrictNeutral = neutralityConfig?.strictNeutrality !== false; // defaults to true
+  const epsilonTie = neutralityConfig?.noTradePreference !== undefined ? neutralityConfig.noTradePreference : 0.05;
+  const biasStrength = neutralityConfig?.biasCorrectionStrength !== undefined ? neutralityConfig.biasCorrectionStrength : 0.05;
+
+  let finalSignal: 'CALL' | 'PUT' | 'NO_TRADE' = 'NO_TRADE';
   let noTradeReason: string | null = null;
+  let finalConfidence = initialConfidence;
+  let adjustedBull = bullTotal;
+  let adjustedBear = bearTotal;
+  let nelMessages: string[] = [];
+
+  if (isStrictNeutral) {
+    const nelResult = enforceNeutrality(
+      bullTotal,
+      bearTotal,
+      initialMargin,
+      initialConfidence,
+      {
+        epsilonTie,
+        softNeutralBand: 0.5,
+        biasCorrectionFactor: biasStrength
+      }
+    );
+    finalSignal = nelResult.signal;
+    finalConfidence = nelResult.adjustedConfidence;
+    adjustedBull = nelResult.adjustedBull;
+    adjustedBear = nelResult.adjustedBear;
+    nelMessages = nelResult.neutralityActions;
+  } else {
+    if (initialMargin >= epsilonTie) {
+      finalSignal = bullTotal > bearTotal ? 'CALL' : 'PUT';
+    }
+  }
+
+  const rawWinner = adjustedBull > adjustedBear ? 'BULL' : (adjustedBear > adjustedBull ? 'BEAR' : 'TIE');
+  const margin = Number(Math.abs(adjustedBull - adjustedBear).toFixed(2));
+  const winningTotal = rawWinner === 'BULL' ? adjustedBull : (rawWinner === 'BEAR' ? adjustedBear : 0);
+
+  let minMarginThreshold = 3.0 * scaleThresholdFactor * testModeFactor;
+  let minStrengthThreshold = 4.0 * scaleThresholdFactor * testModeFactor;
+  if (reversalDominant) {
+    minMarginThreshold *= 0.85;
+    minStrengthThreshold *= 0.85;
+  }
+  const minSkepticMarginThreshold = 4.0 * scaleThresholdFactor * testModeFactor;
+  const minConfidenceThreshold = 25 * scaleThresholdFactor * testModeFactor;
 
   if (hardBlockReason) {
     finalSignal = 'NO_TRADE';
     noTradeReason = `BLOCKED: ${hardBlockReason}`;
   } else if (rawWinner === 'TIE') {
     finalSignal = 'NO_TRADE';
-    noTradeReason = "Bull and Bear scored identically. No directional edge.";
+    noTradeReason = `TIE: Bull and Bear scored identically (${adjustedBull.toFixed(2)} vs ${adjustedBear.toFixed(2)}). No directional edge.`;
   } else if (margin < minMarginThreshold) {
     finalSignal = 'NO_TRADE';
-    noTradeReason = `Margin of ${margin.toFixed(1)} is below minimum threshold of ${minMarginThreshold.toFixed(1)}. Scores of Bulldog and Peer are too close to extract a reliable signal (minimum difference of ${minMarginThreshold.toFixed(1)} required).`;
-  } else if (rawWinningTotal < minStrengthThreshold) {
+    noTradeReason = `Margin of ${margin.toFixed(1)} is below minimum threshold of ${minMarginThreshold.toFixed(1)}. Scores (${adjustedBull.toFixed(2)} vs ${adjustedBear.toFixed(2)}) are too close (minimum difference of ${minMarginThreshold.toFixed(1)} required).`;
+  } else if (winningTotal < minStrengthThreshold) {
     finalSignal = 'NO_TRADE';
-    noTradeReason = `Winning total of ${rawWinningTotal.toFixed(1)} is below minimum strength threshold of ${minStrengthThreshold.toFixed(1)}/11. Evidence too weak to trade.`;
+    noTradeReason = `Winning total of ${winningTotal.toFixed(1)} is below minimum strength threshold of ${minStrengthThreshold.toFixed(1)}/12. Evidence too weak to trade.`;
   } else if (skepticVerdict === 'WEAK' && margin < minSkepticMarginThreshold) {
     finalSignal = 'NO_TRADE';
     noTradeReason = `Skeptic issued WEAK verdict with insufficient margin. High risk environment requires minimum margin of ${minSkepticMarginThreshold.toFixed(1)} (found ${margin.toFixed(1)}).`;
@@ -734,9 +991,12 @@ export function evaluateSignal(
     noTradeReason = `Final confidence of ${finalConfidence}% falls below minimum actionable threshold of ${minConfidenceThreshold.toFixed(0)}%.`;
   }
 
+  // Record solved signal into Aggregated Bias Sentinel History (Invariant I-10)
+  recordDecision(finalSignal);
+
   let finalScore = 0;
-  if (finalSignal === 'CALL') finalScore = bullTotal * skepticMultiplier;
-  else if (finalSignal === 'PUT') finalScore = -(bearTotal * skepticMultiplier);
+  if (finalSignal === 'CALL') finalScore = adjustedBull * skepticMultiplier;
+  else if (finalSignal === 'PUT') finalScore = -(adjustedBear * skepticMultiplier);
 
   const decisionLabel: 'STRONG SIGNAL' | 'WEAK' = (finalSignal === 'CALL' || finalSignal === 'PUT') ? 'STRONG SIGNAL' : 'WEAK';
 
@@ -782,14 +1042,14 @@ export function evaluateSignal(
 │  CASE 1 — BULL                      │
 │  J1 Reasoning: ${cases.bull.j1.toFixed(1).padEnd(5)}/ 4.0         │
 │  J2 Vehicle:   ${cases.bull.j2.toFixed(1).padEnd(5)}/ 4.0         │
-│  J3 Reversal:  ${cases.bull.j3.toFixed(1).padEnd(5)}/ 3.0         │
-│  Total:        ${cases.bull.total.toFixed(1).padEnd(5)}/ 11.0        │
+│  J3 Reversal:  ${cases.bull.j3.toFixed(1).padEnd(5)}/ 4.0         │
+│  Total:        ${cases.bull.total.toFixed(1).padEnd(5)}/ 12.0        │
 ├─────────────────────────────────────┤
 │  CASE 2 — BEAR                      │
 │  J1 Reasoning: ${cases.bear.j1.toFixed(1).padEnd(5)}/ 4.0         │
 │  J2 Vehicle:   ${cases.bear.j2.toFixed(1).padEnd(5)}/ 4.0         │
-│  J3 Reversal:  ${cases.bear.j3.toFixed(1).padEnd(5)}/ 3.0         │
-│  Total:        ${cases.bear.total.toFixed(1).padEnd(5)}/ 11.0        │
+│  J3 Reversal:  ${cases.bear.j3.toFixed(1).padEnd(5)}/ 4.0         │
+│  Total:        ${cases.bear.total.toFixed(1).padEnd(5)}/ 12.0        │
 ├─────────────────────────────────────┤
 │  SKEPTIC VETO:  ${skepticMultiplier.toFixed(2)} (${skepticVerdict.padEnd(7)}) │
 │  Margin:        ${margin.toFixed(1).padEnd(19)} │

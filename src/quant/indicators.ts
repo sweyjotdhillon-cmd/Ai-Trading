@@ -187,3 +187,96 @@ export function stochastic(candles: {high: number, low: number, close: number}[]
     d: Array.from(dArray)
   };
 }
+
+export function adx(
+  candles: {high: number; low: number; close: number}[],
+  period = 14
+): { adx: number[]; plusDI: number[]; minusDI: number[] } {
+  const n = candles.length;
+  const adxResult = new Array(n).fill(NaN);
+  const plusDIResult = new Array(n).fill(NaN);
+  const minusDIResult = new Array(n).fill(NaN);
+
+  if (n < period + 1) {
+    return { adx: adxResult, plusDI: plusDIResult, minusDI: minusDIResult };
+  }
+
+  const tr = new Float64Array(n);
+  const plusDM = new Float64Array(n);
+  const minusDM = new Float64Array(n);
+
+  for (let i = 1; i < n; i++) {
+    const hSubL = candles[i].high - candles[i].low;
+    const hSubCp = Math.abs(candles[i].high - candles[i - 1].close);
+    const lSubCp = Math.abs(candles[i].low - candles[i - 1].close);
+    tr[i] = Math.max(hSubL, hSubCp, lSubCp);
+
+    const up = candles[i].high - candles[i - 1].high;
+    const down = candles[i - 1].low - candles[i].low;
+
+    plusDM[i] = (up > down && up > 0) ? up : 0;
+    minusDM[i] = (down > up && down > 0) ? down : 0;
+  }
+
+  const smoothedTR = new Float64Array(n);
+  const smoothedPlusDM = new Float64Array(n);
+  const smoothedMinusDM = new Float64Array(n);
+
+  let sumTR = 0;
+  let sumPlusDM = 0;
+  let sumMinusDM = 0;
+
+  for (let i = 1; i <= period && i < n; i++) {
+    sumTR += tr[i];
+    sumPlusDM += plusDM[i];
+    sumMinusDM += minusDM[i];
+  }
+
+  smoothedTR[period] = sumTR;
+  smoothedPlusDM[period] = sumPlusDM;
+  smoothedMinusDM[period] = sumMinusDM;
+
+  for (let i = period + 1; i < n; i++) {
+    smoothedTR[i] = smoothedTR[i - 1] - (smoothedTR[i - 1] / period) + tr[i];
+    smoothedPlusDM[i] = smoothedPlusDM[i - 1] - (smoothedPlusDM[i - 1] / period) + plusDM[i];
+    smoothedMinusDM[i] = smoothedMinusDM[i - 1] - (smoothedMinusDM[i - 1] / period) + minusDM[i];
+  }
+
+  const dx = new Float64Array(n);
+
+  for (let i = period; i < n; i++) {
+    const trVal = smoothedTR[i];
+    const plusDMVal = smoothedPlusDM[i];
+    const minusDMVal = smoothedMinusDM[i];
+
+    const pDI = trVal > 0 ? (plusDMVal / trVal) * 100 : 0;
+    const mDI = trVal > 0 ? (minusDMVal / trVal) * 100 : 0;
+
+    plusDIResult[i] = pDI;
+    minusDIResult[i] = mDI;
+
+    const diff = Math.abs(pDI - mDI);
+    const sum = pDI + mDI;
+    dx[i] = sum > 0 ? (diff / sum) * 100 : 0;
+  }
+
+  let dxSum = 0;
+  for (let i = period; i < period * 2 && i < n; i++) {
+    dxSum += dx[i];
+  }
+
+  const startAdxIdx = period * 2 - 1;
+  if (startAdxIdx < n) {
+    adxResult[startAdxIdx] = dxSum / period;
+    for (let i = startAdxIdx + 1; i < n; i++) {
+      adxResult[i] = ((adxResult[i - 1] * (period - 1)) + dx[i]) / period;
+    }
+  }
+
+  return {
+    adx: adxResult,
+    plusDI: plusDIResult,
+    minusDI: minusDIResult
+  };
+}
+

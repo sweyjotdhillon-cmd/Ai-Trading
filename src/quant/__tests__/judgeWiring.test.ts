@@ -47,16 +47,16 @@ describe('Judge Wiring Architectural Verification Tests', () => {
     expect(result.cases.bull).toBeDefined();
     expect(result.cases.bear).toBeDefined();
 
-    // Verify caps (J1 cap 4.0, J2 cap 4.0, J3 cap 3.0)
+    // Verify caps (J1 cap 4.0, J2 cap 4.0, J3 cap 4.0)
     expect(result.cases.bull.j1).toBeLessThanOrEqual(4.0);
     expect(result.cases.bull.j2).toBeLessThanOrEqual(4.0);
-    expect(result.cases.bull.j3).toBeLessThanOrEqual(3.0);
-    expect(result.cases.bull.total).toBeLessThanOrEqual(11.0);
+    expect(result.cases.bull.j3).toBeLessThanOrEqual(4.0);
+    expect(result.cases.bull.total).toBeLessThanOrEqual(12.0);
 
     expect(result.cases.bear.j1).toBeLessThanOrEqual(4.0);
     expect(result.cases.bear.j2).toBeLessThanOrEqual(4.0);
-    expect(result.cases.bear.j3).toBeLessThanOrEqual(3.0);
-    expect(result.cases.bear.total).toBeLessThanOrEqual(11.0);
+    expect(result.cases.bear.j3).toBeLessThanOrEqual(4.0);
+    expect(result.cases.bear.total).toBeLessThanOrEqual(12.0);
   });
 
   // Test 2: Hurst amplification and dampening

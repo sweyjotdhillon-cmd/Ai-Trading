@@ -1,0 +1,520 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.6 [39m[90m/app/applet[39m
+
+[90mstdout[2m | src/quant/__tests__/judgeVerdict.test.ts[2m > [22m[2mJudge Verdict[2m > [22m[2m1. Strong uptrend synthetic series
+[22m[39mLAST 20 CLOSES IN UPTREND TEST: [
+  [32m'376.78'[39m, [32m'381.01'[39m, [32m'379.33'[39m,
+  [32m'384.18'[39m, [32m'386.60'[39m, [32m'380.92'[39m,
+  [32m'375.98'[39m, [32m'369.37'[39m, [32m'365.52'[39m,
+  [32m'361.17'[39m, [32m'356.75'[39m, [32m'351.67'[39m,
+  [32m'345.25'[39m, [32m'339.59'[39m, [32m'334.68'[39m,
+  [32m'331.57'[39m, [32m'327.41'[39m, [32m'323.67'[39m,
+  [32m'316.26'[39m, [32m'310.53'[39m
+]
+[CHARTLENS] decision: NO_TRADE conf=43%
+  Cases: {
+    bull: { j1: [33m0[39m, j2: [33m4[39m, j3: [33m0.13[39m, total: [33m4.13[39m },
+    bear: { j1: [33m4[39m, j2: [33m0[39m, j3: [33m1.28[39m, total: [33m5.28[39m }
+  }
+  Intrinsic J1: { bull: [33m0[39m, bear: [33m4[39m }
+  Intrinsic J2: { bull: [33m3[39m, bear: [33m0[39m }
+  Intrinsic J3: { bull: [33m0.15000000000000002[39m, bear: [33m1.51[39m }
+  Technique J1/J2/J3: { bullJ1: [33m0[39m, bullJ2: [33m3.25[39m, bullJ3: [33m0[39m, bearJ1: [33m0[39m, bearJ2: [33m0[39m, bearJ3: [33m0[39m }
+  Skeptic mult: [33m0.9[39m verdict: ACCEPT
+  Techniques evaluated: [33m12[39m matched: [33m2[39m skipped: [33m0[39m unknown: [33m0[39m
+  judgeContribs: [
+    {
+      judge: [32m'J1'[39m,
+      side: [32m'BEAR'[39m,
+      contributor: [32m'intrinsic.macd_bear_stack'[39m,
+      value: [33m1.5[39m,
+      reason: [32m'MACD=-11.1391 < Signal=-4.7796, hist=-6.3595<0'[39m
+    },
+    {
+      judge: [32m'J1'[39m,
+      side: [32m'BEAR'[39m,
+      contributor: [32m'intrinsic.macd_accel_dn'[39m,
+      value: [33m0.75[39m,
+      reason: [32m'MACD hist accelerating down (Δ=-0.07041)'[39m
+    },
+    {
+      judge: [32m'J1'[39m,
+      side: [32m'BEAR'[39m,
+      contributor: [32m'intrinsic.ema9_slope_dn'[39m,
+      value: [33m1.75[39m,
+      reason: [32m'EMA9 slope=-4.9440 < -0.05'[39m
+    },
+    {
+      judge: [32m'J2'[39m,
+      side: [32m'BULL'[39m,
+      contributor: [32m'intrinsic.rsi_oversold'[39m,
+      value: [33m2[39m,
+      reason: [32m'RSI(14)=16.97 < 30 oversold'[39m
+    },
+    {
+      judge: [32m'J2'[39m,
+      side: [32m'BULL'[39m,
+      contributor: [32m'intrinsic.stoch_oversold'[39m,
+      value: [33m1[39m,
+      reason: [32m'Stoch K=0.5 D=1.3 < 20'[39m
+    },
+    {
+      judge: [32m'J3'[39m,
+      side: [32m'BULL'[39m,
+      contributor: [32m'intrinsic.z_significance'[39m,
+      value: [33m-0.6[39m,
+      reason: [32m'Z=0.794, type=BEAR_MOMENTUM'[39m
+    },
+    {
+      judge: [32m'J3'[39m,
+      side: [32m'BEAR'[39m,
+      contributor: [32m'intrinsic.z_significance'[39m,
+      value: [33m1.51[39m,
+      reason: [32m'Z=0.794, type=BEAR_MOMENTUM'[39m
+    },
+    {
+      judge: [32m'J3'[39m,
+      side: [32m'BULL'[39m,
+      contributor: [32m'intrinsic.boll_lower_edge'[39m,
+      value: [33m0.75[39m,
+      reason: [32m'Price 310.53 near lower BB 306.77'[39m
+    }
+  ]
+UPTREND RESULT: {
+  "agent": "JUDGE",
+  "signal": "NO_TRADE",
+  "decision": "WEAK",
+  "cases": {
+    "bull": {
+      "j1": 0,
+      "j2": 4,
+      "j3": 0.13,
+      "total": 4.13
+    },
+    "bear": {
+      "j1": 4,
+      "j2": 0,
+      "j3": 1.28,
+      "total": 5.28
+    }
+  },
+  "winner": "NO_TRADE",
+  "margin": 1.15,
+  "skepticMultiplier": 0.9,
+  "skepticPenalty": 10,
+  "skepticVerdict": "ACCEPT",
+  "finalConfidence": 43,
+  "finalScore": 0,
+  "ruling": "NO_TRADE — Margin of 1.1 is below minimum threshold of 3.0. Scores (4.13 vs 5.28) are too close (minimum difference of 3.0 required). A clearer trend or score divergence is required to safely trade options signals.",
+  "primaryEvidence": "Bearish momentum structure dominant",
+  "noTradeReason": "Margin of 1.1 is below minimum threshold of 3.0. Scores (4.13 vs 5.28) are too close (minimum difference of 3.0 required).",
+  "topPatterns": {
+    "bull": [],
+    "bear": []
+  },
+  "techniquesUsed": "Execution Driven Only",
+  "techUsedCount": 12,
+  "formattedReport": "┌─────────────────────────────────────┐\n│  ARBITRATOR FINAL VERDICT           │\n│  Signal: NO_TRADE             │\n│  Confidence: 43 %                 │\n├─────────────────────────────────────┤\n│  CASE 1 — BULL                      │\n│  J1 Reasoning: 0.0  / 4.0         │\n│  J2 Vehicle:   4.0  / 4.0         │\n│  J3 Reversal:  0.1  / 3.0         │\n│  Total:        4.1  / 11.0        │\n├─────────────────────────────────────┤\n│  CASE 2 — BEAR                      │\n│  J1 Reasoning: 4.0  / 4.0         │\n│  J2 Vehicle:   0.0  / 4.0         │\n│  J3 Reversal:  1.3  / 3.0         │\n│  Total:        5.3  / 11.0        │\n├─────────────────────────────────────┤\n│  SKEPTIC VETO:  0.90 (ACCEPT ) │\n│  Margin:        1.1                 │\n│  Final Score:   0.0                 │\n├─────────────────────────────────────┤\n│  RULING:                            │\n│  NO_TRADE — Margin of 1.1 is below  │\n│  minimum threshold of 3.0. Scores   │\n│  (4.13 vs 5.28) are too close       │\n│  (minimum difference of 3.0         │\n│  required). A clearer trend or      │\n│  score divergence is required to    │\n│  safely trade options signals.      │\n└─────────────────────────────────────┘",
+  "hallucinationDetected": false,
+  "hallucinationMetrics": {
+    "physicsViolations": 0,
+    "outOfBoundsCount": 0,
+    "sensorAnomalies": 0,
+    "integrityVerified": true
+  },
+  "tradeDetails": {
+    "latencyAdjustedForecast": "Signal: NO_TRADE",
+    "techniquesUsed": "rsioversold, rsioverbought, stochoversold, stochoverbought, macdbullcross, macdbearcross, bollingerlowerbreak, bollingerupperbreak, emagoldencross, emadeathcross, hammer, shootingstar",
+    "executionTimeMs": 10.53
+  },
+  "j1Score": 4,
+  "j2Score": 4,
+  "j3Score": 1.4100000000000001,
+  "j4Score": 10,
+  "techniquesEvaluation": {
+    "totalTechniques": 12,
+    "bulldogPoints": 3.25,
+    "peerPoints": 0,
+    "bullList": [
+      {
+        "id": "T001",
+        "name": "rsioversold",
+        "vote": "BULL",
+        "caseIndicated": "Bulldog",
+        "pointsEarned": 2,
+        "process": "RSI(14)=16.97 < 30 oversold",
+        "matched": true
+      },
+      {
+        "id": "T003",
+        "name": "stochoversold",
+        "vote": "BULL",
+        "caseIndicated": "Bulldog",
+        "pointsEarned": 1.25,
+        "process": "Stoch K=0.5, D=1.3 < 20 oversold",
+        "matched": true
+      }
+    ],
+    "bearList": [
+      {
+        "id": "T002",
+        "name": "rsioverbought",
+        "vote": "NEUTRAL",
+        "caseIndicated": "Neutral",
+        "pointsEarned": 0,
+        "process": "RSI(14)=16.97 not overbought",
+        "matched": false
+      },
+      {
+        "id": "T004",
+        "name": "stochoverbought",
+        "vote": "NEUTRAL",
+        "caseIndicated": "Neutral",
+        "pointsEarned": 0,
+        "process": "Stoch not overbought",
+        "matched": false
+      },
+      {
+        "id": "T005",
+        "name": "macdbullcross",
+        "vote": "NEUTRAL",
+        "caseIndicated": "Neutral",
+        "pointsEarned": 0,
+        "process": "No MACD golden crossover",
+        "matched": false
+      },
+      {
+        "id": "T006",
+        "name": "macdbearcross",
+        "vote": "NEUTRAL",
+        "caseIndicated": "Neutral",
+        "pointsEarned": 0,
+        "process": "No MACD death crossover",
+        "matched": false
+      },
+      {
+        "id": "T007",
+        "name": "bollingerlowerbreak",
+        "vote": "NEUTRAL",
+        "caseIndicated": "Neutral",
+        "pointsEarned": 0,
+        "process": "Within Bollinger Bands",
+        "matched": false
+      },
+      {
+        "id": "T008",
+        "name": "bollingerupperbreak",
+        "vote": "NEUTRAL",
+        "caseIndicated": "Neutral",
+        "pointsEarned": 0,
+        "process": "Within Bollinger Bands",
+        "matched": false
+      },
+      {
+        "id": "T009",
+        "name": "emagoldencross",
+        "vote": "NEUTRAL",
+        "caseIndicated": "Neutral",
+        "pointsEarned": 0,
+        "process": "No EMA cross detected",
+        "matched": false
+      },
+      {
+        "id": "T010",
+        "name": "emadeathcross",
+        "vote": "NEUTRAL",
+        "caseIndicated": "Neutral",
+        "pointsEarned": 0,
+        "process": "No EMA cross detected",
+        "matched": false
+      },
+      {
+        "id": "T011",
+        "name": "hammer",
+        "vote": "NEUTRAL",
+        "caseIndicated": "Neutral",
+        "pointsEarned": 0,
+        "process": "No Hammer formed",
+        "matched": false
+      },
+      {
+        "id": "T012",
+        "name": "shootingstar",
+        "vote": "NEUTRAL",
+        "caseIndicated": "Neutral",
+        "pointsEarned": 0,
+        "process": "No Shooting Star formed",
+        "matched": false
+      }
+    ]
+  },
+  "auditTrail": {
+    "judgeContribs": [
+      {
+        "judge": "J1",
+        "side": "BEAR",
+        "contributor": "intrinsic.macd_bear_stack",
+        "value": 1.5,
+        "reason": "MACD=-11.1391 < Signal=-4.7796, hist=-6.3595<0"
+      },
+      {
+        "judge": "J1",
+        "side": "BEAR",
+        "contributor": "intrinsic.macd_accel_dn",
+        "value": 0.75,
+        "reason": "MACD hist accelerating down (Δ=-0.07041)"
+      },
+      {
+        "judge": "J1",
+        "side": "BEAR",
+        "contributor": "intrinsic.ema9_slope_dn",
+        "value": 1.75,
+        "reason": "EMA9 slope=-4.9440 < -0.05"
+      },
+      {
+        "judge": "J2",
+        "side": "BULL",
+        "contributor": "intrinsic.rsi_oversold",
+        "value": 2,
+        "reason": "RSI(14)=16.97 < 30 oversold"
+      },
+      {
+        "judge": "J2",
+        "side": "BULL",
+        "contributor": "intrinsic.stoch_oversold",
+        "value": 1,
+        "reason": "Stoch K=0.5 D=1.3 < 20"
+      },
+      {
+        "judge": "J3",
+        "side": "BULL",
+        "contributor": "intrinsic.z_significance",
+        "value": -0.6,
+        "reason": "Z=0.794, type=BEAR_MOMENTUM"
+      },
+      {
+        "judge": "J3",
+        "side": "BEAR",
+        "contributor": "intrinsic.z_significance",
+        "value": 1.51,
+        "reason": "Z=0.794, type=BEAR_MOMENTUM"
+      },
+      {
+        "judge": "J3",
+        "side": "BULL",
+        "contributor": "intrinsic.boll_lower_edge",
+        "value": 0.75,
+        "reason": "Price 310.53 near lower BB 306.77"
+      }
+    ],
+    "temporalFiltering": {
+      "graphTimeframeMinutes": 5,
+      "durationMinutes": 15,
+      "nCandles": 3,
+      "nCut": 20,
+      "totalCandles": 150
+    },
+    "preFlightIntegrity": {
+      "violations": 0,
+      "outOfBounds": 0,
+      "nonFinite": 0,
+      "totalChecked": 150,
+      "anomaliesRatio": 0,
+      "decision": "PASS"
+    },
+    "techniquesEvaluated": [
+      {
+        "id": "T001",
+        "name": "rsioversold",
+        "vote": "BULL",
+        "score": 0.43448458958104463,
+        "bullPoints": 2,
+        "bearPoints": 0,
+        "reason": "RSI(14)=16.97 < 30 oversold"
+      },
+      {
+        "id": "T002",
+        "name": "rsioverbought",
+        "vote": "NEUTRAL",
+        "score": 0,
+        "bullPoints": 0,
+        "bearPoints": 0,
+        "reason": "RSI(14)=16.97 not overbought"
+      },
+      {
+        "id": "T003",
+        "name": "stochoversold",
+        "vote": "BULL",
+        "score": 0.9727932110900701,
+        "bullPoints": 1.25,
+        "bearPoints": 0,
+        "reason": "Stoch K=0.5, D=1.3 < 20 oversold"
+      },
+      {
+        "id": "T004",
+        "name": "stochoverbought",
+        "vote": "NEUTRAL",
+        "score": 0,
+        "bullPoints": 0,
+        "bearPoints": 0,
+        "reason": "Stoch not overbought"
+      },
+      {
+        "id": "T005",
+        "name": "macdbullcross",
+        "vote": "NEUTRAL",
+        "score": 0,
+        "bullPoints": 0,
+        "bearPoints": 0,
+        "reason": "No MACD golden crossover"
+      },
+      {
+        "id": "T006",
+        "name": "macdbearcross",
+        "vote": "NEUTRAL",
+        "score": 0,
+        "bullPoints": 0,
+        "bearPoints": 0,
+        "reason": "No MACD death crossover"
+      },
+      {
+        "id": "T007",
+        "name": "bollingerlowerbreak",
+        "vote": "NEUTRAL",
+        "score": 0,
+        "bullPoints": 0,
+        "bearPoints": 0,
+        "reason": "Within Bollinger Bands"
+      },
+      {
+        "id": "T008",
+        "name": "bollingerupperbreak",
+        "vote": "NEUTRAL",
+        "score": 0,
+        "bullPoints": 0,
+        "bearPoints": 0,
+        "reason": "Within Bollinger Bands"
+      },
+      {
+        "id": "T009",
+        "name": "emagoldencross",
+        "vote": "NEUTRAL",
+        "score": 0,
+        "bullPoints": 0,
+        "bearPoints": 0,
+        "reason": "No EMA cross detected"
+      },
+      {
+        "id": "T010",
+        "name": "emadeathcross",
+        "vote": "NEUTRAL",
+        "score": 0,
+        "bullPoints": 0,
+        "bearPoints": 0,
+        "reason": "No EMA cross detected"
+      },
+      {
+        "id": "T011",
+        "name": "hammer",
+        "vote": "NEUTRAL",
+        "score": 0,
+        "bullPoints": 0,
+        "bearPoints": 0,
+        "reason": "No Hammer formed"
+      },
+      {
+        "id": "T012",
+        "name": "shootingstar",
+        "vote": "NEUTRAL",
+        "score": 0,
+        "bullPoints": 0,
+        "bearPoints": 0,
+        "reason": "No Shooting Star formed"
+      }
+    ],
+    "judges": {
+      "J1": {
+        "rawBull": 0,
+        "rawBear": 0,
+        "cappedBull": 0,
+        "cappedBear": 4,
+        "finalBull": 0,
+        "finalBear": 4
+      },
+      "J2": {
+        "rawBull": 3.25,
+        "rawBear": 0,
+        "cappedBull": 4,
+        "cappedBear": 0,
+        "finalBull": 4,
+        "finalBear": 0
+      },
+      "J3": {
+        "rawBull": 0.15000000000000002,
+        "rawBear": 1.51,
+        "cappedBull": 0.15000000000000002,
+        "cappedBear": 1.51,
+        "finalBull": 0.13,
+        "finalBear": 1.28,
+        "components": {
+          "zScore": 0.794,
+          "zScoreBullPts": -0.6,
+          "zScoreBearPts": 1.51,
+          "priceYPercent": 0,
+          "boundaryLabel": "EXTREME LOW (OVERSOLD) [Clean Bearish Close -> Continuation Breakdown Blocked]",
+          "boundaryBullPts": 0,
+          "boundaryBearPts": 0
+        }
+      }
+    },
+    "hurstRegime": {
+      "H_exp": 0.7720297177315695,
+      "explanation": "Trending regime (H=0.77 > 0.55), zero-sum J1 amplified, J3 dampened"
+    },
+    "j4Skeptic": {
+      "penalties": [
+        "Low Timeframe noise correction (0.90x modifier)"
+      ],
+      "finalMultiplier": 0.9,
+      "verdict": "ACCEPT"
+    },
+    "finalResolution": {
+      "rawWinner": "BEAR",
+      "margin": 1.15,
+      "rawWinningTotal": 5.28,
+      "finalConfidence": 43,
+      "finalSignal": "NO_TRADE",
+      "noTradeReason": "Margin of 1.1 is below minimum threshold of 3.0. Scores (4.13 vs 5.28) are too close (minimum difference of 3.0 required).",
+      "finalScore": 0
+    }
+  },
+  "confidence": 43,
+  "bullScore": 4.13,
+  "bearScore": 5.28,
+  "boundaryBias": 0,
+  "evidence": {
+    "rsi": 16.96546231256866,
+    "macd": -11.139096130509756,
+    "macdHist": -6.359534724663038,
+    "bollMiddle": 354.91364606272975,
+    "bollLower": 306.7686277138621,
+    "bollUpper": 403.0586644115974,
+    "localSupport": 310.13735300998206,
+    "localResistance": 388.36161691499666,
+    "lastClose": 310.53083384824333
+  }
+}
+
+ [31m❯[39m src/quant/__tests__/judgeVerdict.test.ts [2m([22m[2m6 tests[22m[2m | [22m[31m1 failed[39m[2m | [22m[33m5 skipped[39m[2m)[22m[32m 37[2mms[22m[39m
+[31m     [31m×[31m 1. Strong uptrend synthetic series[39m[32m 35[2mms[22m[39m
+     [2m[90m↓[39m[22m 2. Strong downtrend synthetic series
+     [2m[90m↓[39m[22m 3. Sideways noise
+     [2m[90m↓[39m[22m 4. Trending but EXPLOSIVE_SKIP volatility
+     [2m[90m↓[39m[22m 5. totals per judge never exceed cap
+     [2m[90m↓[39m[22m 6. finalConfidence is integer between 0 and 100
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m1 failed[39m[22m[2m | [22m[33m5 skipped[39m[90m (6)[39m
+[2m   Start at [22m 10:39:57
+[2m   Duration [22m 1.02s[2m (transform 355ms, setup 0ms, import 429ms, tests 37ms, environment 0ms)[22m
+

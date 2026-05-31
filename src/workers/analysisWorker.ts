@@ -58,6 +58,15 @@ self.onmessage = async (e: MessageEvent) => {
       sendOk('CALIBRATE', { type: 'CALIBRATED', bands: getCalibrationBands() });
     } 
     else if (data.type === 'ANALYZE') {
+      if (data.isTestMode || data.isManifestCheck) {
+        patternStabilityManager.reset();
+        gapStabilityManager.reset();
+        resetStability();
+        if (featureFlags.enableTemporalFiltering) {
+          resetTemporalFilter();
+        }
+      }
+
       if (data.isManifestCheck) {
         const pipe = await buildPipelineResult(data.imageData) as any;
         const ohlc = pipe.ohlcSeries || [];
@@ -96,7 +105,8 @@ self.onmessage = async (e: MessageEvent) => {
         tfMinutes,
         durationMinutes,
         H: hRatio,
-        horizonClass: hClass
+        horizonClass: hClass,
+        isTestMode: !!data.isTestMode
       };
 
       const t0Worker = performance.now();
@@ -139,7 +149,8 @@ self.onmessage = async (e: MessageEvent) => {
         confirmedGaps,
         (key: string, text: string) => {
           sendOk('JUDGE_LOG', { msgId: data.msgId, logs: { [key]: { text, status: 'active' } } });
-        }
+        },
+        data.neutralityConfig
       );
       console.log(`[PERF] evaluateSignal: ${(performance.now()-t1Worker).toFixed(1)}ms`);
       console.log(`[PERF] TOTAL worker: ${(performance.now()-t0Worker).toFixed(1)}ms`);
@@ -191,6 +202,8 @@ self.onmessage = async (e: MessageEvent) => {
         extractedJSON: extractedChartData,
         absoluteMin,
         absoluteMax,
+        ohlcSeries: pipe.ohlcSeries,
+        rawCandles: pipe.rawCandles,
         temporalFiltering: featureFlags.enableTemporalFiltering ? {
           smoothedConfidence: finalConfidence,
           smoothedScore: finalScore

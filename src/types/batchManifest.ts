@@ -1,9 +1,12 @@
+import { AutoGradeGeometry } from '../quant/autoGradeGeometry';
+
 export interface BatchManifestEntry {
   // REQUIRED
   imageFilename: string;          // matches a file the user uploads, e.g. "btc_001.png"
 
   // OPTIONAL
   imageData?: string;             // Base64 embedded image (removes need for 2-step upload)
+  autoGradeGeometry?: AutoGradeGeometry;
   stock?: string;                 // e.g. "Bitcoin"
   graphTimeframe?: string;        // e.g. "5 minutes" — must match existing timeframes[]
   investmentDuration?: string;    // e.g. "5m" — must match existing durations[]
@@ -12,6 +15,8 @@ export interface BatchManifestEntry {
   expectedOutcome?: 'UP' | 'DOWN' | 'UNKNOWN';   // for backtest accuracy scoring
   notes?: string;                 // freeform user note
   techniqueOverrides?: string[];  // override the global techniquesList for this entry
+  startCandle?: any;              // Detected Trade starting candle
+  threePriorCandles?: any[];      // Three candles preceding the trade start
 }
 
 export interface BatchManifest {

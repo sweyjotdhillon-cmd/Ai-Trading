@@ -247,6 +247,7 @@ export function LiveAnalysis() {
   const [exitClose, setExitClose] = useState<number | null>(null);
   const [absoluteMin, setAbsoluteMin] = useState<number | null>(null);
   const [absoluteMax, setAbsoluteMax] = useState<number | null>(null);
+  const [splitXPercent, setSplitXPercent] = useState<number | null>(null);
   const actualDirection: 'UP' | 'DOWN' | null =
     confirmedOutcome === 'WIN' ? 'UP' : confirmedOutcome === 'LOSS' ? 'DOWN' : null;
   const [statsData, setStatsData] = useState<any[]>(() => {
@@ -405,6 +406,7 @@ export function LiveAnalysis() {
     setExitClose(null);
     setAbsoluteMin(null);
     setAbsoluteMax(null);
+    setSplitXPercent(null);
     setMode('live');
     setStockName('Bitcoin');
     setGraphTimeframe('30:00');
@@ -820,6 +822,7 @@ export function LiveAnalysis() {
           setExitClose(result.exitClose !== undefined ? result.exitClose : null);
           setAbsoluteMin(result.absoluteMin !== undefined ? result.absoluteMin : null);
           setAbsoluteMax(result.absoluteMax !== undefined ? result.absoluteMax : null);
+          setSplitXPercent(result.splitXPercent !== undefined ? result.splitXPercent : null);
 
           if (mode === 'test') {
              if (result.testModeRightSlice) {
@@ -1190,6 +1193,7 @@ export function LiveAnalysis() {
           exitClose={exitClose}
           absoluteMin={absoluteMin}
           absoluteMax={absoluteMax}
+          splitXPercent={splitXPercent}
         />
       </View>
     </ScrollView>

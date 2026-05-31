@@ -226,7 +226,8 @@ export function calculateZScoreSignificance(
     ? historicalRanges.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / (historicalRanges.length - 1)
     : 0;
   const stdDev = Math.sqrt(variance);
-  const zScore = stdDev === 0 ? 0 : (currMetrics.totalRange - mean) / stdDev;
+  const effectiveStd = Math.max(stdDev, mean * 0.05); // Minimum 5% of mean range as std dev floor to stabilize synthetic/flat structures
+  const zScore = effectiveStd === 0 ? 0 : (currMetrics.totalRange - mean) / effectiveStd;
 
   // ── 3. ABSOLUTE SIZE FLOOR ──────────────────────────────────────────────
   // Prevent a micro-move from scoring high just because everything else was flat.
@@ -236,8 +237,7 @@ export function calculateZScoreSignificance(
   const absoluteFloor = avgClose * 0.001; // 0.1% of price
   const absolutelySignificant = currMetrics.totalRange > absoluteFloor;
 
-  // ── 4. SIGNAL TYPE DETECTION ────────────────────────────────────────────
-  // Classify the current candle pattern — determines direction of significance
+  // Basic Candle Classifications
   const isBullishBody = current.close > current.open;
   const isBearishBody = current.close < current.open;
 
@@ -251,6 +251,31 @@ export function calculateZScoreSignificance(
   // Strong momentum candle: body > 70% of range
   const isStrongBody = currMetrics.bodyRatio > 0.70;
 
+  // ── 4. STRENGTH-WEIGHTED DIRECTION DETECTOR (Deliverable 6) ─────────────
+  // Evaluate indicators to assign weighted votes to BULL and BEAR sides
+  let bullVotes = 0;
+  let bearVotes = 0;
+
+  // A. Candlestick body direction and solid ratio
+  if (isBullishBody) {
+    bullVotes += currMetrics.bodyRatio * 1.5;
+  } else if (isBearishBody) {
+    bearVotes += currMetrics.bodyRatio * 1.5;
+  }
+
+  // B. Wick rejection evidence (Upper wick rejects UP -> BEAR, Lower rejects down -> BULL)
+  const totalR = currMetrics.totalRange || 1e-9;
+  bullVotes += (currMetrics.lowerWick / totalR) * 1.5;
+  bearVotes += (currMetrics.upperWick / totalR) * 1.5;
+
+  // C. Pinbar structure indicators
+  if (isPinBarBull) bullVotes += 2.0;
+  if (isPinBarBear) bearVotes += 2.0;
+
+  // D. Strong momentum trends
+  if (isStrongBody && isBullishBody) bullVotes += 1.5;
+  if (isStrongBody && isBearishBody) bearVotes += 1.5;
+
   type SignalType = 'BULL_MOMENTUM' | 'BEAR_MOMENTUM' | 'BULL_PINBAR' | 'BEAR_PINBAR' | 'DOJI' | 'MIXED' | 'INSUFFICIENT_DATA';
   let signalType: SignalType = 'MIXED';
   let direction: 'BULL' | 'BEAR' | 'NEUTRAL' = 'NEUTRAL';
@@ -258,22 +283,18 @@ export function calculateZScoreSignificance(
   if (isDoji) {
     signalType = 'DOJI';
     direction = 'NEUTRAL';
-  } else if (isPinBarBull) {
-    signalType = 'BULL_PINBAR';
-    direction = 'BULL';
-  } else if (isPinBarBear) {
-    signalType = 'BEAR_PINBAR';
-    direction = 'BEAR';
-  } else if (isStrongBody && isBullishBody) {
-    signalType = 'BULL_MOMENTUM';
-    direction = 'BULL';
-  } else if (isStrongBody && isBearishBody) {
-    signalType = 'BEAR_MOMENTUM';
-    direction = 'BEAR';
-  } else if (isBullishBody) {
-    direction = 'BULL';
-  } else if (isBearishBody) {
-    direction = 'BEAR';
+  } else {
+    const voteEpsilon = 0.01;
+    if (bullVotes > bearVotes + voteEpsilon) {
+      direction = 'BULL';
+      signalType = isPinBarBull ? 'BULL_PINBAR' : (isStrongBody ? 'BULL_MOMENTUM' : 'MIXED');
+    } else if (bearVotes > bullVotes + voteEpsilon) {
+      direction = 'BEAR';
+      signalType = isPinBarBear ? 'BEAR_PINBAR' : (isStrongBody ? 'BEAR_MOMENTUM' : 'MIXED');
+    } else {
+      direction = 'NEUTRAL';
+      signalType = 'MIXED';
+    }
   }
 
   // ── 5. CONTINUOUS POINT SCORING ─────────────────────────────────────────
@@ -290,7 +311,12 @@ export function calculateZScoreSignificance(
   //   zScore 1.5  → 2.41 pts
   //   zScore 2.0  → 2.93 pts
   //   zScore 3.0  → 3.63 pts  (never actually hits 4.0 — prevents gaming)
-  const tanh = (x: number) => (Math.exp(x) - Math.exp(-x)) / (Math.exp(x) + Math.exp(-x));
+  const tanh = (x: number) => {
+    if (x > 20) return 1.0;
+    if (x < -20) return -1.0;
+    const exp2x = Math.exp(2 * x);
+    return (exp2x - 1) / (exp2x + 1);
+  };
   const rawScore = zScore > 0 ? 4.0 * tanh(zScore / 2.0) : 0;
 
   // Apply absolute floor penalty
@@ -427,7 +453,11 @@ export function calculateBoundaryReversal(
     }
   }
 
-  if (effectiveY >= 85) {
+  if (effectiveY >= 47.5 && effectiveY <= 52.5) {
+    bullPoints = 0;
+    bearPoints = 0;
+    label = "CENTRAL NEUTRALITY ZONE";
+  } else if (effectiveY >= 85) {
     bearPoints = 3.0; // Price is at top, favor DOWN
     label = "EXTREME HIGH (DANGER)";
   } else if (effectiveY <= 15) {
@@ -773,23 +803,116 @@ export function calculateMicroMomentumScore(zScore: number, velocity: number, ac
   return 0;
 }
 
-/**
- * Simple, robust detection of classical RSI divergence
- */
-export function detectRSIDivergence(closes: number[], rsiVals: number[]): 'BULLISH' | 'BEARISH' | 'NONE' {
+interface PivotPoint {
+  index: number;
+  price: number;
+  indVal: number;
+}
+
+function findPricePivotsWithIndicator(
+  closes: number[],
+  indicator: number[],
+  type: 'HIGH' | 'LOW',
+  window: number = 2
+): PivotPoint[] {
+  const pivots: PivotPoint[] = [];
   const n = closes.length;
-  if (n < 6 || rsiVals.length < 6) return 'NONE';
-  
-  const curClose = closes[n - 1];
-  const prevClose = closes[n - 5];
-  const curRSI = rsiVals[rsiVals.length - 1];
-  const prevRSI = rsiVals[rsiVals.length - 5];
-  
-  if (curClose < prevClose && curRSI > prevRSI) {
-    return 'BULLISH';
+  for (let i = window; i < n - window; i++) {
+    if (type === 'HIGH') {
+      let isHigh = true;
+      for (let w = 1; w <= window; w++) {
+        if (closes[i] <= closes[i - w] || closes[i] <= closes[i + w]) {
+          isHigh = false;
+          break;
+        }
+      }
+      if (isHigh) {
+        pivots.push({ index: i, price: closes[i], indVal: indicator[i] });
+      }
+    } else {
+      let isLow = true;
+      for (let w = 1; w <= window; w++) {
+        if (closes[i] >= closes[i - w] || closes[i] >= closes[i + w]) {
+          isLow = false;
+          break;
+        }
+      }
+      if (isLow) {
+        pivots.push({ index: i, price: closes[i], indVal: indicator[i] });
+      }
+    }
   }
-  if (curClose > prevClose && curRSI < prevRSI) {
-    return 'BEARISH';
+  return pivots;
+}
+
+function detectGenericDivergence(
+  closes: number[],
+  indicator: number[],
+  window: number = 2
+): { type: 'BULLISH' | 'BEARISH' | 'NONE'; strength: number } {
+  if (closes.length < 6 || indicator.length < 6) {
+    return { type: 'NONE', strength: 0 };
   }
-  return 'NONE';
+
+  // 1. Bearish Divergence: check for Price Highs and Indicator Highs
+  const highPivots = findPricePivotsWithIndicator(closes, indicator, 'HIGH', window);
+  if (highPivots.length >= 2) {
+    const p1 = highPivots[highPivots.length - 2];
+    const p2 = highPivots[highPivots.length - 1];
+    
+    // Price makes Higher High (HH), Indicator makes Lower High (LH)
+    if (p2.price > p1.price && p2.indVal < p1.indVal) {
+      const indDiff = p1.indVal - p2.indVal;
+      const strength = Math.min(1.0, 0.5 + indDiff * 2);
+      return { type: 'BEARISH', strength };
+    }
+  }
+
+  // 2. Bullish Divergence: check for Price Lows and Indicator Lows
+  const lowPivots = findPricePivotsWithIndicator(closes, indicator, 'LOW', window);
+  if (lowPivots.length >= 2) {
+    const p1 = lowPivots[lowPivots.length - 2];
+    const p2 = lowPivots[lowPivots.length - 1];
+
+    // Price makes Lower Low (LL), Indicator makes Higher Low (HL)
+    if (p2.price < p1.price && p2.indVal > p1.indVal) {
+      const indDiff = p2.indVal - p1.indVal;
+      const strength = Math.min(1.0, 0.5 + indDiff * 2);
+      return { type: 'BULLISH', strength };
+    }
+  }
+
+  return { type: 'NONE', strength: 0 };
+}
+
+/**
+ * Classical execution of RSI divergence using Williams Fractal pivots (backward-compatible adapter)
+ */
+export function detectRSIDivergence(closes: number[], rsiVals: number[]): any {
+  const res = detectGenericDivergence(closes, rsiVals);
+  
+  // Return special object with toString / valueOf to support both string tests are object properties
+  const obj: any = new String(res.type);
+  obj.type = res.type;
+  obj.strength = res.strength;
+  return obj;
+}
+
+/**
+ * Classical execution of MACD divergence using Williams Fractal pivots
+ */
+export function detectMACDDivergence(closes: number[], macdVals: any): any {
+  let macdArray: number[] = [];
+  if (Array.isArray(macdVals)) {
+    macdArray = macdVals;
+  } else if (macdVals && Array.isArray(macdVals.macd)) {
+    macdArray = macdVals.macd;
+  } else {
+    return { type: 'NONE', strength: 0 };
+  }
+  const res = detectGenericDivergence(closes, macdArray);
+  const obj: any = new String(res.type);
+  obj.type = res.type;
+  obj.strength = res.strength;
+  return obj;
 }

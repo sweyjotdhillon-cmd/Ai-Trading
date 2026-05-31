@@ -60,7 +60,120 @@ export function ensureIndicators(ohlc: NumericOHLC[], cache: IndicatorCache) {
   }
 }
 
-export type TechniqueLibraryFunction = (ohlc: NumericOHLC[], cache: IndicatorCache) => LibraryResult;
+export type TechniqueLibraryFunction = (
+  ohlc: NumericOHLC[],
+  cache: IndicatorCache,
+  context?: { trendState?: string; yPercent?: number }
+) => LibraryResult;
+
+function checkTwoCandlePatternConfirmation(ohlc: NumericOHLC[], direction: 'BULL' | 'BEAR'): boolean {
+  if (ohlc.length < 3) return false;
+  const current = ohlc[ohlc.length - 1];
+  const patternCandle1 = ohlc[ohlc.length - 2];
+  const patternCandle2 = ohlc[ohlc.length - 3];
+
+  const body = Math.abs(current.close - current.open);
+  const range = current.high - current.low || 1e-9;
+  const solidBody = (body / range) >= 0.35;
+
+  if (direction === 'BULL') {
+    const patternHigh = Math.max(patternCandle1.high, patternCandle2.high);
+    const isGreen = current.close > current.open;
+    return isGreen && current.close > patternHigh && solidBody;
+  } else {
+    const patternLow = Math.min(patternCandle1.low, patternCandle2.low);
+    const isRed = current.close < current.open;
+    return isRed && current.close < patternLow && solidBody;
+  }
+}
+
+function checkThreeCandlePatternConfirmation(ohlc: NumericOHLC[], direction: 'BULL' | 'BEAR'): boolean {
+  if (ohlc.length < 1) return false;
+  const current = ohlc[ohlc.length - 1];
+  if (direction === 'BULL') {
+    return current.close > current.open;
+  } else {
+    return current.close < current.open;
+  }
+}
+
+function applyContextAndConfirmationGates(
+  result: LibraryResult,
+  ohlc: NumericOHLC[],
+  contextValues: { trendState?: string; yPercent?: number } | undefined,
+  direction: 'BULL' | 'BEAR',
+  candlePatternType: 'SINGLE' | 'TWO_CANDLE' | 'THREE_CANDLE'
+): LibraryResult {
+  if (result.vote === 'SKIP' || result.vote === 'NEUTRAL') {
+    return result;
+  }
+
+  let finalScore = result.score;
+  let finalBullPoints = result.bullPoints;
+  let finalBearPoints = result.bearPoints;
+  let suffix = '';
+
+  // A. Setup Context Gate (BUG #9)
+  if (contextValues && contextValues.trendState !== undefined && contextValues.yPercent !== undefined) {
+    const { trendState, yPercent } = contextValues;
+    if (direction === 'BULL') {
+      const isPerfect = trendState === 'DOWNTREND' && yPercent <= 30;
+      const isValid = (trendState === 'RANGING' && yPercent <= 35) || yPercent <= 20;
+      if (isPerfect) {
+        finalScore = Math.min(1.0, finalScore * 1.25);
+        if (result.vote === 'BULL') finalBullPoints *= 1.20;
+        else finalBearPoints *= 1.20;
+        suffix += ' [Perfect Reversal Setup]';
+      } else if (!isValid) {
+        finalScore *= 0.25;
+        if (result.vote === 'BULL') finalBullPoints *= 0.25;
+        else finalBearPoints *= 0.25;
+        suffix += ' [Weak Context Neutered]';
+      }
+    } else if (direction === 'BEAR') {
+      const isPerfect = trendState === 'UPTREND' && yPercent >= 70;
+      const isValid = (trendState === 'RANGING' && yPercent >= 65) || yPercent >= 80;
+      if (isPerfect) {
+        finalScore = Math.min(1.0, finalScore * 1.25);
+        if (result.vote === 'BULL') finalBullPoints *= 1.20;
+        else finalBearPoints *= 1.20;
+        suffix += ' [Perfect Reversal Setup]';
+      } else if (!isValid) {
+        finalScore *= 0.25;
+        if (result.vote === 'BULL') finalBullPoints *= 0.25;
+        else finalBearPoints *= 0.25;
+        suffix += ' [Weak Context Neutered]';
+      }
+    }
+  }
+
+  // B. Confirmation Check (BUG #10)
+  if (candlePatternType === 'TWO_CANDLE') {
+    const isConfirmed = checkTwoCandlePatternConfirmation(ohlc, direction);
+    if (!isConfirmed) {
+      if (result.vote === 'BULL') finalBullPoints *= 0.60;
+      else finalBearPoints *= 0.60;
+      suffix += ' [Awaiting confirmation]';
+    }
+  } else if (candlePatternType === 'THREE_CANDLE') {
+    const isConfirmed = checkThreeCandlePatternConfirmation(ohlc, direction);
+    if (!isConfirmed) {
+      if (result.vote === 'BULL') finalBullPoints *= 0.70;
+      else finalBearPoints *= 0.70;
+      suffix += ' [Awaiting confirmation]';
+    }
+  } else if (candlePatternType === 'SINGLE') {
+    suffix += ' [Exposing recommendation: awaitsConfirmation=true]';
+  }
+
+  return {
+    vote: result.vote,
+    score: parseFloat(finalScore.toFixed(3)),
+    bullPoints: parseFloat(finalBullPoints.toFixed(3)),
+    bearPoints: parseFloat(finalBearPoints.toFixed(3)),
+    reason: result.reason + suffix
+  };
+}
 
 export const TECHNIQUE_LIBRARY: Record<string, TechniqueLibraryFunction> = {
   // ─── RSI TECHNIQUES ────────────────────────────────────────────────────────
@@ -481,44 +594,50 @@ export const TECHNIQUE_LIBRARY: Record<string, TechniqueLibraryFunction> = {
     return { vote: 'NEUTRAL', score: 0, bullPoints: 0, bearPoints: 0, reason: 'No Doji formed' };
   },
 
-  'hammer': (ohlc, cache) => {
+  'hammer': (ohlc, cache, context) => {
     const res = isHammer(ohlc);
     if (res.match) {
-      return { vote: 'BULL', score: res.score, bullPoints: 1.5, bearPoints: 0, reason: `Bullish Hammer reversal (score=${res.score.toFixed(2)})` };
+      const rawRes = { vote: 'BULL' as const, score: res.score, bullPoints: 1.5, bearPoints: 0, reason: `Bullish Hammer reversal (score=${res.score.toFixed(2)})` };
+      return applyContextAndConfirmationGates(rawRes, ohlc, context, 'BULL', 'SINGLE');
     }
     return { vote: 'NEUTRAL', score: 0, bullPoints: 0, bearPoints: 0, reason: 'No Hammer formed' };
   },
 
-  'shootingstar': (ohlc, cache) => {
+  'shootingstar': (ohlc, cache, context) => {
     const res = isShootingStar(ohlc);
     if (res.match) {
-      return { vote: 'BEAR', score: res.score, bullPoints: 0, bearPoints: 1.5, reason: `Bearish Shooting Star reversal (score=${res.score.toFixed(2)})` };
+      const rawRes = { vote: 'BEAR' as const, score: res.score, bullPoints: 0, bearPoints: 1.5, reason: `Bearish Shooting Star reversal (score=${res.score.toFixed(2)})` };
+      return applyContextAndConfirmationGates(rawRes, ohlc, context, 'BEAR', 'SINGLE');
     }
     return { vote: 'NEUTRAL', score: 0, bullPoints: 0, bearPoints: 0, reason: 'No Shooting Star formed' };
   },
 
-  'engulfing': (ohlc, cache) => {
+  'engulfing': (ohlc, cache, context) => {
     const res = isEngulfing(ohlc);
     if (res.bullish) {
-      return { vote: 'BULL', score: res.score, bullPoints: 1.75, bearPoints: 0, reason: `Bullish Engulfing pattern formed (score=${res.score.toFixed(2)})` };
+      const rawRes = { vote: 'BULL' as const, score: res.score, bullPoints: 1.75, bearPoints: 0, reason: `Bullish Engulfing pattern formed (score=${res.score.toFixed(2)})` };
+      return applyContextAndConfirmationGates(rawRes, ohlc, context, 'BULL', 'TWO_CANDLE');
     } else if (res.bearish) {
-      return { vote: 'BEAR', score: res.score, bullPoints: 0, bearPoints: 1.75, reason: `Bearish Engulfing pattern formed (score=${res.score.toFixed(2)})` };
+      const rawRes = { vote: 'BEAR' as const, score: res.score, bullPoints: 0, bearPoints: 1.75, reason: `Bearish Engulfing pattern formed (score=${res.score.toFixed(2)})` };
+      return applyContextAndConfirmationGates(rawRes, ohlc, context, 'BEAR', 'TWO_CANDLE');
     }
     return { vote: 'NEUTRAL', score: 0, bullPoints: 0, bearPoints: 0, reason: 'No Engulfing pattern formed' };
   },
 
-  'morningstar': (ohlc, cache) => {
+  'morningstar': (ohlc, cache, context) => {
     const res = isMorningStar(ohlc);
     if (res.match) {
-      return { vote: 'BULL', score: res.score, bullPoints: 1.75, bearPoints: 0, reason: `Bullish Morning Star reversal (score=${res.score.toFixed(2)})` };
+      const rawRes = { vote: 'BULL' as const, score: res.score, bullPoints: 1.75, bearPoints: 0, reason: `Bullish Morning Star reversal (score=${res.score.toFixed(2)})` };
+      return applyContextAndConfirmationGates(rawRes, ohlc, context, 'BULL', 'THREE_CANDLE');
     }
     return { vote: 'NEUTRAL', score: 0, bullPoints: 0, bearPoints: 0, reason: 'No Morning Star formed' };
   },
 
-  'eveningstar': (ohlc, cache) => {
+  'eveningstar': (ohlc, cache, context) => {
     const res = isEveningStar(ohlc);
     if (res.match) {
-      return { vote: 'BEAR', score: res.score, bullPoints: 0, bearPoints: 1.75, reason: `Bearish Evening Star reversal (score=${res.score.toFixed(2)})` };
+      const rawRes = { vote: 'BEAR' as const, score: res.score, bullPoints: 0, bearPoints: 1.75, reason: `Bearish Evening Star reversal (score=${res.score.toFixed(2)})` };
+      return applyContextAndConfirmationGates(rawRes, ohlc, context, 'BEAR', 'THREE_CANDLE');
     }
     return { vote: 'NEUTRAL', score: 0, bullPoints: 0, bearPoints: 0, reason: 'No Evening Star formed' };
   },
@@ -581,38 +700,44 @@ export const TECHNIQUE_LIBRARY: Record<string, TechniqueLibraryFunction> = {
     return { vote: 'NEUTRAL', score: 0, bullPoints: 0, bearPoints: 0, reason: 'No Outside Bar formed' };
   },
 
-  'pinbar': (ohlc, cache) => {
+  'pinbar': (ohlc, cache, context) => {
     const res = isPinBar(ohlc);
     if (res.bull) {
-      return { vote: 'BULL', score: res.score, bullPoints: 1.5, bearPoints: 0, reason: `Bullish Pinbar rejection (score=${res.score.toFixed(2)})` };
+      const rawRes = { vote: 'BULL' as const, score: res.score, bullPoints: 1.5, bearPoints: 0, reason: `Bullish Pinbar rejection (score=${res.score.toFixed(2)})` };
+      return applyContextAndConfirmationGates(rawRes, ohlc, context, 'BULL', 'SINGLE');
     } else if (res.bear) {
-      return { vote: 'BEAR', score: res.score, bullPoints: 0, bearPoints: 1.5, reason: `Bearish Pinbar rejection (score=${res.score.toFixed(2)})` };
+      const rawRes = { vote: 'BEAR' as const, score: res.score, bullPoints: 0, bearPoints: 1.5, reason: `Bearish Pinbar rejection (score=${res.score.toFixed(2)})` };
+      return applyContextAndConfirmationGates(rawRes, ohlc, context, 'BEAR', 'SINGLE');
     }
     return { vote: 'NEUTRAL', score: 0, bullPoints: 0, bearPoints: 0, reason: 'No Pinbar formed' };
   },
 
-  'harami': (ohlc, cache) => {
+  'harami': (ohlc, cache, context) => {
     const res = isHarami(ohlc);
     if (res.bullish) {
-      return { vote: 'BULL', score: res.score, bullPoints: 1.25, bearPoints: 0, reason: `Bullish Harami (score=${res.score.toFixed(2)})` };
+      const rawRes = { vote: 'BULL' as const, score: res.score, bullPoints: 1.25, bearPoints: 0, reason: `Bullish Harami (score=${res.score.toFixed(2)})` };
+      return applyContextAndConfirmationGates(rawRes, ohlc, context, 'BULL', 'TWO_CANDLE');
     } else if (res.bearish) {
-      return { vote: 'BEAR', score: res.score, bullPoints: 0, bearPoints: 1.25, reason: `Bearish Harami (score=${res.score.toFixed(2)})` };
+      const rawRes = { vote: 'BEAR' as const, score: res.score, bullPoints: 0, bearPoints: 1.25, reason: `Bearish Harami (score=${res.score.toFixed(2)})` };
+      return applyContextAndConfirmationGates(rawRes, ohlc, context, 'BEAR', 'TWO_CANDLE');
     }
     return { vote: 'NEUTRAL', score: 0, bullPoints: 0, bearPoints: 0, reason: 'No Harami formed' };
   },
 
-  'tweezertop': (ohlc, cache) => {
+  'tweezertop': (ohlc, cache, context) => {
     const res = isTweezerTop(ohlc);
     if (res.match) {
-      return { vote: 'BEAR', score: res.score, bullPoints: 0, bearPoints: 1.5, reason: `Bearish Tweezer Top rejection (score=${res.score.toFixed(2)})` };
+      const rawRes = { vote: 'BEAR' as const, score: res.score, bullPoints: 0, bearPoints: 1.5, reason: `Bearish Tweezer Top rejection (score=${res.score.toFixed(2)})` };
+      return applyContextAndConfirmationGates(rawRes, ohlc, context, 'BEAR', 'TWO_CANDLE');
     }
     return { vote: 'NEUTRAL', score: 0, bullPoints: 0, bearPoints: 0, reason: 'No Tweezer Top formed' };
   },
 
-  'tweezerbottom': (ohlc, cache) => {
+  'tweezerbottom': (ohlc, cache, context) => {
     const res = isTweezerBottom(ohlc);
     if (res.match) {
-      return { vote: 'BULL', score: res.score, bullPoints: 1.5, bearPoints: 0, reason: `Bullish Tweezer Bottom rejection (score=${res.score.toFixed(2)})` };
+      const rawRes = { vote: 'BULL' as const, score: res.score, bullPoints: 1.5, bearPoints: 0, reason: `Bullish Tweezer Bottom rejection (score=${res.score.toFixed(2)})` };
+      return applyContextAndConfirmationGates(rawRes, ohlc, context, 'BULL', 'TWO_CANDLE');
     }
     return { vote: 'NEUTRAL', score: 0, bullPoints: 0, bearPoints: 0, reason: 'No Tweezer Bottom formed' };
   },

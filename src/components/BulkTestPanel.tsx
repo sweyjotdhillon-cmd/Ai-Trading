@@ -31,7 +31,7 @@ interface BulkTestPanelProps {
   profitabilityPercent: string;
 }
 
-export type BatchRunStatus = 'Pending' | 'Running' | 'WIN' | 'LOSS' | 'NEUTRAL' | 'Error';
+export type BatchRunStatus = 'Pending' | 'Running' | 'WIN' | 'LOSS' | 'NEUTRAL' | 'INVALID' | 'Error';
 
 export interface BatchRun {
   entry: BatchManifestEntry;
@@ -109,6 +109,10 @@ export function BulkTestPanel({
 
         // Run Single deterministic analysis using the real testMode
         let detectedOutcome: 'UP' | 'DOWN' | 'UNKNOWN' = 'UNKNOWN';
+        let entryStartCandle: any = null;
+        let entryThreePriorCandles: any[] = [];
+        let entryAutoGradeGeometry: any = null;
+
         try {
           const result = await runSingleAnalysis({
             imageDataUrl: imageData,
@@ -126,19 +130,37 @@ export function BulkTestPanel({
           if (result && (result.actualDirection === 'UP' || result.actualDirection === 'DOWN')) {
             detectedOutcome = result.actualDirection;
           }
+          if (result && result.startCandle) {
+            entryStartCandle = result.startCandle;
+          }
+          if (result && result.threePriorCandles) {
+            entryThreePriorCandles = result.threePriorCandles;
+          }
+          if (result && result.autoGradeGeometry) {
+            entryAutoGradeGeometry = result.autoGradeGeometry;
+          }
         } catch (err) {
           console.warn(`Analysis failed on manifest build for ${file.name}:`, err);
         }
 
+        const isBullStart = entryStartCandle ? (entryStartCandle.close >= entryStartCandle.open) : false;
+        const notesSummary = entryStartCandle 
+          ? `Trade Entry Price [${isBullStart ? 'Broad Bottom' : 'Broad Top'}]: ${entryStartCandle.open?.toFixed(2)}.` + (entryThreePriorCandles.length > 0 ? ` Prior Close: ${entryThreePriorCandles[entryThreePriorCandles.length - 1]?.close?.toFixed(2)}.` : '')
+          : '';
+
         results.push({
           imageFilename: file.name,
           expectedOutcome: detectedOutcome,
+          autoGradeGeometry: entryAutoGradeGeometry,
           imageData: imageData.length < MAX_PAYLOAD_KB * 1024 ? imageData : undefined, // ommit gigantic images to stop OOM
           stock: stockName,
           graphTimeframe: graphTimeframe,
           investmentDuration: buildDuration,
           investmentAmount: Number(investmentAmount) || 100,
-          profitabilityPercent: Number(profitabilityPercent) || 85
+          profitabilityPercent: Number(profitabilityPercent) || 85,
+          notes: notesSummary,
+          startCandle: entryStartCandle,
+          threePriorCandles: entryThreePriorCandles
         });
       }
 
@@ -197,6 +219,61 @@ export function BulkTestPanel({
 
   // Tab 2 State
   const [queue, setQueue] = useState<BatchRun[]>([]);
+  const [isQueueLoaded, setIsQueueLoaded] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    import('idb-keyval').then(({ get }) => {
+      if (!mounted) return;
+      get('bulkTestQueue').then((stored) => {
+        if (stored && mounted) {
+          try {
+            const parsed = stored as BatchRun[];
+            setQueue(parsed.map(q => q.status === 'Running' ? { ...q, status: 'Pending' } : q));
+          } catch (e) {
+            console.warn('Failed to parse queue from idb', e);
+          }
+        }
+      }).catch(e => {
+        console.warn('Failed to load queue from idb', e);
+      }).finally(() => {
+        if (mounted) setIsQueueLoaded(true);
+      });
+      
+      // Migration from localStorage if it exists
+      if (typeof window !== 'undefined') {
+        try {
+          const legacy = localStorage.getItem('bulkTestQueue');
+          if (legacy && mounted) {
+            const parsed = JSON.parse(legacy) as BatchRun[];
+            setQueue(parsed.map(q => q.status === 'Running' ? { ...q, status: 'Pending' } : q));
+            localStorage.removeItem('bulkTestQueue');
+          }
+        } catch(e) {}
+      }
+    });
+    return () => { mounted = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!isQueueLoaded) return;
+    import('idb-keyval').then(({ set, del }) => {
+      try {
+        if (queue.length > 0) {
+          const serializableQueue = queue.map(q => {
+            const { file, ...rest } = q;
+            return rest;
+          });
+          set('bulkTestQueue', serializableQueue).catch(e => console.warn('IDB save error', e));
+        } else {
+          del('bulkTestQueue').catch(e => console.warn('IDB del error', e));
+        }
+      } catch (e) {
+        console.warn('Failed to save queue to idb', e);
+      }
+    });
+  }, [queue, isQueueLoaded]);
+
   const [autopsyingBatch, setAutopsyingBatch] = useState(false);
   const [masterSummary, setMasterSummary] = useState<MasterAutopsySummary | null>(null);
   const [manifestErrors, setManifestErrors] = useState<string[]>([]);
@@ -334,7 +411,7 @@ export function BulkTestPanel({
         const i = currentIndex++;
         const item = queue[i];
         
-        if (item.status === 'WIN' || item.status === 'LOSS' || item.status === 'NEUTRAL') {
+        if (item.status === 'WIN' || item.status === 'LOSS' || item.status === 'NEUTRAL' || item.status === 'INVALID') {
           continue; // skip completed
         }
 
@@ -381,11 +458,13 @@ export function BulkTestPanel({
              URL.revokeObjectURL(imageDataUrl);
           }
 
-          let finalOutcome: 'WIN' | 'LOSS' | 'NEUTRAL' = result.outcome;
+          let finalOutcome: BatchRunStatus = result.outcome;
           const expected = String(item.entry.expectedOutcome ?? '').toUpperCase();
           const predicted = result.direction;
 
-          if (expected === 'UP' || expected === 'DOWN') {
+          if (result.rawOutcome === 'AUTO_GRADE_INVALID' || (result.autoGradeGeometry && !result.autoGradeGeometry.valid)) {
+            finalOutcome = 'INVALID';
+          } else if (expected === 'UP' || expected === 'DOWN') {
             if (predicted === 'NO_TRADE') {
               finalOutcome = 'NEUTRAL';
             } else {
@@ -500,6 +579,7 @@ export function BulkTestPanel({
       case 'WIN': return 'text-green-500';
       case 'LOSS': return 'text-red-500';
       case 'NEUTRAL': return 'text-gray-400';
+      case 'INVALID': return 'text-purple-500';
       case 'Error': return 'text-orange-500';
       default: return 'text-white text-opacity-50';
     }
@@ -798,171 +878,74 @@ export function BulkTestPanel({
                         </Pressable>
                         {expandedIdx === idx && !!item.result && (
                           <View style={tw`px-4 pb-4 pt-1 gap-3`}>
-                            <View style={tw`flex-row justify-center relative w-full h-[180px] mt-4`}>
+                            <View style={tw`flex-row justify-center relative w-full h-[180px] mt-4 overflow-hidden rounded-lg`}>
                               {!!item.result.finalImageForAnalysis && (
-                                <View style={tw`flex-auto pr-[1px] relative h-full flex flex-col`}>
-                                  <Text style={tw`text-white text-opacity-65 text-[8px] tracking-widest font-black text-center uppercase mb-1 absolute -top-5 w-full`}>Analyzed (Past)</Text>
-                                  <img src={item.result.finalImageForAnalysis} style={{ width: '100%', height: '100%', objectFit: 'cover', borderTopLeftRadius: 6, borderBottomLeftRadius: 6, border: '1px solid rgba(217,179,130,0.3)', borderRightWidth: 0, display: 'block' }} />
+                                <View style={tw`flex-auto relative h-full flex flex-col`}>
+                                  <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+                                    <img src={item.result.finalImageForAnalysis} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                                  </div>
                                 </View>
                               )}
 
-                              {!!item.result.finalImageForAnalysis && !!item.result.testModeRightSlice && (
-                                <View style={tw`w-[0px] relative items-center justify-center z-20`}>
-                                  <View style={tw`absolute top-0 bottom-0 w-[2px] bg-[#38bdf8] opacity-80 z-10`} />
-                                  <View style={tw`absolute top-1/2 -translate-y-1/2 bg-[#0f172a] border border-[#38bdf8] px-1.5 py-0.5 rounded-full z-20 shadow-lg whitespace-nowrap`}>
-                                      <Text style={tw`text-[#38bdf8] text-[7px] font-black uppercase tracking-widest leading-none`}>Boundary Cut</Text>
-                                  </View>
-                                </View>
-                              )}
-
-                              {!!item.result.testModeRightSlice && (() => {
-                                const entryClose = item.result.entryClose;
-                                const exitClose = item.result.exitClose;
-                                const absoluteMin = item.result.absoluteMin;
-                                const absoluteMax = item.result.absoluteMax;
-                                const direction = item.result.direction;
-
-                                const predictedBull = direction === 'UP';
-                                const actualUp = exitClose !== undefined && entryClose !== undefined && exitClose !== null && entryClose !== null && exitClose > entryClose;
-                                const isWin = predictedBull ? actualUp : !actualUp;
-                                const indicatorColor = isWin ? '#10b981' : '#f43f5e';
-
-                                const heightRange = (absoluteMax && absoluteMin) ? (absoluteMax - absoluteMin) : null;
-                                const entryPercentVal = (heightRange && entryClose !== undefined && entryClose !== null && absoluteMin !== null)
-                                  ? 100 - ((entryClose - absoluteMin) / heightRange * 100)
-                                  : 50;
-                                const exitPercentVal = (heightRange && exitClose !== undefined && exitClose !== null && absoluteMin !== null)
-                                  ? 100 - ((exitClose - absoluteMin) / heightRange * 100)
-                                  : (predictedBull ? 30 : 70);
-
-                                const yEntry = Math.max(15, Math.min(85, entryPercentVal));
-                                const yExit  = Math.max(15, Math.min(85, exitPercentVal));
-
-                                return (
-                                  <View style={tw`flex-1 pl-[1px] relative h-full flex flex-col`}>
-                                    <Text style={tw`text-[#38bdf8] text-[8px] tracking-widest font-black text-center uppercase mb-1 absolute -top-5 w-full`}>Outcome Timeline</Text>
-                                    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-                                      <img src={item.result.testModeRightSlice} style={{ width: '100%', height: '100%', objectFit: 'cover', borderTopRightRadius: 6, borderBottomRightRadius: 6, border: '1px solid rgba(56,189,248,0.2)', borderLeftWidth: 0, display: 'block' }} />
+                              {!!item.result.testModeRightSlice && (
+                                <View style={tw`flex-1 relative h-full flex flex-col`}>
+                                  <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+                                    <img src={item.result.testModeRightSlice} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                                    {(() => {
+                                      const geom: any = item.result.autoGradeGeometry;
+                                      if (!geom || !geom.valid) return null;
                                       
-                                      <svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 10 }}>
-                                         <defs>
-                                           <filter id="glowGreenBulk" x="-20%" y="-20%" width="140%" height="140%">
-                                             <feGaussianBlur stdDeviation="2" result="blur" />
-                                             <feComposite in="SourceGraphic" in2="blur" operator="over" />
-                                           </filter>
-                                           <filter id="glowRedBulk" x="-20%" y="-20%" width="140%" height="140%">
-                                             <feGaussianBlur stdDeviation="2" result="blur" />
-                                             <feComposite in="SourceGraphic" in2="blur" operator="over" />
-                                           </filter>
-                                         </defs>
+                                      const yEntryPct = geom.entryY * 100;
+                                      const yExitPct  = geom.exitY  * 100;
+                                      const xExitPct  = geom.exitX  * 100;
+                                      const predictedBull = item.result.direction === 'UP';
+                                      
+                                      return (
+                                        <svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 10 }}>
+                                          <defs>
+                                            <filter id="glowGreenBulk" x="-20%" y="-20%" width="140%" height="140%">
+                                              <feGaussianBlur stdDeviation="3" result="blur" />
+                                              <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                                            </filter>
+                                            <filter id="glowRedBulk" x="-20%" y="-20%" width="140%" height="140%">
+                                              <feGaussianBlur stdDeviation="3" result="blur" />
+                                              <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                                            </filter>
+                                          </defs>
+                                          <line
+                                            x1="0%"
+                                            y1={`${yEntryPct}%`}
+                                            x2="100%"
+                                            y2={`${yEntryPct}%`}
+                                            stroke="#eab308"
+                                            strokeWidth="2"
+                                            strokeDasharray="4,4"
+                                            opacity="0.8"
+                                          />
+                                          <line
+                                            x1="0%"
+                                            y1={`${yExitPct}%`}
+                                            x2={`${xExitPct}%`}
+                                            y2={`${yExitPct}%`}
+                                            stroke={predictedBull ? '#10b981' : '#f43f5e'}
+                                            strokeWidth="2"
+                                            strokeDasharray="4,4"
+                                            opacity="0.8"
+                                          />
+                                          <circle 
+                                            cx={`${xExitPct}%`}
+                                            cy={`${yExitPct}%`}
+                                            r="3.5"
+                                            fill={predictedBull ? '#10b981' : '#f43f5e'}
+                                            filter={predictedBull ? "url(#glowGreenBulk)" : "url(#glowRedBulk)"}
+                                          />
+                                        </svg>
+                                      );
+                                    })()}
+                                  </div>
+                                </View>
+                              )}
 
-                                         {/* Horizontal entry level line */}
-                                         <line
-                                           x1="0%"
-                                           y1={`${yEntry}%`}
-                                           x2="100%"
-                                           y2={`${yEntry}%`}
-                                           stroke="#eab308"
-                                           strokeWidth="1.2"
-                                           strokeDasharray="4,4"
-                                           opacity="0.8"
-                                         />
-                                         <rect
-                                           x="2"
-                                           y={yEntry > 15 ? yEntry - 12 : yEntry + 2}
-                                           width="55"
-                                           height="10"
-                                           rx="1.5"
-                                           fill="#0f172a"
-                                           stroke="#eab308"
-                                           strokeWidth="0.8"
-                                           opacity="0.9"
-                                         />
-                                         <text
-                                           x="4"
-                                           y={yEntry > 15 ? yEntry - 4 : yEntry + 9}
-                                           fill="#eab308"
-                                           fontSize="6.5"
-                                           fontWeight="bold"
-                                           fontFamily="monospace"
-                                         >
-                                           ENT: {entryClose ? entryClose.toFixed(1) : '50.0'}
-                                         </text>
-
-                                         {/* Trajectory prediction line */}
-                                         <line
-                                           x1="0%"
-                                           y1={`${yEntry}%`}
-                                           x2="100%"
-                                           y2={`${yExit}%`}
-                                           stroke={indicatorColor}
-                                           strokeWidth="2.5"
-                                           filter={isWin ? "url(#glowGreenBulk)" : "url(#glowRedBulk)"}
-                                         />
-
-                                         {/* Horizontal exit level line */}
-                                         <line
-                                           x1="0%"
-                                           y1={`${yExit}%`}
-                                           x2="100%"
-                                           y2={`${yExit}%`}
-                                           stroke={indicatorColor}
-                                           strokeWidth="1.2"
-                                           strokeDasharray="3,3"
-                                           opacity="0.6"
-                                         />
-                                         <rect
-                                           x="50%"
-                                           y={yExit > 15 ? yExit - 12 : yExit + 2}
-                                           width="50"
-                                           height="10"
-                                           rx="1.5"
-                                           fill="#0f172a"
-                                           stroke={indicatorColor}
-                                           strokeWidth="0.8"
-                                           opacity="0.9"
-                                         />
-                                         <text
-                                           x="52%"
-                                           y={yExit > 15 ? yExit - 4 : yExit + 9}
-                                           fill={indicatorColor}
-                                           fontSize="6.5"
-                                           fontWeight="bold"
-                                           fontFamily="monospace"
-                                         >
-                                           EXT: {exitClose ? exitClose.toFixed(1) : '70.0'}
-                                         </text>
-
-                                         {/* Target Node circle */}
-                                         <circle cx="100%" cy={`${yExit}%`} r="3.5" fill={indicatorColor} stroke="#ffffff" strokeWidth="1" />
-
-                                         {/* Text verdict popup inside chart */}
-                                         <rect
-                                           x="32%"
-                                           y="6"
-                                           width="36%"
-                                           height="13"
-                                           rx="2"
-                                           fill="#0f172a"
-                                           stroke={indicatorColor}
-                                           strokeWidth="1"
-                                         />
-                                         <text
-                                           x="50%"
-                                           y="15"
-                                           fill={indicatorColor}
-                                           fontSize="7"
-                                           fontWeight="extrabold"
-                                           textAnchor="middle"
-                                           fontFamily="monospace"
-                                         >
-                                           {isWin ? "WORTH IT 💰" : "LOSS ⚠️"}
-                                         </text>
-                                      </svg>
-                                    </div>
-                                  </View>
-                                );
-                              })()}
                             </View>
 
                             {/* Dynamic Real Prices / Math Engine Box */}
@@ -983,7 +966,7 @@ export function BulkTestPanel({
                                 <View style={tw`flex-row justify-between mb-2 gap-2`}>
                                   <View style={tw`flex-1 bg-[#0f172a]/70 p-2 rounded-lg border border-white/5`}>
                                     <Text style={tw`text-white/40 text-[8px] font-black uppercase tracking-wider`}>
-                                      Entry Close Value (Cut Point)
+                                      Entry Candle (Trade Opening)
                                     </Text>
                                     <Text style={tw`text-yellow-400 text-sm font-black font-mono mt-0.5`}>
                                       {item.result.entryClose.toFixed(2)}
@@ -992,7 +975,7 @@ export function BulkTestPanel({
 
                                   <View style={tw`flex-1 bg-[#0f172a]/70 p-2 rounded-lg border border-white/5`}>
                                     <Text style={tw`text-white/40 text-[8px] font-black uppercase tracking-wider`}>
-                                      Spliced Exit Close Value
+                                      Final Outcome Rate
                                     </Text>
                                     <Text style={tw`text-green-400 text-sm font-black font-mono mt-0.5`}>
                                       {item.result.exitClose.toFixed(2)}
@@ -1024,6 +1007,80 @@ export function BulkTestPanel({
                                     </Text>
                                   </View>
                                 </View>
+                              </View>
+                            )}
+
+                            {/* Candle Trajectory Analysis */}
+                            {((item.result.startCandle) || (item.result.threePriorCandles && item.result.threePriorCandles.length > 0)) && (
+                              <View style={tw`bg-[#131d30]/75 border border-[#fbbf24]/10 rounded-xl p-3 mt-2 mb-2`}>
+                                <View style={tw`flex-row justify-between items-center mb-2`}>
+                                  <View style={tw`flex-row items-center gap-1`}>
+                                    <View style={tw`w-2 h-2 rounded-full bg-yellow-400`} />
+                                    <Text style={tw`text-yellow-400 text-[9px] font-black uppercase tracking-wider`}>
+                                      CANDLE TRAJECTORY LOGS
+                                    </Text>
+                                  </View>
+                                  <Text style={tw`text-white/40 text-[8px] font-bold uppercase`}>
+                                    1st Candle + 3 Prior
+                                  </Text>
+                                </View>
+
+                                {/* Three Prior Candles */}
+                                {item.result.threePriorCandles && item.result.threePriorCandles.length > 0 && (
+                                  <View style={tw`mb-2.5`}>
+                                    <Text style={tw`text-white/50 text-[8px] font-black uppercase tracking-wide mb-1`}>
+                                      Preceding 3 Candles (Historical Trend)
+                                    </Text>
+                                    <View style={tw`flex-row gap-1.5`}>
+                                      {item.result.threePriorCandles.map((c: any, cidx: number) => {
+                                        const isBull = c.close >= c.open;
+                                        return (
+                                          <View key={cidx} style={tw`flex-1 bg-[#1e293b]/50 p-1.5 rounded-lg border ${isBull ? 'border-green-500/10' : 'border-red-500/10'}`}>
+                                            <Text style={tw`text-white/30 text-[7px] font-bold`}>
+                                              PRIOR {3 - cidx}
+                                            </Text>
+                                            <Text style={tw`text-[10px] font-bold font-mono ${isBull ? 'text-green-400' : 'text-red-400'} mt-0.5`}>
+                                              {c.close?.toFixed(2)}
+                                            </Text>
+                                            <Text style={tw`text-[6px] text-white/45 font-mono mt-0.5`}>
+                                              O:{c.open?.toFixed(1)} H:{c.high?.toFixed(1)} L:{c.low?.toFixed(1)}
+                                            </Text>
+                                          </View>
+                                        );
+                                      })}
+                                    </View>
+                                  </View>
+                                )}
+
+                                {/* Star First Candle */}
+                                {item.result.startCandle && (
+                                  <View style={tw`bg-[#1e293b]/80 p-2 rounded-lg border border-yellow-400/20`}>
+                                    <View style={tw`flex-row justify-between items-center mb-1`}>
+                                      <Text style={tw`text-yellow-400 text-[8px] font-black uppercase tracking-widest`}>
+                                        ★ STAR FIRST CANDLE (TRADE START)
+                                      </Text>
+                                      <View style={tw`bg-yellow-400/10 px-1.5 py-0.5 rounded`}>
+                                        <Text style={tw`text-yellow-400 text-[7px] font-black`}>TRIGGER</Text>
+                                      </View>
+                                    </View>
+                                    <View style={tw`flex-row justify-between items-center`}>
+                                      <View>
+                                        <Text style={tw`text-white/40 text-[7px] font-semibold uppercase`}>
+                                          Reference Entry {item.result.startCandle.close >= item.result.startCandle.open ? '(Broad Bottom)' : '(Broad Top)'}
+                                        </Text>
+                                        <Text style={tw`text-yellow-400 text-xs font-black font-mono mt-0.5`}>
+                                          {item.result.startCandle.open?.toFixed(2)}
+                                        </Text>
+                                      </View>
+                                      <View style={tw`items-end`}>
+                                        <Text style={tw`text-white/40 text-[7px] font-semibold uppercase`}>Candle Close (Outcome Base)</Text>
+                                        <Text style={tw`text-white/85 text-[10px] font-mono mt-0.5`}>
+                                          {item.result.startCandle.close?.toFixed(2)}
+                                        </Text>
+                                      </View>
+                                    </View>
+                                  </View>
+                                )}
                               </View>
                             )}
 

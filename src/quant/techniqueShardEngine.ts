@@ -320,7 +320,7 @@ export function evaluateShard(
       const canonical = resolveLibraryKey(rawName);
       const libFn = canonical ? TECHNIQUE_LIBRARY[canonical] : undefined;
       if (libFn) {
-        const res = libFn(ohlc, cache);
+        const res = libFn(ohlc, cache, (cache as any).context);
         vote = res.vote;
         score = res.score;
         reason = res.reason;

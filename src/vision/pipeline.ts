@@ -23,6 +23,7 @@ export interface PipelineResult {
     ohlcQuality: 'REAL_PRICE' | 'NORMALIZED_FALLBACK';
     reason?: string;
     candlesLength?: number;
+    candleCentersX: number[];
     mode: string;
     stages: Record<string, number>;
   };
@@ -113,6 +114,7 @@ export function buildPipelineResult(imageData: ImageData): PipelineResult {
       ohlcQuality: axisFallback ? 'NORMALIZED_FALLBACK' : 'REAL_PRICE',
       reason: ohlcRes.diagnostics?.reason,
       candlesLength: rawCandles.length,
+      candleCentersX: rawCandles.map(rc => rc.xCenter / rectifiedFrame.width),
       mode: rectifyRes.mode,
       stages: {
         preprocess: rectifyRes.timings.preprocess || 0,

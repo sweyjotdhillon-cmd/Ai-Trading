@@ -3,6 +3,7 @@ export interface HorizonContext {
   durationMinutes: number;
   H: number;
   horizonClass: 'INTRA_CANDLE' | 'NEAR_FULL' | 'MULTI_CANDLE';
+  isTestMode?: boolean;
 }
 
 export function parseDurationToMinutes(s: string): number {

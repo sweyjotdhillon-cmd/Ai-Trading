@@ -34,6 +34,7 @@ interface Props {
   exitClose?: number | null;
   absoluteMin?: number | null;
   absoluteMax?: number | null;
+  splitXPercent?: number | null;
 }
 
 export function LiveAnalysisResult({
@@ -42,7 +43,7 @@ export function LiveAnalysisResult({
   testModeLeftSlice, testModeRightSlice, autoGradeStatus, autoGradeReason,
   autoGradeRawOutcome, autoGradeConfidence, handleRegrade, setConfirmedOutcome,
   setAutoGradeStatus, handleReset, buttonHoverProps, buttonTapProps, springProps,
-  entryClose, exitClose, absoluteMin, absoluteMax
+  entryClose, exitClose, absoluteMin, absoluteMax, splitXPercent
 }: Props) {
   const [isAutopsyOpen, setIsAutopsyOpen] = useState(false);
   const [showTechniques, setShowTechniques] = useState(mode === 'test' || mode === 'bulk');
@@ -166,7 +167,7 @@ export function LiveAnalysisResult({
                     transition={{ duration: 2, repeat: Infinity }}
                     className={`text-xs font-black ${isWinner ? (side === 'bull' ? 'text-green-400' : 'text-red-400') : 'text-white'}`}
                   >
-                    {data.total}/11.0
+                    {data.total}/12.0
                   </motion.p>
                 </div>
               </motion.div>
@@ -504,162 +505,68 @@ export function LiveAnalysisResult({
           {/* Slice preview — visual confirmation that the crop did what user expected */}
           {(testModeLeftSlice || testModeRightSlice) && (
             <View style={tw`mt-4 mb-6`}>
-              <View style={tw`flex-row justify-center relative w-full h-[300px]`}>
+              <View style={tw`flex-row justify-center relative w-full h-[300px] overflow-hidden rounded-lg`}>
                 {testModeLeftSlice && (
-                  <View style={tw`flex-auto pr-[1px] relative h-full flex flex-col`}>
-                    <Text style={tw`text-white text-opacity-60 text-[10px] tracking-widest font-black text-center uppercase mb-2 absolute -top-6 w-full`}>Analyzed (Past)</Text>
-                    <img src={testModeLeftSlice} style={{ width: '100%', height: '100%', objectFit: 'cover', borderTopLeftRadius: 6, borderBottomLeftRadius: 6, border: '2px solid rgba(217,179,130,0.4)', borderRightWidth: 0, display: 'block' }} />
-                  </View>
-                )}
-                
-                {testModeLeftSlice && testModeRightSlice && (
-                  <View style={tw`w-[0px] relative items-center justify-center z-20`}>
-                    <View style={tw`absolute top-0 bottom-0 w-[2.5px] bg-[#38bdf8] opacity-80 z-10`} />
-                    <View style={tw`absolute top-1/2 -translate-y-1/2 bg-[#0f172a] border border-[#38bdf8] px-2 py-1 rounded-full z-20 shadow-lg whitespace-nowrap`}>
-                        <Text style={tw`text-[#38bdf8] text-[8px] font-black uppercase tracking-widest leading-none`}>Boundary Cut</Text>
-                    </View>
+                  <View style={tw`flex-auto relative h-full flex flex-col`}>
+                    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+                      <img src={testModeLeftSlice} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                    </div>
                   </View>
                 )}
 
                 {testModeRightSlice && (
-                  <View style={tw`flex-1 pl-[1px] relative h-full flex flex-col`}>
-                    <Text style={tw`text-[#38bdf8] text-[10px] tracking-widest font-black text-center uppercase mb-2 absolute -top-6 w-full`}>Outcome Timeline</Text>
+                  <View style={tw`flex-1 relative h-full flex flex-col`}>
                     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-                      <img src={testModeRightSlice} style={{ width: '100%', height: '100%', objectFit: 'cover', borderTopRightRadius: 6, borderBottomRightRadius: 6, border: '2px solid rgba(56,189,248,0.3)', borderLeftWidth: 0, display: 'block' }} />
+                      <img src={testModeRightSlice} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
                       
-                      {analysis?.judge?.winner && analysis.judge.winner !== 'NO_TRADE' && analysis.judge.winner !== 'NONE' && (() => {
-                        const predictedBull = analysis.judge.winner === 'BULL';
-                        const actualUp = exitClose !== undefined && entryClose !== undefined && exitClose !== null && entryClose !== null && exitClose > entryClose;
-                        const isWin = predictedBull ? actualUp : !actualUp;
-                        const indicatorColor = isWin ? '#10b981' : '#f43f5e';
+                      {(() => {
+                        const geom: any = analysis?.autoGradeGeometry;
+                        if (!geom || !geom.valid) return null;
                         
-                        // Use calculated coordinates if available
-                        const heightRange = (absoluteMax && absoluteMin) ? (absoluteMax - absoluteMin) : null;
-                        const entryPercentVal = (heightRange && entryClose !== undefined && entryClose !== null && absoluteMin !== null)
-                          ? 100 - ((entryClose - absoluteMin) / heightRange * 100)
-                          : 50;
-                        const exitPercentVal = (heightRange && exitClose !== undefined && exitClose !== null && absoluteMin !== null)
-                          ? 100 - ((exitClose - absoluteMin) / heightRange * 100)
-                          : (predictedBull ? 30 : 70);
-
-                        const yEntry = Math.max(15, Math.min(85, entryPercentVal));
-                        const yExit  = Math.max(15, Math.min(85, exitPercentVal));
-
+                        const yEntryPct = geom.entryY * 100;
+                        const yExitPct  = geom.exitY  * 100;
+                        const xExitPct  = geom.exitX  * 100;
+                        const predictedBull = analysis?.judge?.winner === 'BULL';
+                        
                         return (
                           <svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 10 }}>
-                             <defs>
-                               <filter id="glowGreen" x="-20%" y="-20%" width="140%" height="140%">
-                                 <feGaussianBlur stdDeviation="3" result="blur" />
-                                 <feComposite in="SourceGraphic" in2="blur" operator="over" />
-                               </filter>
-                               <filter id="glowRed" x="-20%" y="-20%" width="140%" height="140%">
-                                 <feGaussianBlur stdDeviation="3" result="blur" />
-                                 <feComposite in="SourceGraphic" in2="blur" operator="over" />
-                               </filter>
-                             </defs>
-
-                             {/* Horizontal entry level line */}
-                             <line
-                               x1="0%"
-                               y1={`${yEntry}%`}
-                               x2="100%"
-                               y2={`${yEntry}%`}
-                               stroke="#eab308"
-                               strokeWidth="1.5"
-                               strokeDasharray="4,4"
-                               opacity="0.8"
-                             />
-                             <rect
-                               x="2"
-                               y={yEntry > 15 ? yEntry - 14 : yEntry + 2}
-                               width="70"
-                               height="12"
-                               rx="2"
-                               fill="#0f172a"
-                               stroke="#eab308"
-                               strokeWidth="1"
-                               opacity="0.9"
-                             />
-                             <text
-                               x="5"
-                               y={yEntry > 15 ? yEntry - 5 : yEntry + 11}
-                               fill="#eab308"
-                               fontSize="7.5"
-                               fontWeight="bold"
-                               fontFamily="monospace"
-                             >
-                               ENTRY: {entryClose ? entryClose.toFixed(1) : '50.0'}
-                             </text>
-
-                             {/* Trajectory / closing prediction line */}
-                             <line
-                               x1="0%"
-                               y1={`${yEntry}%`}
-                               x2="100%"
-                               y2={`${yExit}%`}
-                               stroke={indicatorColor}
-                               strokeWidth="3.5"
-                               filter={isWin ? "url(#glowGreen)" : "url(#glowRed)"}
-                             />
-
-                             {/* Horizontal exit level line */}
-                             <line
-                               x1="0%"
-                               y1={`${yExit}%`}
-                               x2="100%"
-                               y2={`${yExit}%`}
-                               stroke={indicatorColor}
-                               strokeWidth="1.5"
-                               strokeDasharray="4,4"
-                               opacity="0.6"
-                             />
-                             <rect
-                               x="50%"
-                               y={yExit > 15 ? yExit - 14 : yExit + 2}
-                               width="65"
-                               height="12"
-                               rx="2"
-                               fill="#0f172a"
-                               stroke={indicatorColor}
-                               strokeWidth="1"
-                               opacity="0.9"
-                             />
-                             <text
-                               x="53%"
-                               y={yExit > 15 ? yExit - 5 : yExit + 11}
-                               fill={indicatorColor}
-                               fontSize="7.5"
-                               fontWeight="bold"
-                               fontFamily="monospace"
-                             >
-                               EXIT: {exitClose ? exitClose.toFixed(1) : '70.0'}
-                             </text>
-
-                             {/* Target Node circle */}
-                             <circle cx="100%" cy={`${yExit}%`} r="5" fill={indicatorColor} stroke="#ffffff" strokeWidth="1.5" />
-
-                             {/* Text verdict */}
-                             <rect
-                               x="30%"
-                               y="10"
-                               width="40%"
-                               height="16"
-                               rx="3"
-                               fill="#0f172a"
-                               stroke={indicatorColor}
-                               strokeWidth="1.2"
-                             />
-                             <text
-                               x="50%"
-                               y="21"
-                               fill={indicatorColor}
-                               fontSize="8.5"
-                               fontWeight="extrabold"
-                               textAnchor="middle"
-                               fontFamily="monospace"
-                             >
-                               {isWin ? "WORTH IT 💰" : "LOSS ⚠️"}
-                             </text>
+                            <defs>
+                              <filter id="glowGreen" x="-20%" y="-20%" width="140%" height="140%">
+                                <feGaussianBlur stdDeviation="3" result="blur" />
+                                <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                              </filter>
+                              <filter id="glowRed" x="-20%" y="-20%" width="140%" height="140%">
+                                <feGaussianBlur stdDeviation="3" result="blur" />
+                                <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                              </filter>
+                            </defs>
+                            <line
+                              x1="0%"
+                              y1={`${yEntryPct}%`}
+                              x2="100%"
+                              y2={`${yEntryPct}%`}
+                              stroke="#eab308"
+                              strokeWidth="2"
+                              strokeDasharray="4,4"
+                              opacity="0.8"
+                            />
+                            <line
+                              x1="0%"
+                              y1={`${yExitPct}%`}
+                              x2={`${xExitPct}%`}
+                              y2={`${yExitPct}%`}
+                              stroke={predictedBull ? '#10b981' : '#f43f5e'}
+                              strokeWidth="2"
+                              strokeDasharray="4,4"
+                              opacity="0.8"
+                            />
+                            <circle 
+                              cx={`${xExitPct}%`}
+                              cy={`${yExitPct}%`}
+                              r="3.5"
+                              fill={predictedBull ? '#10b981' : '#f43f5e'}
+                              filter={predictedBull ? "url(#glowGreen)" : "url(#glowRed)"}
+                            />
                           </svg>
                         );
                       })()}
@@ -690,25 +597,25 @@ export function LiveAnalysisResult({
               <View style={tw`flex-row justify-between mb-2`}>
                 <View style={tw`flex-1 mr-3 bg-[#0f172a]/70 p-2.5 rounded-lg border border-white/5`}>
                   <Text style={tw`text-white/40 text-[9px] font-black uppercase tracking-wider mb-1`}>
-                    Entry Candle Close
+                    Entry Candle
                   </Text>
                   <Text style={tw`text-yellow-400 text-base font-black font-mono`}>
                     {entryClose.toFixed(2)}
                   </Text>
                   <Text style={tw`text-white/50 text-[8px] font-bold font-mono mt-0.5`}>
-                     (Boundary Cut line)
+                     (Trade Opening)
                   </Text>
                 </View>
 
                 <View style={tw`flex-1 bg-[#0f172a]/70 p-2.5 rounded-lg border border-white/5`}>
                   <Text style={tw`text-white/40 text-[9px] font-black uppercase tracking-wider mb-1`}>
-                    Nearest Candle Close
+                    Outcome Candle
                   </Text>
                   <Text style={tw`text-green-400 text-base font-black font-mono`}>
                     {exitClose.toFixed(2)}
                   </Text>
                   <Text style={tw`text-white/50 text-[8px] font-bold font-mono mt-0.5`}>
-                     (Post-boundary index)
+                     (Final Evaluation)
                   </Text>
                 </View>
               </View>
