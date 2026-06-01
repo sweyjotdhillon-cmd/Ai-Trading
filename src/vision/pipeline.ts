@@ -68,7 +68,7 @@ export function buildPipelineResult(imageData: ImageData): PipelineResult {
   const t3 = performance.now();
   
   const ohlcSeries: NumericOHLC[] = [];
-  const axisFallback = !axis || (axis.ok === false) || axis === null;
+  const axisFallback = axis === null;
   
   for (const rc of rawCandles) {
     let o, h, l, c;
@@ -79,7 +79,7 @@ export function buildPipelineResult(imageData: ImageData): PipelineResult {
       l = 100.0 * (rectifiedFrame.height - rc.lowY) / height + 10.0;
       c = 100.0 * (rectifiedFrame.height - rc.closeY) / height + 10.0;
     } else {
-      const transform = axis as any;
+      const transform = axis as PriceAxisTransform;
       o = transform.mSlope * rc.openY + transform.bIntercept;
       h = transform.mSlope * rc.highY + transform.bIntercept;
       l = transform.mSlope * rc.lowY + transform.bIntercept;

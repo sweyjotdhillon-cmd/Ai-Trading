@@ -111,7 +111,6 @@ import { buildAutoGradeGeometry, AutoGradeGeometry } from '../quant/autoGradeGeo
 
 export async function runSingleAnalysis(params: {
   imageDataUrl: string;
-  fingerprint?: string;
   stock: string;
   graphTimeframe: string;
   investmentDuration: string;
@@ -240,7 +239,7 @@ export async function runSingleAnalysis(params: {
                    startCandle.open
                  );
                }
-             } catch(e) { console.debug(e); }
+             } catch(e) {}
              
              // Extract 3 candles prior to startCandle (indices N-cutoff-1, N-cutoff-2, N-cutoff-3)
              for (let idx = 3; idx >= 1; idx--) {
@@ -299,7 +298,6 @@ export async function runSingleAnalysis(params: {
     w.postMessage({
       type: 'ANALYZE',
       msgId,
-      fingerprint: params.fingerprint,
       imageData: imgData,
       graphTimeframeMinutes: tfM,
       graphTimeframe: params.graphTimeframe,
@@ -486,9 +484,7 @@ export async function runSingleAnalysis(params: {
         try {
           const rightImgDataRaw = await dataUrlToImageData(rightDataUrl);
           tempRightPipe = buildPipelineResult(rightImgDataRaw);
-        } catch(e) {
-          console.debug('Failed to build temp right pipe', e);
-        }
+        } catch(e) {}
         
         finalImageForAnalysis = leftCanvas.toDataURL('image/jpeg', 0.5);
 
@@ -505,7 +501,6 @@ export async function runSingleAnalysis(params: {
             w.postMessage({
               type: 'ANALYZE',
               msgId,
-              fingerprint: params.fingerprint ? params.fingerprint + '_test' : undefined,
               imageData: leftImgData,
               graphTimeframeMinutes: tfM,
               investmentDurationMinutes: durM,

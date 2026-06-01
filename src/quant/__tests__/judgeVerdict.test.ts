@@ -1,15 +1,6 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { evaluateSignal } from '../ruleEngine';
 import { NumericOHLC } from '../../vision/pipeline';
-
-vi.mock('../../config/featureFlags', () => ({
-  featureFlags: {
-    enableTemporalFiltering: true,
-    enableCandlestickRepoPatterns: true,
-    enableGapDetection: true,
-    productionGates: false,
-  }
-}));
 
 function generateSeries(type: 'uptrend' | 'downtrend' | 'sideways' | 'explosive', length: number = 150): NumericOHLC[] {
   const series: NumericOHLC[] = [];
@@ -105,8 +96,8 @@ describe('Judge Verdict', () => {
     const result = evaluateSignal(series, null, { tfMinutes: 5, durationMinutes: 15, H: 1.5, horizonClass: 'MULTI_CANDLE', isTestMode: true });
     console.log("UPTREND RESULT:", JSON.stringify(result, null, 2));
     expect(result.winner).toBe('BULL');
-    expect(result.margin).toBeGreaterThanOrEqual(1.5);
-    expect(result.finalConfidence).toBeGreaterThanOrEqual(25);
+    expect(result.margin).toBeGreaterThanOrEqual(2);
+    expect(result.finalConfidence).toBeGreaterThanOrEqual(50);
   });
 
   it('2. Strong downtrend synthetic series', () => {
@@ -114,8 +105,8 @@ describe('Judge Verdict', () => {
     const result = evaluateSignal(series, null, { tfMinutes: 5, durationMinutes: 15, H: 1.5, horizonClass: 'MULTI_CANDLE', isTestMode: true });
     console.log("DOWNTREND RESULT:", JSON.stringify(result, null, 2));
     expect(result.winner).toBe('BEAR');
-    expect(result.margin).toBeGreaterThanOrEqual(1.5);
-    expect(result.finalConfidence).toBeGreaterThanOrEqual(25);
+    expect(result.margin).toBeGreaterThanOrEqual(2);
+    expect(result.finalConfidence).toBeGreaterThanOrEqual(50);
   });
 
   it('3. Sideways noise', () => {
