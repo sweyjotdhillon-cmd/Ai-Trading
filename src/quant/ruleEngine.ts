@@ -44,6 +44,8 @@ export interface DecisionResult extends JudgeVerdict {
   noTradeReason: string | null;
   topPatterns: { bull: string[]; bear: string[] };
   formattedReport: string;
+  fingerprint?: { seriesHash: string; judgeHash: string; };
+  inversionGuards?: any[];
   tradeDetails: {
     latencyAdjustedForecast: string;
     techniquesUsed: string;
@@ -67,6 +69,15 @@ export interface DecisionResult extends JudgeVerdict {
   repoPatternsDetected?: string;
   techniquesEvaluation?: any;
   repoPatternCount?: number;
+}
+
+function simpleHash(str: string): string {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+      hash = (hash << 5) - hash + str.charCodeAt(i);
+      hash |= 0;
+  }
+  return (hash >>> 0).toString(16);
 }
 
 export function evaluateSignal(
@@ -116,6 +127,7 @@ export function evaluateSignal(
       skepticVerdict: 'WEAK',
       primaryEvidence: 'Insufficient or Invalid Data',
       noTradeReason: reasonText,
+      inversionGuards: [],
       topPatterns: { bull: [], bear: [] },
       formattedReport: `┌─────────────────────────────────────┐\n│  ARBITRATOR FINAL VERDICT           │\n│  Signal: NO_TRADE                   │\n│  Confidence: 0%                     │\n├─────────────────────────────────────┤\n│  CASE 1 — BULL                      │\n│  J1 Reasoning: 0.0 / 4.0           │\n│  J2 Vehicle:   0.0 / 4.0           │\n│  J3 Reversal:  0.0 / 4.0           │\n│  Total:        0.0 / 12.0          │\n├─────────────────────────────────────┤\n│  CASE 2 — BEAR                      │\n│  J1 Reasoning: 0.0 / 4.0           │\n│  J2 Vehicle:   0.0 / 4.0           │\n│  J3 Reversal:  0.0 / 4.0           │\n│  Total:        0.0 / 12.0          │\n├─────────────────────────────────────┤\n│  SKEPTIC VETO:  0.30 (WEAK)        │\n│  Margin:        0.0                 │\n│  Final Score:   0.0                 │\n├─────────────────────────────────────┤\n│  RULING:                            │\n│  NO_TRADE — ${reasonText.substring(0, 20)}...   │\n└─────────────────────────────────────┘`,
       tradeDetails: {
@@ -163,6 +175,12 @@ export function evaluateSignal(
 
   if (!ohlcSeries || ohlcSeries.length < 30) {
     return getEmptyNoTradeResult(`Insufficient visibility. Need at least 30 candles (found ${ohlcSeries ? ohlcSeries.length : 0}).`);
+  }
+
+  if (horizonArg && horizonArg.axisConfidence !== undefined && horizonArg.axisConfidence < 0.5) {
+    return getEmptyNoTradeResult(
+      `Axis OCR confidence ${(horizonArg.axisConfidence * 100).toFixed(0)}% < 50%. Engine refuses to trade on synthetic prices.`
+    );
   }
 
   // --- Step 1: Pre-flight Integrity & Physical Violations Checks (Hard Blocks) ---
@@ -309,10 +327,11 @@ export function evaluateSignal(
     shards.push(activeList.slice(i, i + shardSize));
   }
 
+  const directionInversionGuards: any[] = [];
   const evaluationVotes: any[] = [];
   for (let i = 0; i < shards.length; i++) {
     const shard = shards[i];
-    const shardVotes = evaluateShard(shard, ohlcSeries, i * shardSize, techCache);
+    const shardVotes = evaluateShard(shard, ohlcSeries, i * shardSize, techCache, directionInversionGuards);
     evaluationVotes.push(...shardVotes);
   }
 
@@ -898,8 +917,17 @@ export function evaluateSignal(
   else if (skepticMultiplier < 0.85) skepticVerdict = 'CAUTION';
 
   // --- Step 4: Margin and Decision Resolution (with NEL Integration) ---
-  const bullTotal = Number(cases.bull.total.toFixed(2));
-  const bearTotal = Number(cases.bear.total.toFixed(2));
+  let bullTotal = Number(cases.bull.total.toFixed(2));
+  let bearTotal = Number(cases.bear.total.toFixed(2));
+
+  const signalSide = bullTotal > bearTotal ? 'bull' : 'bear';
+  const totalJ3 = signalSide === 'bull' ? cases.bull.j3 : cases.bear.j3;
+  const totalJ1 = signalSide === 'bull' ? cases.bull.j1 : cases.bear.j1;
+  const reversalDominant = totalJ3 >= 2.0 && totalJ3 > totalJ1;
+
+  const j2DecisiveSide = bullJ2Final > bearJ2Final ? 'BULL' : 'BEAR';
+  const j2SignalStrength = Math.abs(bullJ2Final - bearJ2Final);
+  const j2Silent = (bullJ2Final + bearJ2Final) < 0.5;
 
   // Nest, directionally-blind margin computation to satisfy Invariant I-8
   const initialMargin = Number(Math.abs(bullTotal - bearTotal).toFixed(2));
@@ -907,18 +935,14 @@ export function evaluateSignal(
   // Scale the confidence denominator and dynamic thresholds based on custom list size if applicable
   const scaleThresholdFactor = isCustomList ? Math.max(0.08, Math.min(1.0, activeList.length / 12)) : 1.0;
   
-  const signalSide = bullTotal > bearTotal ? 'bull' : 'bear';
-  const totalJ3 = signalSide === 'bull' ? cases.bull.j3 : cases.bear.j3;
-  const totalJ1 = signalSide === 'bull' ? cases.bull.j1 : cases.bear.j1;
-  const reversalDominant = totalJ3 >= 2.0 && totalJ3 > totalJ1;
-
   let confidenceDenominator = isCustomList ? Math.max(1, activeList.length) : 12;
   if (reversalDominant) {
     confidenceDenominator = isCustomList ? 8.5 : 10;
   }
   
   // Scale thresholds down in testMode by a factor of 0.35 to allow diagnostic/backtest signals to emit
-  const testModeFactor = horizonArg?.isTestMode ? 0.35 : 1.0;
+  // PATCH 6: Introduce featureFlags.productionGates
+  const testModeFactor = horizonArg && horizonArg.isTestMode && !featureFlags.productionGates ? 0.35 : 1.0;
 
   const rawWinningTotal = bullTotal > bearTotal ? bullTotal : bearTotal;
   const initialConfidence = Math.round((rawWinningTotal * skepticMultiplier / confidenceDenominator) * 100);
@@ -969,7 +993,16 @@ export function evaluateSignal(
     minStrengthThreshold *= 0.85;
   }
   const minSkepticMarginThreshold = 4.0 * scaleThresholdFactor * testModeFactor;
-  const minConfidenceThreshold = 25 * scaleThresholdFactor * testModeFactor;
+  let minConfidenceThreshold = 25 * scaleThresholdFactor * testModeFactor;
+
+  const ABSOLUTE_MIN_MARGIN = 2.5; 
+  const ABSOLUTE_MIN_STRENGTH = 5.5; 
+  const ABSOLUTE_MIN_CONFIDENCE = 60;
+  
+  if (featureFlags.productionGates) {
+    minMarginThreshold = Math.max(minMarginThreshold, ABSOLUTE_MIN_MARGIN);
+    minStrengthThreshold = Math.max(minStrengthThreshold, ABSOLUTE_MIN_STRENGTH);
+  }
 
   if (hardBlockReason) {
     finalSignal = 'NO_TRADE';
@@ -977,6 +1010,14 @@ export function evaluateSignal(
   } else if (rawWinner === 'TIE') {
     finalSignal = 'NO_TRADE';
     noTradeReason = `TIE: Bull and Bear scored identically (${adjustedBull.toFixed(2)} vs ${adjustedBear.toFixed(2)}). No directional edge.`;
+  } else if (j2Silent && featureFlags.productionGates) {
+    finalSignal = 'NO_TRADE';
+    noTradeReason = 'J2 oscillators silent (sum < 0.5). Refuse to trade without RSI/Stochastic/MACD confirmation.';
+  } else if (featureFlags.productionGates && j2SignalStrength >= 0.5 && 
+            ((rawWinner === 'BULL' && j2DecisiveSide === 'BEAR') || 
+             (rawWinner === 'BEAR' && j2DecisiveSide === 'BULL'))) {
+    finalSignal = 'NO_TRADE';
+    noTradeReason = `J2 oscillators contradict ${rawWinner} verdict (J2 favors ${j2DecisiveSide} by ${j2SignalStrength.toFixed(2)}).`;
   } else if (margin < minMarginThreshold) {
     finalSignal = 'NO_TRADE';
     noTradeReason = `Margin of ${margin.toFixed(1)} is below minimum threshold of ${minMarginThreshold.toFixed(1)}. Scores (${adjustedBull.toFixed(2)} vs ${adjustedBear.toFixed(2)}) are too close (minimum difference of ${minMarginThreshold.toFixed(1)} required).`;
@@ -989,6 +1030,11 @@ export function evaluateSignal(
   } else if (finalConfidence < minConfidenceThreshold) {
     finalSignal = 'NO_TRADE';
     noTradeReason = `Final confidence of ${finalConfidence}% falls below minimum actionable threshold of ${minConfidenceThreshold.toFixed(0)}%.`;
+  }
+
+  if (finalSignal !== 'NO_TRADE' && featureFlags.productionGates && finalConfidence < ABSOLUTE_MIN_CONFIDENCE) {
+    finalSignal = 'NO_TRADE';
+    noTradeReason = `Confidence ${finalConfidence}% below absolute floor ${ABSOLUTE_MIN_CONFIDENCE}%.`;
   }
 
   // Record solved signal into Aggregated Bias Sentinel History (Invariant I-10)
@@ -1078,6 +1124,7 @@ ${rulingStr}
 
   // Build rigorous deterministic Audit Trail mapping every single decision parameter
   const auditTrail = {
+    directionInversionGuards,
     judgeContribs,
     temporalFiltering: {
       graphTimeframeMinutes,
@@ -1175,8 +1222,12 @@ ${rulingStr}
     console.groupEnd();
   }
 
+  const seriesHash = simpleHash(JSON.stringify(ohlcSeries.slice(-5)));
+  const judgeHash = simpleHash(JSON.stringify(judgeContribs));
+
   return {
     agent: 'JUDGE',
+    fingerprint: { seriesHash, judgeHash },
     signal: finalSignal,
     decision: decisionLabel,
     cases,
@@ -1190,6 +1241,7 @@ ${rulingStr}
     ruling,
     primaryEvidence,
     noTradeReason,
+    inversionGuards: directionInversionGuards,
     topPatterns,
     techniquesUsed: "Execution Driven Only",
     techUsedCount: activeList.length,

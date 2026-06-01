@@ -86,22 +86,32 @@ export function enforceNeutrality(
     ? config.historicalBearRate 
     : getHistoricalRates().bearRate;
 
-  const biasStrength = config.biasCorrectionFactor;
+  const biasStrength = config.biasCorrectionFactor > 0 ? config.biasCorrectionFactor : 0.05;
 
   if (biasStrength > 0) {
     const skew = bullRate - bearRate;
-    if (skew > 0.30) {
+    if (skew > 0.15) {
       // Historical over-representation of BULL signals (CALL). Apply anti-bias correction.
-      const correctionFactor = Math.min(0.15, (skew - 0.30) * 0.5) * biasStrength * 10; 
+      const correctionFactor = Math.min(0.25, (skew - 0.15) * 0.5) * biasStrength * 10; 
       adjustedBull = bullTotal * (1 - correctionFactor);
       adjustedBear = bearTotal * (1 + correctionFactor);
-      neutralityActions.push(`BULL BIAS GUARD: Skew +${skew.toFixed(2)} > 0.30. Penalized BULL (-${(correctionFactor * 100).toFixed(1)}%), Boosted BEAR (+${(correctionFactor * 100).toFixed(1)}%)`);
-    } else if (skew < -0.30) {
+      neutralityActions.push(`BULL BIAS GUARD: Skew +${skew.toFixed(2)} > 0.15. Penalized BULL (-${(correctionFactor * 100).toFixed(1)}%), Boosted BEAR (+${(correctionFactor * 100).toFixed(1)}%)`);
+    } else if (skew < -0.15) {
       // Historical over-representation of BEAR signals (PUT). Apply anti-bias correction.
-      const correctionFactor = Math.min(0.15, (-skew - 0.30) * 0.5) * biasStrength * 10;
+      const correctionFactor = Math.min(0.25, (-skew - 0.15) * 0.5) * biasStrength * 10;
       adjustedBull = bullTotal * (1 + correctionFactor);
       adjustedBear = bearTotal * (1 - correctionFactor);
-      neutralityActions.push(`BEAR BIAS GUARD: Skew ${skew.toFixed(2)} < -0.30. Penalized BEAR (-${(correctionFactor * 100).toFixed(1)}%), Boosted BULL (+${(correctionFactor * 100).toFixed(1)}%)`);
+      neutralityActions.push(`BEAR BIAS GUARD: Skew ${skew.toFixed(2)} < -0.15. Penalized BEAR (-${(correctionFactor * 100).toFixed(1)}%), Boosted BULL (+${(correctionFactor * 100).toFixed(1)}%)`);
+    }
+
+    // PATCH 8: Residual Bull Skew Pointwise Correction
+    const corr = Math.abs(adjustedBull - adjustedBear) * biasStrength;
+    if (adjustedBull > adjustedBear) {
+      adjustedBull = Math.max(0.01, adjustedBull - (corr * 1.5));
+      neutralityActions.push(`PATCH 8 BULL PENALTY: subtracted ${(corr * 1.5).toFixed(2)} from BULL`);
+    } else if (adjustedBear > adjustedBull) {
+      adjustedBear = Math.max(0.01, adjustedBear - corr);
+      neutralityActions.push(`PATCH 8 BEAR PENALTY: subtracted ${corr.toFixed(2)} from BEAR`);
     }
   }
 

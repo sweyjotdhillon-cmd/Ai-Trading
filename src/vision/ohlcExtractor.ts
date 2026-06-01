@@ -32,6 +32,15 @@ export interface OHLCExtractionResult {
   };
 }
 
+export class VisionDegradedError extends Error {
+  code: string;
+  constructor(message: string, code: string) {
+    super(message);
+    this.name = 'VisionDegradedError';
+    this.code = code;
+  }
+}
+
 export function extractRawCandles(
   imageData: ImageData,
   bullBand: HSVBand,
@@ -66,7 +75,7 @@ export function extractRawCandles(
 
   const ordered = bodies.sort((a, b) => a.cx - b.cx || a.yMin - b.yMin);
 
-  const candles: RawCandle[] = ordered.map((body, i) => {
+  let candles: RawCandle[] = ordered.map((body, i) => {
     const wicks = traceWicks(body, masks.union, masks.width, masks.height);
     const isBull = body.classLabel === 'bull';
     return {
@@ -87,6 +96,22 @@ export function extractRawCandles(
     };
   });
   
+  if (candles.length > 0) {
+    const recent = candles.slice(-20);
+    let wickShareSum = 0;
+    for (const c of recent) {
+      const bodyRatio = Math.abs(c.closeY - c.openY) / Math.max(1e-9, c.lowY - c.highY);
+      wickShareSum += (1 - bodyRatio);
+    }
+    const avgWickShare = wickShareSum / recent.length;
+    if (avgWickShare < 0.05) {
+      throw new VisionDegradedError(
+        "Vision degraded: wick tracer produced zero-wick candles. Re-capture image with higher contrast or larger candles.",
+        "WICK_TRACE_FAILED"
+      );
+    }
+  }
+
   const t4 = performance.now();
 
   return {

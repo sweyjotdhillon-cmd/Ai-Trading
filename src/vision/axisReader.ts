@@ -3,10 +3,14 @@ import { otsuThreshold } from './otsu';
 import { EPSILON } from './colorSpace';
 
 export interface PriceAxisTransform {
-  mSlope: number;
-  bIntercept: number;
-  anchors: { y: number; price: number }[];
-  confidence: number;
+  ok: boolean;
+  mSlope?: number;
+  bIntercept?: number;
+  anchors?: { y: number; price: number }[];
+  confidence?: number;
+  reason?: string;
+  tickCount?: number;
+  recognizedDigits?: number;
 }
 
 export function readYAxis(imageData: ImageData): PriceAxisTransform | null {
@@ -127,7 +131,13 @@ export function readYAxis(imageData: ImageData): PriceAxisTransform | null {
     }
   }
 
-  if (anchors.length < 2) return null;
+  const expectedTicks = textRows.length;
+  // Patch 3: axisConfidence = recognizedTicks / expectedTicks;
+  const axisConfidence = expectedTicks > 0 ? anchors.length / expectedTicks : 0;
+
+  if (anchors.length < 2) {
+    return { ok: false, reason: 'OCR_FAILED', tickCount: expectedTicks, recognizedDigits: anchors.length, confidence: axisConfidence };
+  }
 
   const N = anchors.length;
   let sumY = 0, sumP = 0, sumYY = 0, sumYP = 0;
@@ -143,9 +153,10 @@ export function readYAxis(imageData: ImageData): PriceAxisTransform | null {
   const bIntercept = (sumP - mSlope * sumY) / Math.max(1, N);
 
   return {
+    ok: true,
     mSlope,
     bIntercept,
     anchors,
-    confidence: 1.0, 
+    confidence: axisConfidence, 
   };
 }

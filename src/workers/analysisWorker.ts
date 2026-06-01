@@ -28,6 +28,8 @@ try {
   faultStack = e.message || String(e);
 }
 
+let lastFingerprint = '';
+
 self.onmessage = async (e: MessageEvent) => {
   const tStart = performance.now();
   const data = e.data;
@@ -46,9 +48,21 @@ self.onmessage = async (e: MessageEvent) => {
 
   let heartbeat: any;
   try {
-    const data = e.data;
     if (data.msgId) {
       heartbeat = setInterval(() => { self.postMessage({ ok: true, stage: 'HEARTBEAT', payload: { type: 'HEARTBEAT', msgId: data.msgId, ts: Date.now() } }); }, 3000);
+    }
+
+    if (data.type === 'ANALYZE') {
+      const currentFingerprint = data.fingerprint || data.msgId || '';
+      if (currentFingerprint !== lastFingerprint) {
+        patternStabilityManager.reset();
+        gapStabilityManager.reset();
+        resetStability();
+        if (featureFlags.enableTemporalFiltering) {
+          resetTemporalFilter();
+        }
+        lastFingerprint = currentFingerprint;
+      }
     }
     
 
@@ -114,7 +128,9 @@ self.onmessage = async (e: MessageEvent) => {
       sendOk('PROGRESS', { type: 'PROGRESS', msgId: data.msgId, step: 'EXTRACTING CANDLESTICK DATA...' });
 
       const pipe = await buildPipelineResult(data.imageData) as any;
-
+      if (pipe.axis && pipe.axis.confidence !== undefined) {
+        horizonCtx.axisConfidence = pipe.axis.confidence;
+      }
 
       let confirmedPatterns: PatternEvidence[] = [];
       if (featureFlags.enableCandlestickRepoPatterns) {
@@ -237,7 +253,7 @@ self.onmessage = async (e: MessageEvent) => {
       sendOk('RESET', { type: 'RESET_OK' });
     }
   } catch (err: any) {
-    sendErr('UNKNOWN', (err.message || String(err)) + '\n' + (err.stack || ''), { msgId: e.data?.msgId });
+    sendErr('UNKNOWN', err.code === 'WICK_TRACE_FAILED' ? err.message : (err.message || String(err)) + '\n' + (err.stack || ''), { msgId: e.data?.msgId });
   } finally {
     if (heartbeat) clearInterval(heartbeat);
   }

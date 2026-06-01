@@ -5,15 +5,45 @@ import tw from 'twrnc';
 import { motion } from 'motion/react';
 import { ShieldAlert, AlertTriangle, Wrench, RefreshCw, Download, Copy, Check } from 'lucide-react';
 import { MasterAutopsySummary } from './BulkTestPanel';
+import { featureFlags } from '../config/featureFlags';
 
 interface BatchAutopsyReportProps {
   summary: MasterAutopsySummary | null;
   loading: boolean;
   onClear: () => void;
+  isTestMode?: boolean;
+  queue?: any[];
 }
 
-export function BatchAutopsyReport({ summary, loading, onClear }: BatchAutopsyReportProps) {
+export function BatchAutopsyReport({ summary, loading, onClear, isTestMode, queue = [] }: BatchAutopsyReportProps) {
   const [copied, setCopied] = useState(false);
+
+  const [telemetry, setTelemetry] = useState({
+    inversions: 0, ocrFails: 0, wickDegraded: 0, j2Silent: 0, collisions: 0
+  });
+
+  useEffect(() => {
+    if (!queue || queue.length === 0) return;
+    let inv = 0, ocr = 0, wick = 0, j2 = 0;
+    const hashes: Record<string, number> = {};
+    for (const item of queue) {
+      const res = item.result;
+      if (!res) continue;
+      const noT = res.noTradeReason || '';
+      if (item.error && String(item.error).includes('OCR')) ocr++;
+      else if (noT.includes('OCR')) ocr++;
+      if (item.error && String(item.error).includes('WICK')) wick++;
+      else if (noT.includes('Vision degraded')) wick++;
+      if (noT.includes('J2 oscillators silent')) j2++;
+      if (res.inversionGuards && res.inversionGuards.length > 0) inv += res.inversionGuards.length;
+      if (res.fingerprint?.judgeHash) {
+        hashes[res.fingerprint.judgeHash] = (hashes[res.fingerprint.judgeHash] || 0) + 1;
+      }
+    }
+    let coll = 0;
+    for (const k in hashes) if (hashes[k] >= 3) coll += hashes[k];
+    setTelemetry({ inversions: inv, ocrFails: ocr, wickDegraded: wick, j2Silent: j2, collisions: coll });
+  }, [queue]);
 
   const handleCopy = useCallback(() => {
     if (!summary) return;
@@ -90,7 +120,38 @@ export function BatchAutopsyReport({ summary, loading, onClear }: BatchAutopsyRe
       animate={{ opacity: 1, y: 0 }}
       className="mt-6"
     >
-      <View style={tw`bg-[#1A1212] border border-red-500/30 rounded-2xl overflow-hidden`}>
+      <View style={tw`bg-[#1A1308]/90 border-2 border-[#D9B382]/30 rounded-xl overflow-hidden shadow-2xl`}>
+         
+         {/* PRODUCTION TELEMETRY PANEL */}
+         {featureFlags.productionGates && (
+           <View style={tw`bg-black/40 border-b border-[#D9B382]/10 p-4`}>
+             <Text style={tw`text-[#D9B382] font-black text-[10px] tracking-widest mb-3`}>HARDENED ENGINE TELEMETRY</Text>
+             <View style={tw`flex-row flex-wrap gap-4`}>
+               <View style={tw`bg-white/5 px-3 py-2 rounded-lg`}>
+                 <Text style={tw`text-[9px] text-[#94a3b8] tracking-widest mb-1`}>INVERSIONS BLOCKED</Text>
+                 <Text style={tw`text-white font-black`}>{telemetry.inversions}</Text>
+               </View>
+               <View style={tw`bg-white/5 px-3 py-2 rounded-lg`}>
+                 <Text style={tw`text-[9px] text-[#94a3b8] tracking-widest mb-1`}>OCR FAILURES CAUGHT</Text>
+                 <Text style={tw`text-white font-black`}>{telemetry.ocrFails}</Text>
+               </View>
+               <View style={tw`bg-white/5 px-3 py-2 rounded-lg`}>
+                 <Text style={tw`text-[9px] text-[#94a3b8] tracking-widest mb-1`}>WICK DEGRADATIONS</Text>
+                 <Text style={tw`text-white font-black`}>{telemetry.wickDegraded}</Text>
+               </View>
+               <View style={tw`bg-white/5 px-3 py-2 rounded-lg`}>
+                 <Text style={tw`text-[9px] text-[#94a3b8] tracking-widest mb-1`}>J2-SILENT AVOIDED</Text>
+                 <Text style={tw`text-white font-black`}>{telemetry.j2Silent}</Text>
+               </View>
+               <View style={tw`flex-1 min-w-[120px] ${telemetry.collisions > 0 ? 'bg-red-500/10 border border-red-500/30' : 'bg-white/5'} px-3 py-2 rounded-lg`}>
+                 <Text style={tw`text-[9px] ${telemetry.collisions > 0 ? 'text-red-400' : 'text-[#94a3b8]'} tracking-widest mb-1`}>FINGERPRINT COLLISIONS</Text>
+                 <Text style={tw`font-black ${telemetry.collisions > 0 ? 'text-red-400' : 'text-white'}`}>{telemetry.collisions} duplicated states</Text>
+               </View>
+             </View>
+           </View>
+         )}
+      </View>
+      <View style={tw`bg-[#1A1212] border border-red-500/30 rounded-2xl overflow-hidden mt-6`}>
         {/* Header */}
         <View style={tw`bg-red-500/20 border-b border-red-500/30 p-4 flex-row items-center justify-between`}>
            <View style={tw`flex-row items-center`}>
@@ -98,6 +159,13 @@ export function BatchAutopsyReport({ summary, loading, onClear }: BatchAutopsyRe
              <Text style={tw`text-red-400 font-black text-xs uppercase tracking-widest ml-2`}>
                Master Loss Autopsy
              </Text>
+             {featureFlags.productionGates && (
+               <View style={tw`ml-3 bg-red-500/20 px-2 py-0.5 rounded border border-red-500/30`}>
+                 <Text style={tw`text-red-400 font-bold text-[9px] uppercase tracking-widest`}>
+                   Hardened Engine
+                 </Text>
+               </View>
+             )}
            </View>
            <View style={tw`flex-row items-center gap-6`}>
              <Pressable onPress={handleCopy} style={({pressed}) => [{opacity: pressed ? 0.5 : 1}, tw`flex-row items-center gap-1.5`]}>

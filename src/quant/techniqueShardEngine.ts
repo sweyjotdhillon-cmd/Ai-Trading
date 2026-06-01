@@ -217,7 +217,8 @@ export function evaluateShard(
   shard: any[],
   ohlc: NumericOHLC[],
   shardOffset: number,
-  cache: IndicatorCache
+  cache: IndicatorCache,
+  inversionGuards?: any[]
 ): TechniqueVote[] {
   const votes: TechniqueVote[] = [];
 
@@ -246,15 +247,47 @@ export function evaluateShard(
     let bearPoints = 0;
 
     if (typeof techItem === 'object' && techItem.callConditions) {
+      const callConds = techItem.callConditions || [];
+      const putConds = techItem.putConditions || [];
+
+      // Check for self-contradictions
+      const checkContradiction = (conds: any[], type: string) => {
+        const byCandle: Record<string, Set<string>> = {};
+        for(const c of conds) {
+          if (c.field === 'direction') {
+            const ref = String(c.candleOffset || "0");
+            if (!byCandle[ref]) byCandle[ref] = new Set();
+            byCandle[ref].add(c.value);
+          }
+        }
+        for (const [ref, dirs] of Object.entries(byCandle)) {
+          if (dirs.has('BULL') && dirs.has('BEAR')) return `self-contradictory ${type} block`;
+        }
+        return '';
+      };
+      
+      const callContradiction = checkContradiction(callConds, 'CALL');
+      const putContradiction = checkContradiction(putConds, 'PUT');
+      if (callContradiction || putContradiction) {
+         votes.push({
+           id, name: rawName, vote: 'SKIP', score: 0, reason: callContradiction || putContradiction
+         });
+         continue;
+      }
+
+      // Drop invalid conditions
+      const safeCallConds = callConds.filter((c: any) => !(c.field === 'direction' && c.value === 'BEAR'));
+      const safePutConds = putConds.filter((c: any) => !(c.field === 'direction' && c.value === 'BULL'));
+
       // Evaluate CALL side
       const callResult = evaluateConditions(
-        techItem.callConditions || [], ohlc, closes, last,
+        safeCallConds, ohlc, closes, last,
         getRSI, getStoch, getMACD, getATR, getBollinger
       );
       
       // Evaluate PUT side
       const putResult = evaluateConditions(
-        techItem.putConditions || [], ohlc, closes, last,
+        safePutConds, ohlc, closes, last,
         getRSI, getStoch, getMACD, getATR, getBollinger
       );
 
@@ -297,6 +330,23 @@ export function evaluateShard(
         vote   = 'NEUTRAL';
         score  = 0;
         reason = `CALL=${callResult.score.toFixed(2)} PUT=${putResult.score.toFixed(2)} — tied`;
+      }
+
+      // Inversion Guard
+      const nameLower = rawName.toLowerCase();
+      const bearishKeywords = ['bearish', 'evening', 'dark cloud', 'death cross', 'overbought', 'shooting star', 'hanging man', 'three inside down', 'three outside down', 'three black', 'gravestone'];
+      const bullishKeywords = ['bullish', 'morning', 'piercing', 'golden cross', 'oversold', 'hammer', 'three white', 'three inside up', 'three outside up', 'dragonfly'];
+
+      if (vote === 'BULL' && bearishKeywords.some(k => nameLower.includes(k))) {
+        if (inversionGuards) inversionGuards.push({ techName: rawName, originalVote: vote, action: 'SKIP' });
+        vote = 'SKIP';
+        score = 0;
+        reason = 'name/direction inversion guard';
+      } else if (vote === 'BEAR' && bullishKeywords.some(k => nameLower.includes(k))) {
+        if (inversionGuards) inversionGuards.push({ techName: rawName, originalVote: vote, action: 'SKIP' });
+        vote = 'SKIP';
+        score = 0;
+        reason = 'name/direction inversion guard';
       }
 
       bullPoints = vote === 'BULL' ? score : 0;

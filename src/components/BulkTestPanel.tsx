@@ -5,6 +5,7 @@ import tw from 'twrnc';
 import { motion } from 'motion/react';
 import { FileJson, UploadCloud, Play, AlertTriangle, Activity, X, Terminal } from 'lucide-react';
 import { BatchManifest, BatchManifestEntry, validateBatchManifest } from '../types/batchManifest';
+import { featureFlags } from '../config/featureFlags';
 
 import { BatchAutopsyReport } from './BatchAutopsyReport';
 import { useWakeLock } from '../hooks/useWakeLock';
@@ -56,6 +57,11 @@ export function BulkTestPanel({
   
   // Tab 1 state
   const [images, setImages] = useState<File[]>([]);
+  const [useProductionGates, setUseProductionGates] = useState(featureFlags.productionGates);
+  useEffect(() => {
+    featureFlags.productionGates = useProductionGates;
+  }, [useProductionGates]);
+
   const [buildDuration, setBuildDuration] = useState<'3:00' | '5:00'>('3:00');
   const [generationProgress, setGenerationProgress] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState(false);
@@ -249,7 +255,9 @@ export function BulkTestPanel({
             setQueue(parsed.map(q => q.status === 'Running' ? { ...q, status: 'Pending' } : q));
             localStorage.removeItem('bulkTestQueue');
           }
-        } catch(e) {}
+        } catch (e) {
+          console.debug('Failed to parse legacy bulkTestQueue', e);
+        }
       }
     });
     return () => { mounted = false; };
@@ -438,6 +446,7 @@ export function BulkTestPanel({
 
           const result = await runSingleAnalysis({
             imageDataUrl,
+            fingerprint: item.id,
             stock: item.entry.stock || stockName,
             graphTimeframe: item.entry.graphTimeframe || graphTimeframe,
             investmentDuration: item.entry.investmentDuration || investmentDuration,
@@ -741,6 +750,25 @@ export function BulkTestPanel({
               </Pressable>
             </View>
             <input type="file" ref={existingManifestRef} accept=".json,application/json" onChange={loadExistingManifest} style={{display: 'none'}} />
+
+            <View style={tw`pt-4 border-t border-white border-opacity-10 mb-2`}>
+              <Pressable
+                onPress={() => setUseProductionGates(!useProductionGates)}
+                style={({ pressed }) => [tw`flex-row items-center justify-between bg-black/20 border border-white/10 p-3 rounded-lg`, { opacity: pressed ? 0.7 : 1 }]}
+              >
+                <View style={tw`flex-col`}>
+                  <Text style={tw`text-[11px] font-black text-white tracking-widest`}>PRODUCTION GATES</Text>
+                  <Text style={tw`text-[9px] text-[#94a3b8] mt-1`}>Require strong confidence and margin.</Text>
+                </View>
+                <View style={[tw`w-10 h-6 rounded-full p-1 justify-center`, useProductionGates ? tw`bg-green-500/20 border border-green-500/50` : tw`bg-white/5 border border-white/10`]}>
+                  <motion.div
+                    animate={{ x: useProductionGates ? 16 : 0 }}
+                    transition={{ type: "spring", bounce: 0, duration: 0.2 }}
+                    style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: useProductionGates ? '#22c55e' : '#64748b' }}
+                  />
+                </View>
+              </Pressable>
+            </View>
 
             <View style={tw`pt-4 border-t border-white border-opacity-10`}>
                <Text style={tw`text-[10px] font-black text-[#94a3b8] uppercase tracking-wider mb-2 text-center`}>Investment Duration (Cut Target Window)</Text>
@@ -1136,7 +1164,8 @@ export function BulkTestPanel({
                      <BatchAutopsyReport 
                         summary={masterSummary} 
                         loading={autopsyingBatch} 
-                        onClear={() => setMasterSummary(null)} 
+                        onClear={() => setMasterSummary(null)}
+                        queue={queue}
                      />
                   )}
                </View>
