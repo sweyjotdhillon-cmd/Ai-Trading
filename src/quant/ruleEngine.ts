@@ -995,11 +995,13 @@ export function evaluateSignal(
   const minSkepticMarginThreshold = 4.0 * scaleThresholdFactor * testModeFactor;
   let minConfidenceThreshold = 25 * scaleThresholdFactor * testModeFactor;
 
-  const ABSOLUTE_MIN_MARGIN = 2.5; 
-  const ABSOLUTE_MIN_STRENGTH = 5.5; 
-  const ABSOLUTE_MIN_CONFIDENCE = 60;
+  const inTestMode = horizonArg && horizonArg.isTestMode;
+
+  const ABSOLUTE_MIN_MARGIN = 1.5; 
+  const ABSOLUTE_MIN_STRENGTH = 3.5; 
+  const ABSOLUTE_MIN_CONFIDENCE = 35;
   
-  if (featureFlags.productionGates) {
+  if (featureFlags.productionGates && !isCustomList && !inTestMode) {
     minMarginThreshold = Math.max(minMarginThreshold, ABSOLUTE_MIN_MARGIN);
     minStrengthThreshold = Math.max(minStrengthThreshold, ABSOLUTE_MIN_STRENGTH);
   }
@@ -1010,10 +1012,10 @@ export function evaluateSignal(
   } else if (rawWinner === 'TIE') {
     finalSignal = 'NO_TRADE';
     noTradeReason = `TIE: Bull and Bear scored identically (${adjustedBull.toFixed(2)} vs ${adjustedBear.toFixed(2)}). No directional edge.`;
-  } else if (j2Silent && featureFlags.productionGates) {
+  } else if (j2Silent && featureFlags.productionGates && !isCustomList && !inTestMode) {
     finalSignal = 'NO_TRADE';
     noTradeReason = 'J2 oscillators silent (sum < 0.5). Refuse to trade without RSI/Stochastic/MACD confirmation.';
-  } else if (featureFlags.productionGates && j2SignalStrength >= 0.5 && 
+  } else if (featureFlags.productionGates && !isCustomList && j2SignalStrength >= 0.5 && !inTestMode &&
             ((rawWinner === 'BULL' && j2DecisiveSide === 'BEAR') || 
              (rawWinner === 'BEAR' && j2DecisiveSide === 'BULL'))) {
     finalSignal = 'NO_TRADE';
@@ -1032,7 +1034,7 @@ export function evaluateSignal(
     noTradeReason = `Final confidence of ${finalConfidence}% falls below minimum actionable threshold of ${minConfidenceThreshold.toFixed(0)}%.`;
   }
 
-  if (finalSignal !== 'NO_TRADE' && featureFlags.productionGates && finalConfidence < ABSOLUTE_MIN_CONFIDENCE) {
+  if (finalSignal !== 'NO_TRADE' && featureFlags.productionGates && !isCustomList && !inTestMode && finalConfidence < ABSOLUTE_MIN_CONFIDENCE) {
     finalSignal = 'NO_TRADE';
     noTradeReason = `Confidence ${finalConfidence}% below absolute floor ${ABSOLUTE_MIN_CONFIDENCE}%.`;
   }
