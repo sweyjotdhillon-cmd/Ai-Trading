@@ -412,7 +412,7 @@ export const TECHNIQUE_LIBRARY: Record<string, TechniqueLibraryFunction> = {
     ensureIndicators(ohlc, cache);
     const b = cache.bollVals!;
     const last = ohlc.length - 1;
-    if (ohlc.length < 30) return { vote: 'SKIP', score: 0, bullPoints: 0, bearPoints: 0, reason: 'Insufficient data' };
+    if (ohlc.length < 20) return { vote: 'SKIP', score: 0, bullPoints: 0, bearPoints: 0, reason: 'Needs 20 candles' };
     // Calculate rolling bandwidths
     const widths: number[] = [];
     for (let j = last - 15; j <= last; j++) {
@@ -430,7 +430,7 @@ export const TECHNIQUE_LIBRARY: Record<string, TechniqueLibraryFunction> = {
     ensureIndicators(ohlc, cache);
     const b = cache.bollVals!;
     const last = ohlc.length - 1;
-    if (ohlc.length < 30) return { vote: 'SKIP', score: 0, bullPoints: 0, bearPoints: 0, reason: 'Insufficient data' };
+    if (ohlc.length < 15) return { vote: 'SKIP', score: 0, bullPoints: 0, bearPoints: 0, reason: 'Needs 15 candles' };
     const currentW = (b.upper[last] - b.lower[last]) / b.middle[last];
     const prevW = (b.upper[last - 3] - b.lower[last - 3]) / b.middle[last - 3];
     if (currentW > prevW * 1.5) {

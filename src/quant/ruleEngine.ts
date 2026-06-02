@@ -161,8 +161,8 @@ export function evaluateSignal(
   const nCandles = Math.max(1, Math.ceil(durationMinutes / graphTimeframeMinutes));
   const nCut = Math.max(20, nCandles * 5);
 
-  if (!ohlcSeries || ohlcSeries.length < 30) {
-    return getEmptyNoTradeResult(`Insufficient visibility. Need at least 30 candles (found ${ohlcSeries ? ohlcSeries.length : 0}).`);
+  if (!ohlcSeries || ohlcSeries.length < 15) {
+    return getEmptyNoTradeResult(`Insufficient visibility. Need at least 15 candles (found ${ohlcSeries ? ohlcSeries.length : 0}).`);
   }
 
   // --- Step 1: Pre-flight Integrity & Physical Violations Checks (Hard Blocks) ---

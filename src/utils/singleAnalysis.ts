@@ -1,3 +1,4 @@
+/* eslint-disable no-empty */
 import { antiImagine } from './antiImagine';
 let msgCounter = 0;
 import { dataUrlToImageData } from './imageUtils';

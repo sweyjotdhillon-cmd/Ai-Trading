@@ -1,4 +1,5 @@
 
+/* eslint-disable no-empty */
 import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, Pressable, ScrollView, Platform } from 'react-native';
 import tw from 'twrnc';
