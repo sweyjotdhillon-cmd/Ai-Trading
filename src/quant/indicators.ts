@@ -2,26 +2,30 @@ import { EPSILON } from '../vision/colorSpace';
 
 export function sma(values: number[], period: number): number[] {
   const result = new Float64Array(values.length).fill(0);
+  if (values.length === 0) return Array.from(result);
+  
+  const activePeriod = Math.max(1, Math.min(period, values.length));
   let sum = 0;
   for (let i = 0; i < values.length; i++) {
     sum += values[i];
-    if (i >= period) sum -= values[i - period];
-    if (i >= period - 1) result[i] = sum / period;
+    if (i >= activePeriod) sum -= values[i - activePeriod];
+    const currentWindow = Math.min(i + 1, activePeriod);
+    result[i] = sum / currentWindow;
   }
   return Array.from(result);
 }
 
 export function ema(values: number[], period: number): number[] {
   const result = new Float64Array(values.length).fill(0);
-  if (values.length < period) return Array.from(result);
+  if (values.length === 0) return Array.from(result);
   
-  const k = 2 / (period + 1);
-  let sum = 0;
-  for (let i = 0; i < period; i++) sum += values[i];
-  let prevEma = sum / period;
-  result[period - 1] = prevEma;
+  const activePeriod = Math.max(1, Math.min(period, values.length));
+  const k = 2 / (activePeriod + 1);
   
-  for (let i = period; i < values.length; i++) {
+  let prevEma = values[0];
+  result[0] = prevEma;
+  
+  for (let i = 1; i < values.length; i++) {
     prevEma = (values[i] - prevEma) * k + prevEma;
     result[i] = prevEma;
   }
@@ -29,29 +33,35 @@ export function ema(values: number[], period: number): number[] {
 }
 
 export function rsi(closes: number[], period = 14): number[] {
-  const result = new Float64Array(closes.length).fill(0);
-  if (closes.length <= period) return Array.from(result);
+  const result = new Float64Array(closes.length).fill(50);
+  if (closes.length < 2) return Array.from(result);
   
+  const activePeriod = Math.max(2, Math.min(period, closes.length - 1));
   let avgGain = 0;
   let avgLoss = 0;
-  for (let i = 1; i <= period; i++) {
+  for (let i = 1; i <= activePeriod; i++) {
     const diff = closes[i] - closes[i - 1];
     if (diff > 0) avgGain += diff;
     else avgLoss -= diff;
   }
-  avgGain /= period;
-  avgLoss /= period;
+  avgGain /= activePeriod;
+  avgLoss /= activePeriod;
   
   const rs = avgGain === 0 && avgLoss === 0 ? 1 : avgGain / Math.max(avgLoss, EPSILON);
-  result[period] = 100 - (100 / (1 + rs));
+  result[activePeriod] = 100 - (100 / (1 + rs));
   
-  for (let i = period + 1; i < closes.length; i++) {
+  // Fill prior values
+  for (let i = 0; i < activePeriod; i++) {
+    result[i] = result[activePeriod];
+  }
+  
+  for (let i = activePeriod + 1; i < closes.length; i++) {
     const diff = closes[i] - closes[i - 1];
     const gain = diff > 0 ? diff : 0;
     const loss = diff < 0 ? -diff : 0;
     
-    avgGain = (avgGain * (period - 1) + gain) / period;
-    avgLoss = (avgLoss * (period - 1) + loss) / period;
+    avgGain = (avgGain * (activePeriod - 1) + gain) / activePeriod;
+    avgLoss = (avgLoss * (activePeriod - 1) + loss) / activePeriod;
     
     const currRs = avgGain === 0 && avgLoss === 0 ? 1 : avgGain / Math.max(avgLoss, EPSILON);
     result[i] = 100 - (100 / (1 + currRs));
@@ -101,15 +111,24 @@ export function bollinger(closes: number[], period = 20, k = 2) {
   const lower = new Float64Array(closes.length).fill(0);
   const width = new Float64Array(closes.length).fill(0);
   
-  const smaValues = sma(closes, period);
+  if (closes.length === 0) {
+    return { upper: Array.from(upper), middle: Array.from(middle), lower: Array.from(lower), width: Array.from(width) };
+  }
   
-  for (let i = period - 1; i < closes.length; i++) {
+  const smaValues = sma(closes, period);
+  const activePeriod = Math.max(2, Math.min(period, closes.length));
+  
+  for (let i = 0; i < closes.length; i++) {
     const mean = smaValues[i];
+    const startIndex = Math.max(0, i - activePeriod + 1);
+    const endIndex = i;
+    const count = endIndex - startIndex + 1;
+    
     let variance = 0;
-    for (let j = i - period + 1; j <= i; j++) {
+    for (let j = startIndex; j <= endIndex; j++) {
       variance += Math.pow(closes[j] - mean, 2);
     }
-    const std = Math.sqrt(Math.max(variance / period, EPSILON));
+    const std = Math.sqrt(Math.max(variance / count, EPSILON));
     
     middle[i] = mean;
     upper[i] = mean + k * std;
@@ -127,8 +146,9 @@ export function bollinger(closes: number[], period = 20, k = 2) {
 
 export function atr(candles: {high: number, low: number, close: number}[], period = 14) {
   const result = new Float64Array(candles.length).fill(0);
-  if (candles.length <= period) return Array.from(result);
+  if (candles.length === 0) return Array.from(result);
   
+  const activePeriod = Math.max(1, Math.min(period, candles.length));
   const tr = new Float64Array(candles.length);
   tr[0] = Math.max(candles[0].high - candles[0].low, EPSILON);
   
@@ -139,14 +159,20 @@ export function atr(candles: {high: number, low: number, close: number}[], perio
     tr[i] = Math.max(Math.max(hLogSub, hClose, lClose), EPSILON);
   }
   
-  let sum = 0;
-  for (let i = 1; i <= period; i++) sum += tr[i];
-  result[period] = sum / period;
-  
-  for (let i = period + 1; i < candles.length; i++) {
-    result[i] = (result[i-1] * (period - 1) + tr[i]) / period;
+  // First ATR is SMA of first TRs
+  let trSum = 0;
+  for (let i = 0; i < activePeriod; i++) {
+    trSum += tr[i];
+  }
+  let prevAtr = trSum / activePeriod;
+  for (let i = 0; i < activePeriod; i++) {
+    result[i] = prevAtr;
   }
   
+  for (let i = activePeriod; i < candles.length; i++) {
+    prevAtr = (prevAtr * (activePeriod - 1) + tr[i]) / activePeriod;
+    result[i] = prevAtr;
+  }
   return Array.from(result);
 }
 

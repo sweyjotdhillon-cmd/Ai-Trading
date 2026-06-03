@@ -20,7 +20,7 @@ export function filterCandleBodies(
 
   for (const comp of components) {
     // 1. Area gate: not too small
-    if (comp.area < 15) {
+    if (comp.area < 3) {
       reject('TOO_SMALL');
       continue;
     }
@@ -35,18 +35,21 @@ export function filterCandleBodies(
     const h = comp.yMax - comp.yMin + 1;
     const ar = h / Math.max(w, EPSILON);
     
-    if (ar < 0.8) {
+    // For very small candles, allow extremely flat entries (e.g. Dojis)
+    const minAr = comp.area < 15 ? 0.15 : 0.40;
+    if (ar < minAr) {
       reject('TOO_HORIZONTAL');
       continue;
     }
-    if (ar > 25) {
+    if (ar > 35) {
       reject('TOO_VERTICAL');
       continue;
     }
     
     // 3. Column-density gate
     const density = comp.area / Math.max(w * h, EPSILON);
-    if (density < 0.55) {
+    const minDensity = comp.area < 15 ? 0.35 : 0.50;
+    if (density < minDensity) {
       // Outline detection fallback: an outlined candle might have low total density
       // but a high density on its perimeter.
       let perimeterTotal = 0;
@@ -64,7 +67,7 @@ export function filterCandleBodies(
         perimeterTotal += 2;
       }
       const perimeterDensity = perimeterInBand / Math.max(perimeterTotal, EPSILON);
-      if (perimeterDensity >= 0.80) {
+      if (perimeterDensity >= 0.70) {
          bodies.push(comp); // accepted via outline rule
          continue;
       }

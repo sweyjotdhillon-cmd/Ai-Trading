@@ -911,8 +911,18 @@ export function LiveAnalysis() {
     }
   };
 
+  const winner = analysis?.judge?.winner;
+
   return (
-    <View style={tw`flex-1 bg-black relative`}>
+    <View style={[
+      tw`flex-1 relative transition-colors duration-500`,
+      winner === 'BULL' ? tw`bg-[#01140b]` :
+      winner === 'BEAR' ? tw`bg-[#170204]` :
+      tw`bg-black`
+    ]}>
+      {winner && winner !== 'NONE' && (
+        <VerdictFullScreenEffect winner={winner} />
+      )}
       {calibrationFrame && (
         <CalibrationOverlay 
           frame={calibrationFrame} 
@@ -986,7 +996,12 @@ export function LiveAnalysis() {
       )}
 
       <ScrollView 
-        style={tw`flex-1 bg-black`}
+        style={[
+          tw`flex-1 transition-colors duration-500`,
+          winner === 'BULL' ? tw`bg-[#01140b]` :
+          winner === 'BEAR' ? tw`bg-[#170204]` :
+          tw`bg-black`
+        ]}
         contentContainerStyle={[tw`pb-24`, { flexGrow: 1 }]}
         showsVerticalScrollIndicator={true}
         alwaysBounceVertical={true}
@@ -1250,6 +1265,26 @@ const AnimatedArrows = ({ direction }: { direction: 'UP' | 'DOWN' | 'NO_TRADE' }
           className={`absolute inset-y-0 w-1 ${isUp ? 'bg-green-500 shadow-[0_0_20px_#22C55E]' : 'bg-red-500 shadow-[0_0_20px_#EF4444]'} opacity-30`}
         />
       )}
+    </div>
+  );
+};
+
+const VerdictFullScreenEffect = ({ winner }: { winner: 'BULL' | 'BEAR' | 'NONE' }) => {
+  if (winner !== 'BULL' && winner !== 'BEAR') return null;
+  const isBull = winner === 'BULL';
+  return (
+    <div className="absolute inset-0 pointer-events-none z-0 overflow-hidden">
+      {/* Ambient background wash */}
+      <motion.div 
+        animate={{ opacity: [0.15, 0.3, 0.15] }}
+        transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+        className={`absolute inset-0 ${isBull ? 'bg-[radial-gradient(circle_at_center,rgba(34,197,94,0.25)_0%,transparent_75%)]' : 'bg-[radial-gradient(circle_at_center,rgba(239,68,68,0.25)_0%,transparent_75%)]'}`}
+      />
+      {/* Laser glow lines border framework */}
+      <div className={`absolute top-0 inset-x-0 h-1.5 ${isBull ? 'bg-green-500/50 shadow-[0_2px_15px_#22C55E]' : 'bg-red-500/50 shadow-[0_2px_15px_#EF4444]'}`} />
+      <div className={`absolute bottom-0 inset-x-0 h-1.5 ${isBull ? 'bg-green-500/50 shadow-[0_-2px_15px_#22C55E]' : 'bg-red-500/50 shadow-[0_-2px_15px_#EF4444]'}`} />
+      <div className={`absolute left-0 inset-y-0 w-1.5 ${isBull ? 'bg-green-500/50 shadow-[2px_0_15px_#22C55E]' : 'bg-red-500/50 shadow-[2px_0_15px_#EF4444]'}`} />
+      <div className={`absolute right-0 inset-y-0 w-1.5 ${isBull ? 'bg-green-500/50 shadow-[-2px_0_15px_#22C55E]' : 'bg-red-500/50 shadow-[-2px_0_15px_#EF4444]'}`} />
     </div>
   );
 };

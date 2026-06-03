@@ -161,8 +161,8 @@ export function evaluateSignal(
   const nCandles = Math.max(1, Math.ceil(durationMinutes / graphTimeframeMinutes));
   const nCut = Math.max(20, nCandles * 5);
 
-  if (!ohlcSeries || ohlcSeries.length < 15) {
-    return getEmptyNoTradeResult(`Insufficient visibility. Need at least 15 candles (found ${ohlcSeries ? ohlcSeries.length : 0}).`);
+  if (!ohlcSeries || ohlcSeries.length < 5) {
+    return getEmptyNoTradeResult(`Insufficient visibility. Need at least 5 candles (found ${ohlcSeries ? ohlcSeries.length : 0}).`);
   }
 
   // --- Step 1: Pre-flight Integrity & Physical Violations Checks (Hard Blocks) ---
@@ -232,8 +232,8 @@ export function evaluateSignal(
 
     // J2 — Oscillators
     if (k.includes('rsi') || k.includes('stoch') || k.includes('oscillator')
-        || k.includes('cci') || k.includes('williamsr')
-        || c.includes('getrsi') || c.includes('getstoch')) return 'J2';
+        || k.includes('cci') || k.includes('williamsr') || k.includes('macd')
+        || c.includes('getrsi') || c.includes('getstoch') || c.includes('getmacd')) return 'J2';
 
     // J3 — Reversal / Boundary / Pattern reversals / Divergences / Structure
     const J3_KEYS = [
@@ -327,7 +327,7 @@ export function evaluateSignal(
   let techBullJ3 = 0, techBearJ3 = 0;
 
   evaluationVotes.forEach(v => {
-    if (v.vote !== 'SKIP') processedCount++;
+    processedCount++;
     const isBull = v.vote === 'BULL';
     const isBear = v.vote === 'BEAR';
     const pointsEarned = v.score || 0;
@@ -367,9 +367,25 @@ export function evaluateSignal(
       techBearJ3 += mPts;
     }
 
-    if (isBull) {
+    // Determine the proprietary side of this technique dynamically
+    const kName = v.name.toLowerCase();
+    let propSide: 'BULL' | 'BEAR' = 'BULL';
+    if (kName.includes('oversold') || kName.includes('bull') || kName.includes('lower') || kName.includes('golden') || kName.includes('hammer') || kName.includes('morning') || kName.includes('bottom') || kName.includes('call')) {
+      propSide = 'BULL';
+    } else if (kName.includes('overbought') || kName.includes('bear') || kName.includes('upper') || kName.includes('death') || kName.includes('shooting') || kName.includes('evening') || kName.includes('top') || kName.includes('put')) {
+      propSide = 'BEAR';
+    } else {
+      const bearishKeys = ['rsioverbought', 'stochoverbought', 'macdbearcross', 'bollingerupperbreak', 'emadeathcross', 'shootingstar'];
+      if (bearishKeys.includes(kName.replace(/[\s_-]/g, ''))) {
+        propSide = 'BEAR';
+      } else {
+        propSide = 'BULL';
+      }
+    }
+
+    if (isBull || (propSide === 'BULL' && !isBear)) {
       bullList.push(obj);
-    } else if (isBear) {
+    } else {
       bearList.push(obj);
     }
   });
@@ -467,8 +483,10 @@ export function evaluateSignal(
   }
 
   if (isCustomList) {
-    bullJ1Intrinsic = 0;
-    bearJ1Intrinsic = 0;
+    // Retain 60% of intrinsic indicators as a baseline model so systems are never dead,
+    // allowing custom loaded techniques to build upon and perfect the analysis.
+    bullJ1Intrinsic *= 0.60;
+    bearJ1Intrinsic *= 0.60;
   }
   const bullJ1Raw = bullJ1Intrinsic + techBullJ1;   // intrinsic + user techniques
   const bearJ1Raw = bearJ1Intrinsic + techBearJ1;
@@ -593,8 +611,10 @@ export function evaluateSignal(
   }
 
   if (isCustomList) {
-    bullJ2Intrinsic = 0;
-    bearJ2Intrinsic = 0;
+    // Retain 60% of intrinsic indicators as a baseline model so systems are never dead,
+    // allowing custom loaded techniques to build upon and perfect the analysis.
+    bullJ2Intrinsic *= 0.60;
+    bearJ2Intrinsic *= 0.60;
   }
   const bullJ2Raw = bullJ2Intrinsic + techBullJ2;
   const bearJ2Raw = bearJ2Intrinsic + techBearJ2;
@@ -744,10 +764,12 @@ export function evaluateSignal(
   }
 
   if (isCustomList) {
-    bullJ3Intrinsic = 0;
-    bearJ3Intrinsic = 0;
-    bullBlowOffSurplus = 0;
-    bearBlowOffSurplus = 0;
+    // Retain 60% of intrinsic indicators as a baseline model so systems are never dead,
+    // allowing custom loaded techniques to build upon and perfect the analysis.
+    bullJ3Intrinsic *= 0.60;
+    bearJ3Intrinsic *= 0.60;
+    bullBlowOffSurplus *= 0.60;
+    bearBlowOffSurplus *= 0.60;
   }
   const bullJ3Raw = bullJ3Intrinsic + techBullJ3;
   const bearJ3Raw = bearJ3Intrinsic + techBearJ3;
@@ -850,24 +872,38 @@ export function evaluateSignal(
   let skepticMultiplier = 1.0;
   const skepticReasons: string[] = [];
 
-  // 1. Z-Score explosive deviation (>2.5) => mult 0.60
+  const J1_dominates = Math.max(cases.bull.j1, cases.bear.j1) > Math.max(cases.bull.j3, cases.bear.j3);
+  const isTrendFollowingTrade = J1_dominates && (Math.abs(lastSlope) > 0.05);
+  const currentAtr = techCache.atrVals[last];
+  const atrMean = techCache.atrVals.slice(-20).filter((v: number) => !isNaN(v)).reduce((sum: number, v: number) => sum + v, 0) / 20;
+
+  // 1. Z-Score explosive deviation (>2.5) => mult 0.60 (or breakout protection)
   if (Math.abs(zScoreData.zScore) > 2.5) {
-    skepticMultiplier *= 0.60;
-    skepticReasons.push(`Explosive candle volatility (Z-score=${zScoreData.zScore.toFixed(2)} > 2.5)`);
+    if (isTrendFollowingTrade) {
+      skepticMultiplier *= 0.85;
+      skepticReasons.push(`Strong trend expansion validated (Z-score=${zScoreData.zScore.toFixed(2)} > 2.5, breakout alignment)`);
+    } else {
+      skepticMultiplier *= 0.60;
+      skepticReasons.push(`Explosive candle volatility (Z-score=${zScoreData.zScore.toFixed(2)} > 2.5)`);
+    }
   }
 
   // 2. ATR expansion Check (>1.8x average) => mult 0.70
-  const atrMean = techCache.atrVals.slice(-20).filter((v: number) => !isNaN(v)).reduce((sum: number, v: number) => sum + v, 0) / 20;
-  const currentAtr = techCache.atrVals[last];
   if (!isNaN(currentAtr) && atrMean > 0 && currentAtr > 1.8 * atrMean) {
-    skepticMultiplier *= 0.70;
-    skepticReasons.push(`ATR volatility spike (${currentAtr.toFixed(4)} > 1.8x average ${atrMean.toFixed(4)})`);
+    if (isTrendFollowingTrade) {
+      skepticMultiplier *= 0.90;
+      skepticReasons.push(`ATR momentum breakout verified (${currentAtr.toFixed(4)} > 1.8x average ${atrMean.toFixed(4)})`);
+    } else {
+      skepticMultiplier *= 0.70;
+      skepticReasons.push(`ATR volatility spike (${currentAtr.toFixed(4)} > 1.8x average ${atrMean.toFixed(4)})`);
+    }
   }
 
-  // 3. Slope strength gate (<0.15) => mult 0.70
-  if (Math.abs(lastSlope) < 0.15) {
+  // 3. Asset-Agnostic ATR-Normalized Slope Flat Gate
+  const slopeInAtrUnits = (currentAtr && currentAtr > 0) ? Math.abs(lastSlope) / currentAtr : Math.abs(lastSlope) / (closes[last] * 0.001);
+  if (slopeInAtrUnits < 0.12) {
     skepticMultiplier *= 0.70;
-    skepticReasons.push(`Flat Trend Slope (${lastSlope.toFixed(3)} belongs to stagnation range)`);
+    skepticReasons.push(`Flat Normalized Trend Slope (${slopeInAtrUnits.toFixed(3)} ATR-units belongs to stagnation range)`);
   }
 
   // 4. RQA stability limits (Laminarity < 0.1, Determinism < 0.15) => mult 0.50

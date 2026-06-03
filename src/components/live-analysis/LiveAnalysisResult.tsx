@@ -46,7 +46,7 @@ export function LiveAnalysisResult({
   entryClose, exitClose, absoluteMin, absoluteMax, splitXPercent
 }: Props) {
   const [isAutopsyOpen, setIsAutopsyOpen] = useState(false);
-  const [showTechniques, setShowTechniques] = useState(mode === 'test' || mode === 'bulk');
+  const [showTechniques, setShowTechniques] = useState(false);
 
   if (!analysis) return null;
 
@@ -65,11 +65,17 @@ export function LiveAnalysisResult({
   const maxTotal  = Math.max(totalBull, totalBear);
   const isStrong  = decisionValue === 'STRONG SIGNAL' && maxTotal >= 4.0;
 
+  const hasWinner = winnerValue === 'BULL' || winnerValue === 'BEAR';
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="bg-[#14161C] rounded-[24px] border border-white border-opacity-10 p-6 shadow-2xl mb-8 overflow-hidden relative"
+      className={`rounded-[24px] border p-6 shadow-2xl mb-8 overflow-hidden relative transition-all duration-500 ${
+        winnerValue === 'BULL' ? 'bg-[#031d10]/95 border-green-500/50 shadow-green-950/40' :
+        winnerValue === 'BEAR' ? 'bg-[#290508]/95 border-red-500/50 shadow-red-950/40' :
+        'bg-[#14161C] border-white/10 shadow-black'
+      }`}
     >
       {/* Visual Polish: Glassmorphism/Tactical Background */}
       <div className="absolute top-0 right-0 w-64 h-64 bg-[#D9B382]/5 rounded-full -mr-32 -mt-32 blur-3xl pointer-events-none" />

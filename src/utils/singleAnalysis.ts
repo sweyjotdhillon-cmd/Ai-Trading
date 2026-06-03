@@ -423,7 +423,7 @@ export async function runSingleAnalysis(params: {
   let autoGradeGeometry: AutoGradeGeometry | null = null;
   let tempRightPipe: any = null;
 
-  if (isTestMode && meta.candlesLength && meta.candlesLength > 10) {
+  if (isTestMode && meta.candlesLength && meta.candlesLength > 5) {
     const tfMinTest  = parseDurationToMinutes(params.graphTimeframe);
     const durMinTest = parseDurationToMinutes(params.investmentDuration);
     
