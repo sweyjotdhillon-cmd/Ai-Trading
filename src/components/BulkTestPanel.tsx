@@ -9,6 +9,7 @@ import { BatchManifest, BatchManifestEntry, validateBatchManifest } from '../typ
 
 import { BatchAutopsyReport } from './BatchAutopsyReport';
 import { useWakeLock } from '../hooks/useWakeLock';
+import { ComplianceFooter } from './ComplianceFooter';
 
 export type MasterAutopsySummary = {
   title: string;
@@ -1144,6 +1145,7 @@ export function BulkTestPanel({
              )}
           </View>
         )}
+        <ComplianceFooter />
       </View>
     </View>
   );

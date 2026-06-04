@@ -9,6 +9,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { X, ShieldAlert, CheckCircle, Copy, Share2, Activity, Trash2 } from 'lucide-react';
 import tw from 'twrnc';
+import { ComplianceFooter } from './ComplianceFooter';
 
 interface Props {
   show: boolean;
@@ -326,6 +327,7 @@ export function SystemSettingsModal({ show, onClose }: Props) {
                     Offline Math Engine is Active. No external APIs used.
                   </Text>
                 </View>
+                <ComplianceFooter />
               </ScrollView>
             </motion.div>
           </View>

@@ -127,5 +127,17 @@ ChartLens has completed a targeted surgical upgrade to its quantitative core to 
 *   **Strict Outcome Evaluation Sync**: Re-oriented the performance scoring and trade profitability direction calculations (`actualDirection`) in both live backtests and batch-manifest validation. Trade outcomes are evaluated by comparing the final exit close rate `ohlc[N-1].close` directly to this structurally correct `candle.open` price, fully eliminating any intermediate closed gaps or offset inaccuracies during sliced chronological timeline calculations.
 *   **Polished Trajectory Badge Identifiers**: Rendered dedicated descriptive indicators (`(Broad Bottom)` for bullish and `(Broad Top)` for bearish) inside the individual dropdown log cards, providing full visibility and confirmation of candle physical geometry mapping.
 
+---
+
+## 11. Regulatory Notice (India)
+
+ChartLens is designed and built in compliance with SEBI regulatory guidelines and exchange policies in India:
+
+1.  **Educational Tool Only (Non-Advisory Portfolio Limit)**: ChartLens is **NOT registered** with the Securities and Exchange Board of India (SEBI) as an Investment Adviser (IA) under the SEBI (Investment Advisers) Regulations, 2013, or as a Research Analyst (RA) under the SEBI (Research Analysts) Regulations, 2014. It operates solely as an educational, quantitative chart analysis utility.
+2.  **No Algo Order Execution / API Placement**: In strict compliance with SEBI Circular `SEBI/HO/MIRSD/MIRSD-PoD/P/CIR/2025/0000013` (governing automated trade execution for retail clients), this application **does NOT place automated orders**, link to broker execution APIs, or engage in automated algorithmic execution. All signals are analytical outputs on a manual-only advisory sandbox overlay.
+3.  **VWAP is a Proxy (HLC/3)**: Because volume is not extracted from static or camera-streamed chart images in the pixel vision pipeline, the indicator labeled `VWAP-Proxy*` uses an HLC/3 rolling calculation. It is not a true Volume Weighted Average Price (VWAP) and is labeled accordingly in the UI.
+4.  **No Short-Selling Support**: Although the SEBI Short-Selling Framework (including the NSE Circular `CMPL60221` and January 2024 Master Circular) permits institutional and retail intraday short selling in the cash market under specific borrowing parameters, this application enforces a strict, **long-only** retail cash perspective. No bearish directional trades or naked short execution recommendations are emitted. All bear scoring operates purely as a veto/invalidation weight.
+
+
 
 

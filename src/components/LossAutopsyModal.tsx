@@ -3,6 +3,7 @@ import { View, Text, Pressable, ScrollView, Platform, ActivityIndicator } from '
 import { X, Upload, Activity, AlertTriangle, CheckCircle, Search, Download } from 'lucide-react';
 import tw from 'twrnc';
 import { motion, useReducedMotion } from 'motion/react';
+import { ComplianceFooter } from './ComplianceFooter';
 
 
 
@@ -966,7 +967,7 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, p
 
               </View>
             )}
-
+            <ComplianceFooter />
           </ScrollView>
         </motion.div>
     </View>

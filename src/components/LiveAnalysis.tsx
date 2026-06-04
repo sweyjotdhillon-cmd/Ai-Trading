@@ -3,6 +3,7 @@ import { LiveAnalysisDashboard } from './live-analysis/LiveAnalysisDashboard';
 import { LiveAnalysisDebate } from './live-analysis/LiveAnalysisDebate';
 import { LiveAnalysisResult } from './live-analysis/LiveAnalysisResult';
 import { ScalpCopilotHUD } from './ScalpCopilotHUD';
+import { ComplianceFooter } from './ComplianceFooter';
 import { useState, useRef, useEffect } from 'react';
 import { useWakeLock } from '../hooks/useWakeLock';
 import { antiImagine } from '../utils/antiImagine';
@@ -90,6 +91,17 @@ export function LiveAnalysis() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [calibrationFrame, setCalibrationFrame] = useState<ImageData | null>(null);
   const [isStable, setIsStable] = useState(false);
+  const [showDisclaimer, setShowDisclaimer] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const accepted = localStorage.getItem('chartlens_disclaimer_accepted_v2');
+        return accepted !== 'true';
+      } catch {
+        return true;
+      }
+    }
+    return false;
+  });
 
   // Explicit session restore state
   const [hasSavedSession, setHasSavedSession] = useState(() => {
@@ -1230,8 +1242,61 @@ export function LiveAnalysis() {
           absoluteMax={absoluteMax}
           splitXPercent={splitXPercent}
         />
+        <ComplianceFooter />
       </View>
     </ScrollView>
+
+    {showDisclaimer && (
+      <View style={tw`absolute inset-0 bg-black/95 z-[999] justify-center items-center p-6`}>
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="max-w-md w-full bg-[#0E0E10] border border-yellow-500/20 rounded-3xl p-6 shadow-2xl relative overflow-hidden"
+        >
+          <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-yellow-500 via-amber-400 to-yellow-600" />
+          <div style={tw`flex-row items-center gap-3 mb-4`}>
+            <View style={tw`p-2 bg-yellow-500/10 rounded-xl border border-yellow-500/30`}>
+              <AlertTriangle className="text-yellow-400" size={20} />
+            </View>
+            <View>
+              <Text style={tw`font-sans font-black text-sm text-zinc-100 uppercase tracking-wider`}>Educational Utility Only</Text>
+              <Text style={tw`font-mono text-[9px] text-zinc-500 uppercase tracking-widest`}>Regulatory Notice (SEBI / India)</Text>
+            </View>
+          </div>
+
+          <ScrollView style={tw`max-h-[250px] mb-6 pr-1`}>
+            <Text style={tw`font-sans text-xs text-zinc-300 leading-relaxed mb-4`}>
+              Genspark <Text style={tw`font-bold text-yellow-400`}>ai trading ChartLens</Text> is an <Text style={tw`font-bold text-zinc-100`}>Educational Analysis Tool</Text>. It is <Text style={tw`font-bold text-emerald-400`}>NOT registered</Text> with the Securities and Exchange Board of India (SEBI) as an Investment Adviser, Research Analyst, or Portfolio Manager.
+            </Text>
+            <Text style={tw`font-sans text-xs text-zinc-400 leading-relaxed mb-4`}>
+              This application extracts geometrical structures and indicator math from pasted or streamed chart images to generate experimental analysis. All outputs are for conceptual and simulation learning only — they do <Text style={tw`font-bold text-zinc-200`}>not constitute personalized advice, buy/sell recommendations</Text>, or promises of profits.
+            </Text>
+            <Text style={tw`font-sans text-xs text-zinc-400 leading-relaxed`}>
+              Trading involves a high risk of permanent capital loss. You are solely responsible for executing any actual trades on your registered broker. By placing orders, you verify that you understand standard exchange risk caps and compliance frameworks.
+            </Text>
+          </ScrollView>
+
+          <Pressable
+            onPress={() => {
+              if (typeof window !== 'undefined') {
+                try {
+                  localStorage.setItem('chartlens_disclaimer_accepted_v2', 'true');
+                } catch (e) {
+                  // Ignore localStorage quota or access errors
+                }
+              }
+              setShowDisclaimer(false);
+            }}
+            style={({ pressed }) => [
+              tw`bg-yellow-500 h-12 rounded-xl items-center justify-center flex-row shadow-lg shadow-yellow-950/20`,
+              { opacity: pressed ? 0.75 : 1 }
+            ]}
+          >
+            <Text style={tw`text-[#1A1308] font-black uppercase tracking-wider text-sm`}>I Understand & Accept</Text>
+          </Pressable>
+        </motion.div>
+      </View>
+    )}
     </View>
   );
 }

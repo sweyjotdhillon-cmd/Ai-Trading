@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { motion } from 'motion/react';
 import { 
   Activity, Shield, Settings, TrendingUp, AlertCircle, CheckCircle, 
   RefreshCw, DollarSign, Target, Award, Plus, Minus, Info, Clipboard, Play, RefreshCcw
