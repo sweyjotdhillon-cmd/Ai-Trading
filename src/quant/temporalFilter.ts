@@ -1,7 +1,7 @@
 import { temporalFilterConfig } from '../config/temporalFilterConfig';
 
 export interface TemporalFilterResult {
-  signal: 'CALL' | 'PUT' | 'NO_TRADE';
+  signal: 'LONG' | 'NO_TRADE';
   confidence: number;
   finalScore: number;
   stable: boolean;
@@ -9,18 +9,17 @@ export interface TemporalFilterResult {
 
 let smoothedConfidence: number | null = null;
 let smoothedFinalScore: number | null = null;
-let previousDirection: 'CALL' | 'PUT' | 'NO_TRADE' = 'NO_TRADE';
+let previousDirection: 'LONG' | 'NO_TRADE' = 'NO_TRADE';
 
 export function applyTemporalFilter(
-  rawSignal: 'CALL' | 'PUT' | 'NO_TRADE',
+  rawSignal: 'LONG' | 'NO_TRADE',
   rawConfidence: number,
   rawFinalScore: number,
   rawStable: boolean
 ): TemporalFilterResult {
   const { alpha, confidenceThreshold } = temporalFilterConfig;
 
-  // If the directional signal changes entirely (CALL <-> PUT), break the EMA chain.
-  // Blending opposite confidences violates deterministic explainability.
+  // EMA dampening/reset if the direction changes
   if (rawSignal !== 'NO_TRADE' && previousDirection !== 'NO_TRADE' && rawSignal !== previousDirection) {
     smoothedConfidence = null;
     smoothedFinalScore = null;
@@ -79,10 +78,10 @@ export function applyScalpTemporalFilter(
   rawFinalScore: number,
   rawStable: boolean
 ): { signal: ScalpSignal; confidence: number; finalScore: number; stable: boolean } {
-  const mappedSignal = rawSignal === 'BUY' ? 'CALL' : 'NO_TRADE';
+  const mappedSignal = (rawSignal === 'BUY' || rawSignal === 'LONG') ? 'LONG' : 'NO_TRADE';
   const res = applyTemporalFilter(mappedSignal, rawConfidence, rawFinalScore, rawStable);
   return {
-    signal: res.signal === 'CALL' ? 'BUY' : 'NO_TRADE',
+    signal: res.signal === 'LONG' ? rawSignal : 'NO_TRADE',
     confidence: res.confidence,
     finalScore: res.finalScore,
     stable: res.stable
@@ -90,7 +89,6 @@ export function applyScalpTemporalFilter(
 }
 
 export function resetTemporalFilter(): void {
-
   smoothedConfidence = null;
   smoothedFinalScore = null;
   previousDirection = 'NO_TRADE';

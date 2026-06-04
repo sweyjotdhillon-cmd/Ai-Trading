@@ -119,9 +119,8 @@ export async function runSingleAnalysis(params: {
   imageDataUrl: string;
   stock: string;
   graphTimeframe: string;
-  investmentDuration: string;
+  holdingMinutes?: string;
   investmentAmount: string;
-  profitabilityPercent: string;
   techniquesList: any[];
   encryptedSystemTokens?: string;
   signal: AbortSignal;
@@ -155,6 +154,8 @@ export async function runSingleAnalysis(params: {
   const t0 = performance.now();
   const { imageDataUrl, onJudgeLogs, isTestMode, onDirectionFound } = params;
 
+  const activeDuration = params.holdingMinutes || '5m';
+
 
 
 
@@ -180,7 +181,7 @@ export async function runSingleAnalysis(params: {
 
 
     const tfM = parseDurationToMinutes(params.graphTimeframe);
-    const durM = parseDurationToMinutes(params.investmentDuration);
+    const durM = parseDurationToMinutes(activeDuration);
 
     if (params.isManifestCheck) {
       try {
@@ -307,7 +308,7 @@ export async function runSingleAnalysis(params: {
       imageData: imgData,
       graphTimeframeMinutes: tfM,
       graphTimeframe: params.graphTimeframe,
-      investmentDurationMinutes: durM,
+      holdingMinutesVal: durM,
       techniquesList: params.techniquesList,
       isTestMode: params.isTestMode,
       isManifestCheck: params.isManifestCheck,
@@ -431,7 +432,7 @@ export async function runSingleAnalysis(params: {
 
   if (isTestMode && meta.candlesLength && meta.candlesLength > 5) {
     const tfMinTest  = parseDurationToMinutes(params.graphTimeframe);
-    const durMinTest = parseDurationToMinutes(params.investmentDuration);
+    const durMinTest = parseDurationToMinutes(activeDuration);
     
     // User request: Determine the step back purely and directly from the investment duration in minutes.
     // If investment duration is 3 min, move back exactly 3 candles. If 5 min, move back exactly 5 candles.
@@ -510,7 +511,7 @@ export async function runSingleAnalysis(params: {
               msgId,
               imageData: leftImgData,
               graphTimeframeMinutes: tfM,
-              investmentDurationMinutes: durM,
+              holdingMinutesVal: durM,
               techniquesList: params.techniquesList,
               isTestMode: true,
             });
@@ -533,7 +534,7 @@ export async function runSingleAnalysis(params: {
            const N_backtest = backtestOhlc.length;
            let triggerCandle: any = null;
            if (N_backtest > 0) {
-             const targetCutCount = candlesCut !== undefined ? candlesCut : Math.max(1, Math.round(parseDurationToMinutes(params.investmentDuration) || 3));
+             const targetCutCount = candlesCut !== undefined ? candlesCut : Math.max(1, Math.round(parseDurationToMinutes(activeDuration) || 3));
              if (N_backtest > targetCutCount) {
                triggerCandle = backtestOhlc[N_backtest - targetCutCount];
              } else {
@@ -631,7 +632,7 @@ export async function runSingleAnalysis(params: {
   const threePriorCandles: any[] = [];
   
   if (N_ohlc > 0) {
-    const targetCutCount = candlesCut !== undefined ? candlesCut : (isTestMode ? Math.max(1, Math.round(parseDurationToMinutes(params.investmentDuration) || 3)) : 1);
+    const targetCutCount = candlesCut !== undefined ? candlesCut : (isTestMode ? Math.max(1, Math.round(parseDurationToMinutes(activeDuration) || 3)) : 1);
     if (isTestMode && N_ohlc > targetCutCount) {
       startCandle = fullOhlc[N_ohlc - targetCutCount];
       for (let idx = 3; idx >= 1; idx--) {

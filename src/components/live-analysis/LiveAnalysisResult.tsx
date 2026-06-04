@@ -10,7 +10,6 @@ interface Props {
   analysis: any;
   mode: 'live' | 'test' | 'bulk';
   prefersReducedMotion: boolean;
-  profitabilityPercent: string;
   investmentAmount: string;
   confirmedOutcome: 'WIN' | 'LOSS' | null;
   saveToStats: (analysisData: any, outcome: 'WIN' | 'LOSS') => void;
@@ -38,7 +37,7 @@ interface Props {
 }
 
 export function LiveAnalysisResult({
-  analysis, mode, prefersReducedMotion, profitabilityPercent, investmentAmount,
+  analysis, mode, prefersReducedMotion, investmentAmount,
   confirmedOutcome, saveToStats, setMode, tradingDirection, actualDirection,
   testModeLeftSlice, testModeRightSlice, autoGradeStatus, autoGradeReason,
   autoGradeRawOutcome, autoGradeConfidence, handleRegrade, setConfirmedOutcome,
@@ -50,6 +49,7 @@ export function LiveAnalysisResult({
 
   if (!analysis) return null;
 
+  const scalpPlan = analysis.scalpingPlan || analysis.judge?.tradeDetails?.scalpingPlan || analysis.scalpDecision?.plan || analysis.debugTrace?.scalpDecision?.plan;
   const judgeObj = analysis.judge || {};
   const decisionValue = judgeObj.decision || 'NO_TRADE';
   const formattedReportValue = judgeObj.formattedReport || '';
@@ -411,10 +411,10 @@ export function LiveAnalysisResult({
           </Text>
         </View>
         <View style={tw`flex-1 min-w-[120px] p-3 bg-black bg-opacity-20 rounded-xl border border-white border-opacity-10`}>
-          <Text style={tw`text-[8px] font-black text-[#8B95B0] uppercase mb-1`}>Potential Profit</Text>
+          <Text style={tw`text-[8px] font-black text-[#8B95B0] uppercase mb-1`}>Expected Reward</Text>
           <Text style={tw`text-[#22C55E] font-black text-lg`}>
-            <motion.span key={((Number(profitabilityPercent)/100) * Number(investmentAmount)).toFixed(2)} initial={{ y: prefersReducedMotion ? 0 : -6, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: prefersReducedMotion ? 0 : 0.2 }}>
-              +${((Number(profitabilityPercent)/100) * Number(investmentAmount)).toFixed(2)}
+            <motion.span key={scalpPlan ? scalpPlan.potentialRewardRupees : 'na'} initial={{ y: prefersReducedMotion ? 0 : -6, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: prefersReducedMotion ? 0 : 0.2 }}>
+              {scalpPlan ? `₹${scalpPlan.potentialRewardRupees.toFixed(2)}` : 'DYNAMIC'}
             </motion.span>
           </Text>
         </View>
@@ -811,7 +811,7 @@ export function LiveAnalysisResult({
         isOpen={isAutopsyOpen}
         onClose={() => setIsAutopsyOpen(false)}
         analysisData={analysis}
-        tradeSignal={analysis.direction === 'UP' ? 'CALL' : 'PUT'}
+        tradeSignal={analysis.direction === 'LONG' ? 'LONG' : 'NO_TRADE'}
         prefilledResultImage={analysis.finalImageForAnalysis}
       />
     </motion.div>

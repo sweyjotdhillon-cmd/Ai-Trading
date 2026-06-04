@@ -9,10 +9,8 @@ export interface BatchManifestEntry {
   autoGradeGeometry?: AutoGradeGeometry;
   stock?: string;                 // e.g. "Bitcoin"
   graphTimeframe?: string;        // e.g. "5 minutes" — must match existing timeframes[]
-  investmentDuration?: string;    // e.g. "5m" — must match existing durations[]
   investmentAmount?: number;      // default 100
-  profitabilityPercent?: number;  // default 85
-  expectedOutcome?: 'UP' | 'DOWN' | 'UNKNOWN';   // for backtest accuracy scoring
+  expectedOutcome?: 'LONG' | 'FLAT' | 'UNKNOWN';   // for backtest accuracy scoring
   notes?: string;                 // freeform user note
   techniqueOverrides?: string[];  // override the global techniquesList for this entry
   startCandle?: any;              // Detected Trade starting candle

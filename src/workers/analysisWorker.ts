@@ -76,7 +76,7 @@ self.onmessage = async (e: MessageEvent) => {
       if (data.isManifestCheck) {
         const pipe = await buildPipelineResult(data.imageData) as any;
         const ohlc = pipe.ohlcSeries || [];
-        const n = Number(data.investmentDurationMinutes) || 5;
+        const n = Number(data.holdingMinutesVal) || 5;
         let actualDirection: 'UP' | 'DOWN' | 'FLAT' | 'UNKNOWN' = 'UNKNOWN';
         if (ohlc.length > 0) {
           const lastCandle = ohlc[ohlc.length - 1];
@@ -101,7 +101,7 @@ self.onmessage = async (e: MessageEvent) => {
 
 
       const tfMinutes = data.graphTimeframeMinutes || 30;
-      const durationMinutes = data.investmentDurationMinutes || 5;
+      const durationMinutes = data.holdingMinutesVal || 5;
       const hRatio = Math.max(0.001, Math.min(4.0, durationMinutes / tfMinutes));
       let hClass: 'INTRA_CANDLE' | 'NEAR_FULL' | 'MULTI_CANDLE' = 'INTRA_CANDLE';
       if (hRatio >= 0.8 && hRatio <= 1.2) hClass = 'NEAR_FULL';

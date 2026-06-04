@@ -13,15 +13,14 @@ interface Props {
   showTfPicker: boolean;
   setShowTfPicker: (val: boolean) => void;
   timeframes: string[];
-  investmentDuration: string;
-  setInvestmentDuration: (val: string) => void;
+  holdingMinutes: string;
+  setHoldingMinutes: (val: string) => void;
   showDurPicker: boolean;
   setShowDurPicker: (val: boolean) => void;
   durations: string[];
   investmentAmount: string;
   setInvestmentAmount: (val: string) => void;
-  profitabilityPercent: string;
-  setProfitabilityPercent: (val: string) => void;
+
   mode: 'live' | 'test' | 'bulk';
   setMode: (val: 'live' | 'test' | 'bulk') => void;
   isCameraActive: boolean;
@@ -50,8 +49,8 @@ interface Props {
 export function LiveAnalysisDashboard({
   symbols, stockName, setStockName,
   graphTimeframe, setGraphTimeframe, showTfPicker, setShowTfPicker, timeframes,
-  investmentDuration, setInvestmentDuration, showDurPicker, setShowDurPicker, durations,
-  investmentAmount, setInvestmentAmount, profitabilityPercent, setProfitabilityPercent,
+  holdingMinutes, setHoldingMinutes, showDurPicker, setShowDurPicker, durations,
+  investmentAmount, setInvestmentAmount,
   mode, setMode, isCameraActive, startCamera, stopCamera, videoRef, pipActive,
   scoutActive, scoutData, handlePickImage, handleDrop, preventDefault, selectedImage,
   techniquesList, encryptedSystemTokens, saveToStats,
@@ -131,24 +130,24 @@ export function LiveAnalysisDashboard({
                </View>
             </View>
             <View style={tw`flex-1 min-w-[45%]`}>
-               <Text style={tw`text-[8px] font-black text-[#4B5570] uppercase tracking-wider mb-1.5`}>Duration</Text>
+               <Text style={tw`text-[8px] font-black text-[#4B5570] uppercase tracking-wider mb-1.5`}>Holding mins</Text>
                <View style={tw`relative`}>
                   <Pressable
                     onPress={() => { setShowDurPicker(!showDurPicker); setShowTfPicker(false); }}
                     style={({ pressed }) => [tw`bg-black bg-opacity-20 border border-white border-opacity-10 h-10 rounded-lg px-3 flex-row items-center justify-between`, { opacity: pressed ? 0.7 : 1 }]}
                   >
-                    <Text style={{ color: '#D9B382', fontWeight: '900', fontSize: 11 }}>{investmentDuration}</Text>
+                    <Text style={{ color: '#D9B382', fontWeight: '900', fontSize: 11 }}>{holdingMinutes}</Text>
                     <ChevronDown size={12} color="#D9B382" />
                   </Pressable>
                   {showDurPicker && (
                     <View style={[tw`absolute top-12 left-0 right-0 bg-[#2A2E39] border-2 border-[#D9B382] rounded-xl p-2 shadow-2xl`, { zIndex: 99999, elevation: 10 }]}>
                       {durations.map((d) => (
                         <Pressable
-                          key={d}
-                          onPress={() => { setInvestmentDuration(d); setShowDurPicker(false); }}
-                          style={({ pressed }) => [tw`py-4 px-3 rounded-lg border-b border-white border-opacity-10`, investmentDuration === d && tw`bg-[#D9B382]/20`, { opacity: pressed ? 0.7 : 1 }]}
+                           key={d}
+                           onPress={() => { setHoldingMinutes(d); setShowDurPicker(false); }}
+                           style={({ pressed }) => [tw`py-4 px-3 rounded-lg border-b border-white border-opacity-10`, holdingMinutes === d && tw`bg-[#D9B382]/20`, { opacity: pressed ? 0.7 : 1 }]}
                         >
-                          <Text style={[tw`text-sm font-black`, investmentDuration === d ? tw`text-[#D9B382]` : tw`text-white`]}>{d}</Text>
+                          <Text style={[tw`text-sm font-black`, holdingMinutes === d ? tw`text-[#D9B382]` : tw`text-white`]}>{d}</Text>
                         </Pressable>
                       ))}
                     </View>
@@ -158,7 +157,7 @@ export function LiveAnalysisDashboard({
          </View>
 
          <View style={tw`flex-row flex-wrap gap-3`}>
-            <View style={tw`flex-1 min-w-[45%]`}>
+            <View style={tw`flex-1 w-full`}>
                <Text style={tw`text-[8px] font-black text-[#4B5570] uppercase tracking-wider mb-1.5`}>Capital</Text>
                <TextInput
                  style={tw`bg-black bg-opacity-20 border border-white border-opacity-10 h-10 rounded-lg px-3 text-white font-black text-xs w-full`}
@@ -166,15 +165,6 @@ export function LiveAnalysisDashboard({
                  onChangeText={setInvestmentAmount}
                  keyboardType="numeric"
                  placeholderTextColor="#4B5570"
-               />
-            </View>
-            <View style={tw`flex-1 min-w-[45%]`}>
-               <Text style={tw`text-[8px] font-black text-[#4B5570] uppercase tracking-wider mb-1.5`}>Payout (%)</Text>
-               <TextInput
-                 style={tw`bg-black bg-opacity-20 border border-white border-opacity-10 h-10 rounded-lg px-3 text-[#22C55E] font-black text-xs w-full`}
-                 value={profitabilityPercent}
-                 onChangeText={setProfitabilityPercent}
-                 keyboardType="numeric"
                />
             </View>
          </View>
@@ -283,9 +273,8 @@ export function LiveAnalysisDashboard({
               saveToStats={saveToStats}
               stockName={stockName}
               graphTimeframe={graphTimeframe}
-              investmentDuration={investmentDuration}
+              holdingMinutes={holdingMinutes}
               investmentAmount={investmentAmount}
-              profitabilityPercent={profitabilityPercent}
            />
          </View>
      </View>

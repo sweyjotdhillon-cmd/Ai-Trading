@@ -225,9 +225,9 @@ export const ScalpCopilotHUD: React.FC<ScalpCopilotHUDProps> = ({
               )
             ) : (
               <div className="flex-1 flex items-center justify-center py-6 bg-zinc-950/20 border border-dashed border-zinc-800/60 rounded-xl">
-                <Text style={tw`text-zinc-600 font-bold text-xs uppercase tracking-widest text-center`}>
+                <span className="text-zinc-600 font-bold text-[11px] uppercase tracking-widest text-center px-4">
                   Scalping Co-Pilot deactivated. Toggle "Activate" above to unlock.
-                </Text>
+                </span>
               </div>
             )}
           </div>

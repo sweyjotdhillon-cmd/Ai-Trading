@@ -5,12 +5,12 @@
  */
 
 const MAX_HISTORY = 100;
-const globalDecisionHistory: ('CALL' | 'PUT' | 'NO_TRADE')[] = [];
+const globalDecisionHistory: ('LONG' | 'NO_TRADE')[] = [];
 
 /**
  * Record a decision into the global history for rolling bias detection.
  */
-export function recordDecision(signal: 'CALL' | 'PUT' | 'NO_TRADE'): void {
+export function recordDecision(signal: 'LONG' | 'NO_TRADE'): void {
   globalDecisionHistory.push(signal);
   if (globalDecisionHistory.length > MAX_HISTORY) {
     globalDecisionHistory.shift();
@@ -25,19 +25,18 @@ export function resetDecisionHistory(): void {
 }
 
 /**
- * Retrieve current rolling historical CALL and PUT signal selection rates.
+ * Retrieve current rolling historical LONG signal selection rates.
  */
 export function getHistoricalRates() {
   const total = globalDecisionHistory.length;
   if (total === 0) {
-    return { bullRate: 0.333, bearRate: 0.333, flatRate: 0.334, total: 0 };
+    return { bullRate: 0.5, bearRate: 0.0, flatRate: 0.5, total: 0 };
   }
-  const bulls = globalDecisionHistory.filter(s => s === 'CALL').length;
-  const bears = globalDecisionHistory.filter(s => s === 'PUT').length;
+  const bulls = globalDecisionHistory.filter(s => s === 'LONG').length;
   const flats = globalDecisionHistory.filter(s => s === 'NO_TRADE').length;
   return {
     bullRate: bulls / total,
-    bearRate: bears / total,
+    bearRate: 0.0,
     flatRate: flats / total,
     total
   };
@@ -82,26 +81,16 @@ export function enforceNeutrality(
   const bullRate = config.historicalBullRate !== undefined 
     ? config.historicalBullRate 
     : getHistoricalRates().bullRate;
-  const bearRate = config.historicalBearRate !== undefined 
-    ? config.historicalBearRate 
-    : getHistoricalRates().bearRate;
 
   const biasStrength = config.biasCorrectionFactor;
 
   if (biasStrength > 0) {
-    const skew = bullRate - bearRate;
-    if (skew > 0.30) {
-      // Historical over-representation of BULL signals (CALL). Apply anti-bias correction.
-      const correctionFactor = Math.min(0.15, (skew - 0.30) * 0.5) * biasStrength * 10; 
+    if (bullRate > 0.70) {
+      // Historical over-representation of LONG signals (>70%). Apply anti-bias bull dampening correction.
+      const correctionFactor = Math.min(0.15, (bullRate - 0.70) * 0.5) * biasStrength * 10; 
       adjustedBull = bullTotal * (1 - correctionFactor);
       adjustedBear = bearTotal * (1 + correctionFactor);
-      neutralityActions.push(`BULL BIAS GUARD: Skew +${skew.toFixed(2)} > 0.30. Penalized BULL (-${(correctionFactor * 100).toFixed(1)}%), Boosted BEAR (+${(correctionFactor * 100).toFixed(1)}%)`);
-    } else if (skew < -0.30) {
-      // Historical over-representation of BEAR signals (PUT). Apply anti-bias correction.
-      const correctionFactor = Math.min(0.15, (-skew - 0.30) * 0.5) * biasStrength * 10;
-      adjustedBull = bullTotal * (1 + correctionFactor);
-      adjustedBear = bearTotal * (1 - correctionFactor);
-      neutralityActions.push(`BEAR BIAS GUARD: Skew ${skew.toFixed(2)} < -0.30. Penalized BEAR (-${(correctionFactor * 100).toFixed(1)}%), Boosted BULL (+${(correctionFactor * 100).toFixed(1)}%)`);
+      neutralityActions.push(`BULL DAMPENING: LONG rate ${bullRate.toFixed(2)} > 0.70. Penalized BULL (-${(correctionFactor * 100).toFixed(1)}%), Boosted BEAR (+${(correctionFactor * 100).toFixed(1)}%)`);
     }
   }
 
@@ -115,12 +104,12 @@ export function enforceNeutrality(
     neutralityActions.push(`SOFT BAND DAMP: Adjusted margin ${adjustedMargin.toFixed(3)} < softNeutralBand ${config.softNeutralBand}. Damped confidence from ${finalConfidence}% to ${adjustedConfidence}%`);
   }
 
-  // Define winning state based on final, adjusted values
-  let signal: 'CALL' | 'PUT' | 'NO_TRADE' = 'NO_TRADE';
+  // Define winning state based on final, adjusted values (Only LONG is permitted as trade direction; BEAR wins output NO_TRADE)
+  let signal: 'LONG' | 'NO_TRADE' = 'NO_TRADE';
   if (adjustedBull > adjustedBear) {
-    signal = 'CALL';
-  } else if (adjustedBear > adjustedBull) {
-    signal = 'PUT';
+    signal = 'LONG';
+  } else {
+    signal = 'NO_TRADE';
   }
 
   return {

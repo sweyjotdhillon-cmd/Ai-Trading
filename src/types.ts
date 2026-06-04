@@ -5,9 +5,9 @@ export interface AutopsyCategory {
 }
 
 export interface AutopsyResult {
-  tradeSignal: 'CALL' | 'PUT' | 'NO TRADE';
+  tradeSignal: 'LONG' | 'NO_TRADE';
   actualOutcome: string;
-  contrarianSignal: 'CALL' | 'PUT';
+  contrarianSignal?: 'LONG' | 'NO_TRADE';
   contrarianConfidence: number;
   contrarianRuling: string;
   rebutScores: {
@@ -105,21 +105,20 @@ export interface BehaviorProfile {
 
 export interface TradeAnalysis extends TradeAnalysisScalpAddon {
   executionTimeMs?: number;
-  predictedDirection?: 'UP' | 'DOWN' | 'NO_TRADE';
-  actualDirection?: 'UP' | 'DOWN' | 'FLAT';
+  predictedDirection?: 'LONG' | 'NO_TRADE';
+  actualDirection?: 'LONG' | 'FLAT';
   id: string;
   uid: string;
 
 
   timestamp: string;
   stock: string;
-  signal: 'CALL' | 'PUT' | 'NO TRADE';
+  signal: 'LONG' | 'NO_TRADE';
   market: 'CLEAN' | 'DEAD' | 'CHAOTIC';
   strength?: 'WEAK' | 'MODERATE' | 'STRONG';
   entry: 'NOW' | 'WAIT';
   probability: number;
   graphTimeframe?: string;
-  investmentDuration?: string;
   result?: 'WIN' | 'LOSS';
   followedRules?: boolean;
   mistakeType?: 'late entry' | 'bad market' | 'overtrade' | 'none';
@@ -143,7 +142,7 @@ export interface TradeAnalysis extends TradeAnalysisScalpAddon {
 }
 
 // ─── Scalping types ──────────────────────────────────────────
-export type ScalpSignal = 'BUY' | 'NO_TRADE' | 'WAIT' | 'EXIT';
+export type ScalpSignal = 'LONG' | 'BUY' | 'NO_TRADE' | 'WAIT' | 'EXIT';
 
 export type SLMode = 'ATR' | 'PERCENT' | 'STRUCTURE' | 'AUTO';
 export type TPMode = 'RR' | 'ATR' | 'PARTIAL_RR';

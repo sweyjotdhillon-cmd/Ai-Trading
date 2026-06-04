@@ -37,7 +37,7 @@ export interface JudgeVerdict {
 
 export interface DecisionResult extends JudgeVerdict {
   agent: 'JUDGE';
-  signal: 'CALL' | 'PUT' | 'NO_TRADE';
+  signal: 'LONG' | 'NO_TRADE';
   decision: 'STRONG SIGNAL' | 'WEAK';
   skepticVerdict: 'ACCEPT' | 'CAUTION' | 'WEAK';
   primaryEvidence: string;
@@ -964,7 +964,7 @@ export function evaluateSignal(
   const epsilonTie = neutralityConfig?.noTradePreference !== undefined ? neutralityConfig.noTradePreference : 0.05;
   const biasStrength = neutralityConfig?.biasCorrectionStrength !== undefined ? neutralityConfig.biasCorrectionStrength : 0.05;
 
-  let finalSignal: 'CALL' | 'PUT' | 'NO_TRADE' = 'NO_TRADE';
+  let finalSignal: 'LONG' | 'NO_TRADE' = 'NO_TRADE';
   let noTradeReason: string | null = null;
   let finalConfidence = initialConfidence;
   let adjustedBull = bullTotal;
@@ -990,7 +990,21 @@ export function evaluateSignal(
     nelMessages = nelResult.neutralityActions;
   } else {
     if (initialMargin >= epsilonTie) {
-      finalSignal = bullTotal > bearTotal ? 'CALL' : 'PUT';
+      // Scalp trading: LONG only if bull case is strong enough AND bear invalidation is not too high
+      const invalidationFactor = lastSlope > 0 && activeADX > 25 ? 0.4 : (lastSlope < 0 && activeADX > 25 ? 1.2 : 0.7);
+      const netConviction = adjustedBull - (adjustedBear * invalidationFactor);
+      if (adjustedBull >= minStrengthThreshold && netConviction >= minMarginThreshold) {
+        finalSignal = 'LONG';
+      } else {
+        finalSignal = 'NO_TRADE';
+        if (!noTradeReason) {
+          if (adjustedBull < minStrengthThreshold) {
+            noTradeReason = `Bull conviction too weak (${adjustedBull.toFixed(1)} < ${minStrengthThreshold.toFixed(1)}). No LONG entry.`;
+          } else {
+            noTradeReason = `Bear invalidation too strong (net conviction ${netConviction.toFixed(1)} < ${minMarginThreshold.toFixed(1)}). LONG entry blocked.`;
+          }
+        }
+      }
     }
   }
 
@@ -1031,10 +1045,9 @@ export function evaluateSignal(
   recordDecision(finalSignal);
 
   let finalScore = 0;
-  if (finalSignal === 'CALL') finalScore = adjustedBull * skepticMultiplier;
-  else if (finalSignal === 'PUT') finalScore = -(adjustedBear * skepticMultiplier);
+  if (finalSignal === 'LONG') finalScore = adjustedBull * skepticMultiplier;
 
-  const decisionLabel: 'STRONG SIGNAL' | 'WEAK' = (finalSignal === 'CALL' || finalSignal === 'PUT') ? 'STRONG SIGNAL' : 'WEAK';
+  const decisionLabel: 'STRONG SIGNAL' | 'WEAK' = finalSignal === 'LONG' ? 'STRONG SIGNAL' : 'WEAK';
 
   const primaryEvidence = rawWinner === 'BULL'
     ? 'Bullish momentum structure dominant'
@@ -1042,10 +1055,10 @@ export function evaluateSignal(
 
   let ruling = '';
   if (finalSignal === 'NO_TRADE') {
-    ruling = `NO_TRADE — ${noTradeReason} A clearer trend or score divergence is required to safely trade options signals.`;
+    ruling = `NO_TRADE — ${noTradeReason} A clearer trend or score divergence is required to safely execute scalp trades.`;
   } else {
     const skepticNote = skepticMultiplier < 0.85 ? ` Skeptic flagged concerns; multiplied score by ${skepticMultiplier.toFixed(2)}.` : '';
-    ruling = `${finalSignal} — ${primaryEvidence}. Margin ${margin.toFixed(1)}, Confidence ${finalConfidence}%.${skepticNote}`;
+    ruling = `${finalSignal} ENTRY — ${primaryEvidence}. Margin ${margin.toFixed(1)}, Confidence ${finalConfidence}%.${skepticNote}`;
   }
 
   // --- Step 5: Formatted Report Layout ---
@@ -1071,7 +1084,7 @@ export function evaluateSignal(
 
   const formattedReport =
 `┌─────────────────────────────────────┐
-│  ARBITRATOR FINAL VERDICT           │
+│  SCALP ENTRY VERDICT                │
 │  Signal: ${finalSignal.padEnd(21)}│
 │  Confidence: ${finalConfidence.toString().padEnd(3)}%                 │
 ├─────────────────────────────────────┤

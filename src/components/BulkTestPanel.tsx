@@ -28,9 +28,8 @@ interface BulkTestPanelProps {
   // Global context passes
   stockName: string;
   graphTimeframe: string;
-  investmentDuration: string;
+  holdingMinutes?: string;
   investmentAmount: string;
-  profitabilityPercent: string;
 }
 
 export type BatchRunStatus = 'Pending' | 'Running' | 'WIN' | 'LOSS' | 'NEUTRAL' | 'INVALID' | 'Error';
@@ -50,15 +49,14 @@ export function BulkTestPanel({
   saveToStats,
   stockName,
   graphTimeframe,
-  investmentDuration,
-  investmentAmount,
-  profitabilityPercent
+  holdingMinutes,
+  investmentAmount
 }: BulkTestPanelProps) {
   const [tab, setTab] = useState<'build' | 'run'>('build');
   
   // Tab 1 state
   const [images, setImages] = useState<File[]>([]);
-  const [buildDuration, setBuildDuration] = useState<'3:00' | '5:00'>('3:00');
+  const [buildDuration, setBuildDuration] = useState<'3m' | '5m'>('3m');
   const [generationProgress, setGenerationProgress] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
@@ -120,9 +118,8 @@ export function BulkTestPanel({
             imageDataUrl: imageData,
             stock: stockName,
             graphTimeframe: graphTimeframe,
-            investmentDuration: buildDuration, 
+            holdingMinutes: buildDuration, 
             investmentAmount: '100',
-            profitabilityPercent: '85',
             techniquesList: techniquesList,
             encryptedSystemTokens,
             signal: new AbortController().signal,
@@ -157,9 +154,8 @@ export function BulkTestPanel({
           imageData: imageData.length < MAX_PAYLOAD_KB * 1024 ? imageData : undefined, // ommit gigantic images to stop OOM
           stock: stockName,
           graphTimeframe: graphTimeframe,
-          investmentDuration: buildDuration,
+          holdingMinutes: buildDuration,
           investmentAmount: Number(investmentAmount) || 100,
-          profitabilityPercent: Number(profitabilityPercent) || 85,
           notes: notesSummary,
           startCandle: entryStartCandle,
           threePriorCandles: entryThreePriorCandles
@@ -442,9 +438,8 @@ export function BulkTestPanel({
             imageDataUrl,
             stock: item.entry.stock || stockName,
             graphTimeframe: item.entry.graphTimeframe || graphTimeframe,
-            investmentDuration: item.entry.investmentDuration || investmentDuration,
+            holdingMinutes: item.entry.holdingMinutes || holdingMinutes || '5m',
             investmentAmount: item.entry.investmentAmount ? String(item.entry.investmentAmount) : investmentAmount,
-            profitabilityPercent: item.entry.profitabilityPercent ? String(item.entry.profitabilityPercent) : profitabilityPercent,
             techniquesList: item.entry.techniqueOverrides || techniquesList,
             encryptedSystemTokens,
             signal: abortControllerRef.current!.signal,
@@ -745,19 +740,19 @@ export function BulkTestPanel({
             <input type="file" ref={existingManifestRef} accept=".json,application/json" onChange={loadExistingManifest} style={{display: 'none'}} />
 
             <View style={tw`pt-4 border-t border-white border-opacity-10`}>
-               <Text style={tw`text-[10px] font-black text-[#94a3b8] uppercase tracking-wider mb-2 text-center`}>Investment Duration (Cut Target Window)</Text>
+               <Text style={tw`text-[10px] font-black text-[#94a3b8] uppercase tracking-wider mb-2 text-center`}>Holding Minutes (Cut Target Window)</Text>
                <View style={tw`flex-row gap-2`}>
                   <Pressable
-                    onPress={() => setBuildDuration('3:00')}
-                    style={({ pressed }) => [tw`flex-1 h-10 rounded-lg flex-row items-center justify-center border`, buildDuration === '3:00' ? tw`bg-[#D9B382]/20 border-[#D9B382]` : tw`bg-black bg-opacity-20 border-white border-opacity-10`, { opacity: pressed ? 0.7 : 1 }]}
+                    onPress={() => setBuildDuration('3m')}
+                    style={({ pressed }) => [tw`flex-1 h-10 rounded-lg flex-row items-center justify-center border`, buildDuration === '3m' ? tw`bg-[#D9B382]/20 border-[#D9B382]` : tw`bg-black bg-opacity-20 border-white border-opacity-10`, { opacity: pressed ? 0.7 : 1 }]}
                   >
-                     <Text style={[tw`text-[10px] font-black tracking-widest`, buildDuration === '3:00' ? tw`text-[#D9B382]` : tw`text-white text-opacity-50`]}>3 MINUTES</Text>
+                     <Text style={[tw`text-[10px] font-black tracking-widest`, buildDuration === '3m' ? tw`text-[#D9B382]` : tw`text-white text-opacity-50`]}>3 MINUTES</Text>
                   </Pressable>
                   <Pressable
-                    onPress={() => setBuildDuration('5:00')}
-                    style={({ pressed }) => [tw`flex-1 h-10 rounded-lg flex-row items-center justify-center border`, buildDuration === '5:00' ? tw`bg-[#D9B382]/20 border-[#D9B382]` : tw`bg-black bg-opacity-20 border-white border-opacity-10`, { opacity: pressed ? 0.7 : 1 }]}
+                    onPress={() => setBuildDuration('5m')}
+                    style={({ pressed }) => [tw`flex-1 h-10 rounded-lg flex-row items-center justify-center border`, buildDuration === '5m' ? tw`bg-[#D9B382]/20 border-[#D9B382]` : tw`bg-black bg-opacity-20 border-white border-opacity-10`, { opacity: pressed ? 0.7 : 1 }]}
                   >
-                     <Text style={[tw`text-[10px] font-black tracking-widest`, buildDuration === '5:00' ? tw`text-[#D9B382]` : tw`text-white text-opacity-50`]}>5 MINUTES</Text>
+                     <Text style={[tw`text-[10px] font-black tracking-widest`, buildDuration === '5m' ? tw`text-[#D9B382]` : tw`text-white text-opacity-50`]}>5 MINUTES</Text>
                   </Pressable>
                </View>
             </View>
@@ -836,9 +831,9 @@ export function BulkTestPanel({
                           <Text style={tw`text-white text-opacity-40 text-[10px] w-6`}>{(idx + 1).toString().padStart(2, '0')}</Text>
                           <View style={tw`flex-1`}>
                             <Text style={tw`text-white text-xs font-bold`} numberOfLines={1}>{item.entry.imageFilename}</Text>
-                            {!!(item.entry.stock || item.entry.investmentDuration) && (
+                            {!!(item.entry.stock || item.entry.holdingMinutes) && (
                               <Text style={tw`text-white text-opacity-50 text-[9px] uppercase tracking-widest mt-0.5`}>
-                                {item.entry.stock || stockName} • {item.entry.investmentDuration || investmentDuration}
+                                {item.entry.stock || stockName} • {item.entry.holdingMinutes || holdingMinutes}
                               </Text>
                             )}
                             {!!(item.entry.expectedOutcome && item.entry.expectedOutcome !== 'UNKNOWN') && (

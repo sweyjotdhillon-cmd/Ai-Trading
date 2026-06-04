@@ -2,11 +2,11 @@ import { DecisionResult } from './ruleEngine';
 import { ScalpSignal, ScalpStabilityResult } from '../types';
 
 const FRAME_BUFFER_SIZE = 5;
-let signals: { signal: 'CALL' | 'PUT' | 'NO_TRADE'; finalScore: number; confidence: number }[] = [];
+let signals: { signal: 'LONG' | 'NO_TRADE'; finalScore: number; confidence: number }[] = [];
 
 export interface StabilityResult {
   stable: boolean;
-  signal: 'CALL' | 'PUT' | 'NO_TRADE';
+  signal: 'LONG' | 'NO_TRADE';
   confidence: number;
 }
 
@@ -43,10 +43,10 @@ export function emitScalpStability(
   confidence: number,
   finalScore: number
 ): ScalpStabilityResult {
-  // Map BUY to CALL, and others to NO_TRADE for stability calculations
-  const mappedSignal = rawSignal === 'BUY' ? 'CALL' : 'NO_TRADE';
+  // Map BUY or LONG to LONG, and others to NO_TRADE for stability calculations
+  const mappedSignal = (rawSignal === 'BUY' || rawSignal === 'LONG') ? 'LONG' : 'NO_TRADE';
   const legacyDecisionObj: DecisionResult = {
-    winner: rawSignal === 'BUY' ? 'BULL' : 'NO_TRADE',
+    winner: (rawSignal === 'BUY' || rawSignal === 'LONG') ? 'BULL' : 'NO_TRADE',
     finalConfidence: confidence,
     margin: finalScore,
     ruling: '',

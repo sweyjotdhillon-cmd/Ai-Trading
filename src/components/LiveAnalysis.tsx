@@ -160,7 +160,7 @@ export function LiveAnalysis() {
 
   // PiP Widget state
   const [pipActive, setPipActive]         = useState(false);
-  const [pipSignal, setPipSignal]         = useState<'ANALYZING' | 'CALL' | 'PUT' | 'NO_TRADE' | 'IDLE'>('IDLE');
+  const [pipSignal, setPipSignal]         = useState<'ANALYZING' | 'LONG' | 'NO_TRADE' | 'IDLE'>('IDLE');
   const [pipConfidence, setPipConfidence] = useState<number>(0);
   const [pipSupported, setPipSupported]   = useState(false);
 
@@ -174,8 +174,7 @@ export function LiveAnalysis() {
 
   useEffect(() => {
     return onStableSignal((payload) => {
-      if (payload.signal === 'CALL') setTradingDirection('UP');
-      else if (payload.signal === 'PUT') setTradingDirection('DOWN');
+      if (payload.signal === 'LONG') setTradingDirection('LONG');
       else setTradingDirection('NO_TRADE');
       setTradingPhase('ENTRY_CONFIRMED');
       setIsStable(true);
@@ -241,8 +240,7 @@ export function LiveAnalysis() {
   
   // Investment Details
   const [investmentAmount, setInvestmentAmount] = useState('100');
-  const [investmentDuration, setInvestmentDuration] = useState('3:00');
-  const [profitabilityPercent, setProfitabilityPercent] = useState('85');
+  const [holdingMinutes, setHoldingMinutes] = useState('3m');
 
   // Technique Files
   const [techniquesList, setTechniquesList] = useState<any[]>([]);
@@ -389,18 +387,17 @@ export function LiveAnalysis() {
   ];
 
   const timeframes = ['30:00', '15:00'];
-  const durations = ['3:00', '5:00'];
+  const durations = ['3m', '5m', '15m'];
 
 
 
-  const drawPipFrame = (signal: 'ANALYZING' | 'CALL' | 'PUT' | 'NO_TRADE' | 'IDLE', confidence: number = 0, subText: string = '') => { const canvas = pipCanvasRef.current; if (!canvas) return; const ctx = canvas.getContext('2d'); if (!ctx) return; const W = 480, H = 270; ctx.clearRect(0, 0, W, H); const bgColors: Record<string, string> = { ANALYZING: '#0d0d14', CALL: '#021a0b', PUT: '#1a0202', NO_TRADE: '#141008', IDLE: '#0d0d14' }; ctx.fillStyle = bgColors[signal] ?? '#0d0d14'; ctx.fillRect(0, 0, W, H); const accentColors: Record<string, string> = { ANALYZING: '#D9B382', CALL: '#22C55E', PUT: '#EF4444', NO_TRADE: '#F59E0B', IDLE: '#94A3B8' }; const accent = accentColors[signal] ?? '#4B5570'; ctx.fillStyle = accent; ctx.fillRect(0, 0, W, 4); ctx.strokeStyle = 'rgba(255,255,255,0.03)'; ctx.lineWidth = 1; for (let x = 0; x < W; x += 30) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); } for (let y = 0; y < H; y += 30) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); } ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'left'; ctx.fillText('AI TRADING · PRO TERMINAL', 16, 26); if (signal === 'ANALYZING') { ctx.fillStyle = '#D9B382'; ctx.beginPath(); ctx.arc(W - 20, 20, 5, 0, Math.PI * 2); ctx.fill(); } const signalLabels: Record<string, string> = { ANALYZING: 'ANALYZING...', CALL: 'CALL  ▲', PUT: 'PUT   ▼', NO_TRADE: 'NO TRADE', IDLE: 'STANDBY' }; const label = signalLabels[signal] ?? signal; ctx.font = 'bold 64px Arial'; ctx.textAlign = 'center'; ctx.fillStyle = accent; ctx.shadowColor = accent; ctx.shadowBlur = signal === 'ANALYZING' ? 0 : 20; ctx.fillText(label, W / 2, 165); ctx.shadowBlur = 0; if ((signal === 'CALL' || signal === 'PUT') && confidence > 0) { const barW = 280, barH = 6; const barX = (W - barW) / 2, barY = 190; ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.beginPath(); (ctx as any).roundRect(barX, barY, barW, barH, 3); ctx.fill(); ctx.fillStyle = accent; ctx.beginPath(); (ctx as any).roundRect(barX, barY, barW * (confidence / 100), barH, 3); ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = 'bold 13px monospace'; ctx.fillText(`${confidence}% CONFIDENCE`, W / 2, 218); } if (subText) { ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.font = '12px monospace'; ctx.fillText(subText, W / 2, 245); } ctx.fillStyle = 'rgba(255,255,255,0.15)'; ctx.font = '10px monospace'; ctx.fillText('Switch back to broker when ready', W / 2, H - 10); };
+  const drawPipFrame = (signal: 'ANALYZING' | 'LONG' | 'NO_TRADE' | 'IDLE', confidence: number = 0, subText: string = '') => { const canvas = pipCanvasRef.current; if (!canvas) return; const ctx = canvas.getContext('2d'); if (!ctx) return; const W = 480, H = 270; ctx.clearRect(0, 0, W, H); const bgColors: Record<string, string> = { ANALYZING: '#0d0d14', LONG: '#021a0b', NO_TRADE: '#141008', IDLE: '#0d0d14' }; ctx.fillStyle = bgColors[signal] ?? '#0d0d14'; ctx.fillRect(0, 0, W, H); const accentColors: Record<string, string> = { ANALYZING: '#D9B382', LONG: '#22C55E', NO_TRADE: '#F59E0B', IDLE: '#94A3B8' }; const accent = accentColors[signal] ?? '#4B5570'; ctx.fillStyle = accent; ctx.fillRect(0, 0, W, 4); ctx.strokeStyle = 'rgba(255,255,255,0.03)'; ctx.lineWidth = 1; for (let x = 0; x < W; x += 30) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); } for (let y = 0; y < H; y += 30) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); } ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'left'; ctx.fillText('AI TRADING · PRO TERMINAL', 16, 26); if (signal === 'ANALYZING') { ctx.fillStyle = '#D9B382'; ctx.beginPath(); ctx.arc(W - 20, 20, 5, 0, Math.PI * 2); ctx.fill(); } const signalLabels: Record<string, string> = { ANALYZING: 'ANALYZING...', LONG: 'EXECUTE LONG ▲', NO_TRADE: 'NO TRADE', IDLE: 'STANDBY' }; const label = signalLabels[signal] ?? signal; ctx.font = 'bold 36px Arial'; ctx.textAlign = 'center'; ctx.fillStyle = accent; ctx.shadowColor = accent; ctx.shadowBlur = signal === 'ANALYZING' ? 0 : 20; ctx.fillText(label, W / 2, 165); ctx.shadowBlur = 0; if (signal === 'LONG' && confidence > 0) { const barW = 280, barH = 6; const barX = (W - barW) / 2, barY = 190; ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.beginPath(); (ctx as any).roundRect(barX, barY, barW, barH, 3); ctx.fill(); ctx.fillStyle = accent; ctx.beginPath(); (ctx as any).roundRect(barX, barY, barW * (confidence / 100), barH, 3); ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = 'bold 13px monospace'; ctx.fillText(`${confidence}% CONFIDENCE`, W / 2, 218); } if (subText) { ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.font = '12px monospace'; ctx.fillText(subText, W / 2, 245); } ctx.fillStyle = 'rgba(255,255,255,0.15)'; ctx.font = '10px monospace'; ctx.fillText('Switch back to broker when ready', W / 2, H - 10); };
 
   const closePip = (exitPip = true) => { if (pipAnimFrameRef.current) { cancelAnimationFrame(pipAnimFrameRef.current); pipAnimFrameRef.current = null; } if (exitPip && document.pictureInPictureElement) { document.exitPictureInPicture().catch(() => {}); } pipStreamRef.current?.getTracks().forEach(t => t.stop()); pipStreamRef.current = null; if (pipVideoRef.current) { pipVideoRef.current.pause(); if (document.body.contains(pipVideoRef.current)) { document.body.removeChild(pipVideoRef.current); } pipVideoRef.current = null; } pipCanvasRef.current = null; setPipActive(false); setPipSignal('IDLE'); setPipConfidence(0); };
 
   // @ts-expect-error unused
   const _startPip = async (): Promise<boolean> => { if (!pipSupported) { showNotice('Picture-in-Picture is not supported in this browser. Use Chrome or Edge.', 'error'); return false; } try { const canvas = document.createElement('canvas'); canvas.width = 480; canvas.height = 270; pipCanvasRef.current = canvas; drawPipFrame('ANALYZING', 0, 'Switching to your broker now...'); const stream = canvas.captureStream(2); pipStreamRef.current = stream; const video = document.createElement('video'); video.srcObject = stream; video.muted = true; pipVideoRef.current = video; document.body.appendChild(video); await video.play(); await (video as any).requestPictureInPicture(); video.addEventListener('leavepictureinpicture', () => { setPipActive(false); setPipSignal('IDLE'); closePip(false); }); setPipActive(true); setPipSignal('ANALYZING'); const redraw = () => { drawPipFrame(pipSignal === 'IDLE' ? 'ANALYZING' : pipSignal, pipConfidence); pipAnimFrameRef.current = requestAnimationFrame(redraw); }; pipAnimFrameRef.current = requestAnimationFrame(redraw); return true; } catch (err: any) { console.error('[PiP] Failed to start:', err); if (err.name !== 'NotAllowedError') { showNotice(`PiP failed: ${err.message}`, 'error'); } return false; } };
 
-  // const updatePip = (signal: 'CALL' | 'PUT' | 'NO_TRADE', confidence: number) => { if (!pipActive || !pipCanvasRef.current) return; setPipSignal(signal); setPipConfidence(confidence); const subText = signal === 'NO_TRADE' ? 'Conditions unclear — skip this trade' : `${signal === 'CALL' ? 'Buy CALL' : 'Buy PUT'} — execute now`; drawPipFrame(signal, confidence, subText); if ('vibrate' in navigator) { navigator.vibrate(signal === 'NO_TRADE' ? [200] : [150, 80, 150]); } };
 
   const handleReset = () => {
     setAnalysis(null);
@@ -423,7 +420,7 @@ export function LiveAnalysis() {
     setMode('live');
     setStockName('Bitcoin');
     setGraphTimeframe('30:00');
-    setInvestmentDuration('3:00');
+    setHoldingMinutes('3m');
     setScoutActive(false);
     setScoutData(null);
     setLoading(false);
@@ -559,9 +556,8 @@ export function LiveAnalysis() {
               imageDataUrl: scoutImgDataUrl,
               stock: stockName,
               graphTimeframe,
-              investmentDuration,
+              holdingMinutes: holdingMinutes,
               investmentAmount: investmentAmount as string,
-              profitabilityPercent: profitabilityPercent as string,
               techniquesList,
               encryptedSystemTokens,
               signal: scoutController.signal,
@@ -625,7 +621,7 @@ export function LiveAnalysis() {
         worker.terminate();
       }
     };
-  }, [scoutActive, analysis, isCameraActive, tradingPhase, encryptedSystemTokens, graphTimeframe, investmentAmount, investmentDuration, profitabilityPercent, stockName, techniquesList, tradingDirection]);
+  }, [scoutActive, analysis, isCameraActive, tradingPhase, encryptedSystemTokens, graphTimeframe, investmentAmount, holdingMinutes, stockName, techniquesList, tradingDirection]);
 
   const closePickers = () => {
     setShowTfPicker(false);
@@ -695,10 +691,12 @@ export function LiveAnalysis() {
   const saveToStats = (analysisData: any, outcome: 'WIN' | 'LOSS') => {
     try {
       const entryIdx = statsData.length + 1;
-      const profitPct = Number(profitabilityPercent);
       const investAmt = Number(investmentAmount);
-      const potentialProfit = (profitPct / 100) * investAmt;
       const now = new Date();
+      const scalpPlan = analysisData?.scalpingPlan || analysisData?.judge?.tradeDetails?.scalpingPlan || analysisData?.scalpDecision?.plan || analysisData?.debugTrace?.scalpDecision?.plan;
+      const potentialProfit = scalpPlan ? scalpPlan.potentialRewardRupees : (0.015 * investAmt); // Fallback estimate
+      const lossPotential = scalpPlan ? scalpPlan.riskRupees : investAmt;
+      const resolvedExactProfit = outcome === 'WIN' ? potentialProfit : -lossPotential;
 
       const newEntry = {
         id: entryIdx,
@@ -709,16 +707,16 @@ export function LiveAnalysis() {
         time: now.toLocaleTimeString(),
         stock: stockName,
         timeframe: graphTimeframe,
-        duration: investmentDuration,
+        duration: scalpPlan ? `${scalpPlan.maxHoldingMinutes}m` : holdingMinutes,
+        holdingMinutes: scalpPlan ? scalpPlan.maxHoldingMinutes : parseInt(holdingMinutes) || 3,
         investment: investAmt,
-        profitPercentage: profitPct,
+        profitPercentage: scalpPlan ? ((scalpPlan.potentialRewardRupees / (scalpPlan.entry * scalpPlan.positionSize)) * 100) : 1.5,
         profitPotential: potentialProfit,
-        lossPotential: investAmt,
-        signal: analysisData?.judge?.winner === 'BULL' ? 'CALL' : 
-                (analysisData?.judge?.winner === 'BEAR' ? 'PUT' : 'WAIT'),
+        lossPotential: lossPotential,
+        signal: analysisData?.judge?.winner === 'BULL' ? 'LONG' : 'WAIT',
         result: outcome,
-        exactProfit: outcome === 'WIN' ? potentialProfit : -investAmt,
-        profitAmount: outcome === 'WIN' ? potentialProfit : -investAmt,
+        exactProfit: resolvedExactProfit,
+        profitAmount: resolvedExactProfit,
         reasoning: analysisData?.judge?.ruling || 'N/A',
         confidence: analysisData?.judge?.finalConfidence || 0,
         totalScore: analysisData?.judge?.totalScore || 0,
@@ -818,9 +816,8 @@ export function LiveAnalysis() {
             imageDataUrl: finalImageToAnalyze,
             stock: stockName,
             graphTimeframe,
-            investmentDuration,
+            holdingMinutes: holdingMinutes,
             investmentAmount: investmentAmount as string,
-            profitabilityPercent: profitabilityPercent as string,
             techniquesList,
             encryptedSystemTokens,
             signal: controller.signal,
@@ -1099,15 +1096,13 @@ export function LiveAnalysis() {
         showTfPicker={showTfPicker}
         setShowTfPicker={setShowTfPicker}
         timeframes={timeframes}
-        investmentDuration={investmentDuration}
-        setInvestmentDuration={setInvestmentDuration}
+        holdingMinutes={holdingMinutes}
+        setHoldingMinutes={setHoldingMinutes}
         showDurPicker={showDurPicker}
         setShowDurPicker={setShowDurPicker}
         durations={durations}
         investmentAmount={investmentAmount}
         setInvestmentAmount={setInvestmentAmount}
-        profitabilityPercent={profitabilityPercent}
-        setProfitabilityPercent={setProfitabilityPercent}
         mode={mode}
         setMode={setMode}
         isCameraActive={isCameraActive}
@@ -1216,7 +1211,6 @@ export function LiveAnalysis() {
           analysis={analysis}
           mode={mode}
           prefersReducedMotion={prefersReducedMotion ?? false}
-          profitabilityPercent={profitabilityPercent}
           investmentAmount={investmentAmount}
           confirmedOutcome={confirmedOutcome}
           saveToStats={saveToStats}
