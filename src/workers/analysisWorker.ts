@@ -2,7 +2,7 @@
 import { evaluateSignal } from '../quant/ruleEngine';
 import { buildPipelineResult } from '../vision/pipeline';
 import { HorizonContext } from '../quant/horizon';
-import { emitStability, resetStability } from '../quant/stabilityFilter';
+import { emitStability, resetStability, emitScalpStability } from '../quant/stabilityFilter';
 import { getCalibrationBands, setCalibrationBands } from '../vision/colorCalibration';
 import { runDeterminismGuard } from '../quant/__audit__/determinismGuard';
 import { runEpsilonGuard } from '../vision/__audit__/epsilonGuard';
@@ -11,8 +11,14 @@ import { extractCandlestickPatterns, PatternEvidence } from '../quant/patternAda
 import { PatternStabilityManager } from '../quant/patternStability';
 import { detectLatestGap, GapEvidence } from '../quant/gapDetector';
 import { GapStabilityManager } from '../quant/gapStability';
-import { applyTemporalFilter, resetTemporalFilter } from '../quant/temporalFilter';
+import { applyTemporalFilter, resetTemporalFilter, applyScalpTemporalFilter } from '../quant/temporalFilter';
 import { extractChartJSON } from '../quant/dataExtractor';
+import { evaluateScalpSignal, loadScalpConfig } from '../quant/scalpingEngine';
+import { loadRiskState } from '../quant/riskGuard';
+import { findSwingPivots } from '../quant/marketStructure';
+import { atr } from '../quant/indicators';
+import { vwapProxy } from '../quant/vwapProxy';
+
 
 const patternStabilityManager = new PatternStabilityManager();
 const gapStabilityManager = new GapStabilityManager();
@@ -164,24 +170,67 @@ self.onmessage = async (e: MessageEvent) => {
         throw new Error('Decision result type contract violated. Engine corrupted.');
       }
 
-      const stab = emitStability(decision);
-
-      let finalSignal = decision.signal;
+      let finalSignal: any = decision.signal;
       let finalConfidence = decision.finalConfidence;
       let finalScore = decision.finalScore;
-      let finalStable = stab.stable;
+      let finalStable = false;
+      let scalpDecision: any = undefined;
 
-      if (featureFlags.enableTemporalFiltering) {
-        const tfResult = applyTemporalFilter(
-          decision.signal,
-          decision.finalConfidence,
-          decision.finalScore,
-          stab.stable
-        );
-        finalSignal = tfResult.signal;
-        finalConfidence = tfResult.confidence;
-        finalScore = tfResult.finalScore;
-        finalStable = tfResult.stable;
+      if (featureFlags.USE_SCALPING_MODE) {
+        const highs = pipe.ohlcSeries.map((c: any) => c.high);
+        const lows = pipe.ohlcSeries.map((c: any) => c.low);
+        const pivots = findSwingPivots(highs, lows);
+        const atr14Vec = atr(pipe.ohlcSeries, 14);
+        const vwapProxyVec = vwapProxy(pipe.ohlcSeries);
+        const pcfg = data.scalpConfig || loadScalpConfig();
+        const prisk = data.riskState || loadRiskState();
+
+        const scalpCtx = {
+          config: pcfg,
+          riskState: prisk,
+          pivots,
+          atr14: atr14Vec,
+          vwapProxy: vwapProxyVec,
+          nowMsEpoch: Date.now(),
+          nowISTMinutesSinceMidnight: 600,
+          currentBarIndex: pipe.ohlcSeries.length - 1
+        };
+
+        scalpDecision = evaluateScalpSignal(pipe.ohlcSeries, decision, scalpCtx);
+        
+        const stabScalar = emitScalpStability(scalpDecision.signal, finalConfidence, finalScore);
+        finalStable = stabScalar.stable;
+
+        if (featureFlags.enableTemporalFiltering) {
+          const tfResult = applyScalpTemporalFilter(
+            scalpDecision.signal,
+            finalConfidence,
+            finalScore,
+            stabScalar.stable
+          );
+          finalSignal = tfResult.signal;
+          finalConfidence = tfResult.confidence;
+          finalScore = tfResult.finalScore;
+          finalStable = tfResult.stable;
+        } else {
+          finalSignal = scalpDecision.signal;
+        }
+      } else {
+        const stab = emitStability(decision);
+        finalStable = stab.stable;
+
+        if (featureFlags.enableTemporalFiltering) {
+          const tfResult = applyTemporalFilter(
+            decision.signal,
+            decision.finalConfidence,
+            decision.finalScore,
+            stab.stable
+          );
+          finalSignal = tfResult.signal;
+          finalConfidence = tfResult.confidence;
+          finalScore = tfResult.finalScore;
+          finalStable = tfResult.stable;
+        }
       }
 
       const incidents: any[] = [];
@@ -196,7 +245,7 @@ self.onmessage = async (e: MessageEvent) => {
         absoluteMax = Math.max(...highs);
       }
 
-      const debugTrace = {
+      const debugTrace: any = {
         meta: pipe.meta,
         decision: decision,
         extractedJSON: extractedChartData,
@@ -204,6 +253,7 @@ self.onmessage = async (e: MessageEvent) => {
         absoluteMax,
         ohlcSeries: pipe.ohlcSeries,
         rawCandles: pipe.rawCandles,
+        scalpDecision,
         temporalFiltering: featureFlags.enableTemporalFiltering ? {
           smoothedConfidence: finalConfidence,
           smoothedScore: finalScore
@@ -217,7 +267,8 @@ self.onmessage = async (e: MessageEvent) => {
         confidence: finalConfidence,
         frameStable: finalStable,
         debugTrace,
-        incidents
+        incidents,
+        scalpDecision,
       });
       
       if (finalStable) {
@@ -225,7 +276,8 @@ self.onmessage = async (e: MessageEvent) => {
           type: 'STABLE_SIGNAL',
           signal: finalSignal,
           confidence: finalConfidence,
-          debugTrace
+          debugTrace,
+          scalpDecision,
         });
       }
     }

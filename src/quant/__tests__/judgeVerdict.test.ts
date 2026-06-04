@@ -68,7 +68,7 @@ function generateSeries(type: 'uptrend' | 'downtrend' | 'sideways' | 'explosive'
       low = Math.min(open, close) - 0.2;
     } else if (type === 'explosive') {
       const baseBody = 2.0;
-      const change = (Math.random() - 0.5) * baseBody;
+      const change = Math.sin(i) * baseBody;
       close = open + change;
       high = Math.max(open, close) + 0.5;
       low = Math.min(open, close) - 0.5;

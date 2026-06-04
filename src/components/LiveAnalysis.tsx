@@ -2,6 +2,7 @@ import { runSingleAnalysis, onStableSignal, resetWorkerStability } from '../util
 import { LiveAnalysisDashboard } from './live-analysis/LiveAnalysisDashboard';
 import { LiveAnalysisDebate } from './live-analysis/LiveAnalysisDebate';
 import { LiveAnalysisResult } from './live-analysis/LiveAnalysisResult';
+import { ScalpCopilotHUD } from './ScalpCopilotHUD';
 import { useState, useRef, useEffect } from 'react';
 import { useWakeLock } from '../hooks/useWakeLock';
 import { antiImagine } from '../utils/antiImagine';
@@ -1118,6 +1119,25 @@ export function LiveAnalysis() {
         cardHoverProps={cardHoverProps}
         techFileName={techFileName}
         handlePickTechnique={handlePickTechnique}
+      />
+
+      <ScalpCopilotHUD 
+        analysis={analysis}
+        onConfigChanged={(updated) => {}}
+        onResetRiskState={() => {
+          if (typeof window !== 'undefined') {
+            const fresh = {
+              dailyPnL: 0,
+              tradesToday: 0,
+              consecutiveLosses: 0,
+              lastTradeAt: 0,
+              inCooldown: false,
+              cooldownUntil: 0,
+              dateKey: new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10),
+            };
+            localStorage.setItem('chartlens_risk_state_v1', JSON.stringify(fresh));
+          }
+        }}
       />
 
         {/* Action Bar / Live Debate UI Overlay */}

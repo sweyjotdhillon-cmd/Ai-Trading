@@ -70,7 +70,27 @@ export function applyTemporalFilter(
   };
 }
 
+// ─── Scalp Temporal Filter Helper ────────────────────────────
+import { ScalpSignal } from '../types';
+
+export function applyScalpTemporalFilter(
+  rawSignal: ScalpSignal,
+  rawConfidence: number,
+  rawFinalScore: number,
+  rawStable: boolean
+): { signal: ScalpSignal; confidence: number; finalScore: number; stable: boolean } {
+  const mappedSignal = rawSignal === 'BUY' ? 'CALL' : 'NO_TRADE';
+  const res = applyTemporalFilter(mappedSignal, rawConfidence, rawFinalScore, rawStable);
+  return {
+    signal: res.signal === 'CALL' ? 'BUY' : 'NO_TRADE',
+    confidence: res.confidence,
+    finalScore: res.finalScore,
+    stable: res.stable
+  };
+}
+
 export function resetTemporalFilter(): void {
+
   smoothedConfidence = null;
   smoothedFinalScore = null;
   previousDirection = 'NO_TRADE';

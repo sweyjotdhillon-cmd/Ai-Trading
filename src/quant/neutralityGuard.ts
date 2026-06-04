@@ -131,3 +131,39 @@ export function enforceNeutrality(
     neutralityActions
   };
 }
+
+// ─── Scalp Long-Only Additions ──────────────────────────────
+import { ScalpSignal } from '../types';
+
+const BUY_HISTORY_MAX = 100;
+const scalpDecisionHistory: ('BUY' | 'NO_TRADE')[] = [];
+
+export function recordScalpDecision(signal: ScalpSignal): void {
+  if (signal !== 'BUY' && signal !== 'NO_TRADE') return;
+  scalpDecisionHistory.push(signal);
+  if (scalpDecisionHistory.length > BUY_HISTORY_MAX) scalpDecisionHistory.shift();
+}
+
+export function getScalpBuyRate(): { buyRate: number; total: number } {
+  const total = scalpDecisionHistory.length;
+  if (total === 0) return { buyRate: 0, total: 0 };
+  return { buyRate: scalpDecisionHistory.filter(s => s === 'BUY').length / total, total };
+}
+
+/**
+ * Returns an additive penalty (0..0.20) to apply to confluence threshold
+ * when BUY-rate is > 70% (engine over-trading) — equivalent of legacy NEL's
+ * symmetric bias correction, but one-sided for long-only.
+ */
+export function scalpOverTradingPenalty(): number {
+  const { buyRate, total } = getScalpBuyRate();
+  if (total < 25) return 0;
+  if (buyRate > 0.70) return Math.min(0.20, (buyRate - 0.70) * 0.50);
+  if (buyRate < 0.05 && total > 50) return -0.05; // under-trading hint, optional unlock
+  return 0;
+}
+
+export function resetScalpHistory(): void {
+  scalpDecisionHistory.length = 0;
+}
+

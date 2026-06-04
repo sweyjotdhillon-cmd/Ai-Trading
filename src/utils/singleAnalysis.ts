@@ -1,5 +1,10 @@
 /* eslint-disable no-empty */
 import { antiImagine } from './antiImagine';
+import { simulateScalpTrade } from '../quant/pathSimulator';
+import { loadScalpConfig } from '../quant/scalpingEngine';
+import { computeRoundTripCharges } from '../quant/brokerCharges';
+import { featureFlags } from '../config/featureFlags';
+import { TradeAnalysisScalpAddon } from '../types';
 let msgCounter = 0;
 import { dataUrlToImageData } from './imageUtils';
 import { loadCalibration } from '../vision/colorCalibration';
@@ -422,6 +427,7 @@ export async function runSingleAnalysis(params: {
   let splitXPercent: number | null = null;
   let autoGradeGeometry: AutoGradeGeometry | null = null;
   let tempRightPipe: any = null;
+  let scalpAddon: any = null;
 
   if (isTestMode && meta.candlesLength && meta.candlesLength > 5) {
     const tfMinTest  = parseDurationToMinutes(params.graphTimeframe);
@@ -555,7 +561,49 @@ export async function runSingleAnalysis(params: {
              );
            }
            
-           if (entryClose !== undefined && exitClose !== undefined) {
+           if (featureFlags.USE_SCALPING_MODE && payload2.debugTrace?.scalpDecision) {
+             const scalpDecision = payload2.debugTrace.scalpDecision;
+             const pcfg = loadScalpConfig();
+             
+             let simulated: any = undefined;
+             if (scalpDecision.signal === 'BUY' && scalpDecision.plan) {
+               const futureCandles = tempRightPipe?.ohlcSeries || [];
+               simulated = simulateScalpTrade(
+                 scalpDecision.plan,
+                 futureCandles,
+                 pcfg,
+                 (entry, exit, size) => computeRoundTripCharges(entry, exit, size, pcfg.instrument)
+               );
+             }
+
+             scalpAddon = {
+               isScalpTrade: true,
+               scalpSignal: scalpDecision.signal,
+               confluenceScore: scalpDecision.confluenceScore,
+               blockers: scalpDecision.blockers,
+               features: scalpDecision.features,
+               plan: scalpDecision.plan || null,
+               outcome: simulated ? simulated.outcome : null,
+               exitPrice: simulated ? simulated.exitPrice : null,
+               realizedPnL: simulated ? simulated.realizedPnL : null,
+               realizedPnLGross: simulated ? simulated.realizedPnLGross : null,
+               brokerChargesUsed: simulated ? simulated.brokerChargesUsed : null,
+             };
+
+             if (scalpDecision.signal !== 'BUY') {
+               outcome = 'NEUTRAL';
+             } else if (simulated) {
+               if (simulated.outcome.startsWith('TP')) {
+                 outcome = 'WIN';
+               } else if (simulated.outcome.startsWith('SL')) {
+                 outcome = 'LOSS';
+               } else if (simulated.outcome === 'TRAIL_HIT') {
+                 outcome = simulated.realizedPnLGross > 0 ? 'WIN' : (simulated.realizedPnLGross < 0 ? 'LOSS' : 'NEUTRAL');
+               } else {
+                 outcome = simulated.realizedPnLGross > 0 ? 'WIN' : (simulated.realizedPnLGross < 0 ? 'LOSS' : 'NEUTRAL');
+               }
+             }
+           } else if (entryClose !== undefined && exitClose !== undefined) {
              if (exitClose > entryClose) {
                actualDirection = 'UP';
              } else if (exitClose < entryClose) {
@@ -625,8 +673,11 @@ export async function runSingleAnalysis(params: {
   const tTotal = performance.now() - t0;
 
   return {
+    ...scalpAddon,
     analysis: {
+      ...scalpAddon,
       judge: {
+        ...scalpAddon,
         cases: cases,
         winner: finalDecision.winner,
         decision: finalDecision.winner === 'NO_TRADE' ? 'WEAK' : 'STRONG SIGNAL',

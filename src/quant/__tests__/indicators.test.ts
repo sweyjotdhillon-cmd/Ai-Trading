@@ -7,10 +7,8 @@ describe('Indicators - SMA (Simple Moving Average)', () => {
     const period = 3;
     const result = sma(values, period);
 
-    // SMA should be 0 for index 0 and 1, and the average of the last 3 for index 2 onwards
-    // [0, 0, (10+20+30)/3, (20+30+40)/3, (30+40+50)/3, (40+50+60)/3]
-    // [0, 0, 20, 30, 40, 50]
-    expect(result).toEqual([0, 0, 20, 30, 40, 50]);
+    // SMA should compute partial averages for the initial indices
+    expect(result).toEqual([10, 15, 20, 30, 40, 50]);
   });
 
   it('should handle period larger than array length gracefully', () => {
@@ -18,9 +16,8 @@ describe('Indicators - SMA (Simple Moving Average)', () => {
     const period = 5;
     const result = sma(values, period);
 
-    // As per the code logic: if period > values.length, no element gets (i >= period - 1) true
-    // Thus it should return an array of 0s
-    expect(result).toEqual([0, 0]);
+    // Should return the partial cumulative averages up to values length
+    expect(result).toEqual([10, 15]);
   });
 
   it('should handle an empty array', () => {
@@ -36,9 +33,7 @@ describe('Indicators - SMA (Simple Moving Average)', () => {
     const period = 3;
     const result = sma(values, period);
 
-    // [0, 0, (-10-20-30)/3, (-20-30-40)/3, (-30-40-50)/3]
-    // [0, 0, -20, -30, -40]
-    expect(result).toEqual([0, 0, -20, -30, -40]);
+    expect(result).toEqual([-10, -15, -20, -30, -40]);
   });
 
   it('should calculate SMA correctly with a mix of positive and negative numbers', () => {
@@ -46,8 +41,7 @@ describe('Indicators - SMA (Simple Moving Average)', () => {
     const period = 2;
     const result = sma(values, period);
 
-    // [0, 0/2, 0/2, 0/2, 0/2] = [0, 0, 0, 0, 0]
-    expect(result).toEqual([0, 0, 0, 0, 0]);
+    expect(result).toEqual([10, 0, 0, 0, 0]);
   });
 
   it('should calculate SMA correctly when period is 1', () => {

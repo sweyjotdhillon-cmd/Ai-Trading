@@ -1,4 +1,5 @@
 import { DecisionResult } from './ruleEngine';
+import { ScalpSignal, ScalpStabilityResult } from '../types';
 
 const FRAME_BUFFER_SIZE = 5;
 let signals: { signal: 'CALL' | 'PUT' | 'NO_TRADE'; finalScore: number; confidence: number }[] = [];
@@ -37,6 +38,42 @@ export function emitStability(decision: DecisionResult): StabilityResult {
   };
 }
 
+export function emitScalpStability(
+  rawSignal: ScalpSignal,
+  confidence: number,
+  finalScore: number
+): ScalpStabilityResult {
+  // Map BUY to CALL, and others to NO_TRADE for stability calculations
+  const mappedSignal = rawSignal === 'BUY' ? 'CALL' : 'NO_TRADE';
+  const legacyDecisionObj: DecisionResult = {
+    winner: rawSignal === 'BUY' ? 'BULL' : 'NO_TRADE',
+    finalConfidence: confidence,
+    margin: finalScore,
+    ruling: '',
+    cases: { bull: { j1: 0, j2: 0, j3: 0, total: finalScore }, bear: { j1: 0, j2: 0, j3: 0, total: 0 } },
+    skepticMultiplier: 1,
+    agent: 'JUDGE',
+    signal: mappedSignal,
+    decision: finalScore >= 50 ? 'STRONG SIGNAL' : 'WEAK',
+    skepticVerdict: 'ACCEPT',
+    primaryEvidence: '',
+    noTradeReason: null,
+    topPatterns: { bull: [], bear: [] },
+    formattedReport: '',
+    tradeDetails: { latencyAdjustedForecast: '', techniquesUsed: '', executionTimeMs: 0 },
+    j1Score: 0, j2Score: 0, j3Score: 0, j4Score: 0,
+    confidence, bullScore: 0, bearScore: 0
+  };
+  
+  const result = emitStability(legacyDecisionObj);
+  return {
+    stable: result.stable,
+    signal: rawSignal,
+    confidence: result.confidence
+  };
+}
+
 export function resetStability(): void {
   signals = [];
 }
+
