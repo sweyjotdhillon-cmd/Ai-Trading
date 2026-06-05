@@ -44,7 +44,7 @@ export interface TechniqueBreakdown {
 }
 
 export interface EngineResult {
-  verdict: "CALL" | "PUT" | "NO_TRADE";
+  verdict: "LONG" | "NO_TRADE";
   callTotal: number;
   putTotal: number;
   margin: number;
@@ -362,7 +362,7 @@ export function evaluateTechniques(window: ChartAnalysisWindow, techniques: Tech
   const putConfidence = maxPossible > 0 ? (putTotal / maxPossible) * 100 : 0;
   const margin = callTotal - putTotal;
 
-  let verdict: "CALL" | "PUT" | "NO_TRADE" = "NO_TRADE";
+  let verdict: "LONG" | "NO_TRADE" = "NO_TRADE";
   let noTradeReason: "INSUFFICIENT_TECHNIQUES" | "VOLATILE" | "EXACT_TIE" | null = null;
 
   const volatilityRegime = window.marketContext?.volatilityState || "NORMAL";
@@ -378,18 +378,18 @@ export function evaluateTechniques(window: ChartAnalysisWindow, techniques: Tech
       verdict = "NO_TRADE";
       noTradeReason = "VOLATILE";
     } else if (callTotal > putTotal) {
-      verdict = "CALL";
+      verdict = "LONG";
     } else if (putTotal > callTotal) {
-      verdict = "PUT";
+      verdict = "NO_TRADE";
     } else {
       verdict = "NO_TRADE";
       noTradeReason = "EXACT_TIE";
     }
   } else {
     if (callTotal > putTotal) {
-      verdict = "CALL";
+      verdict = "LONG";
     } else if (putTotal > callTotal) {
-      verdict = "PUT";
+      verdict = "NO_TRADE";
     } else {
       verdict = "NO_TRADE";
       noTradeReason = "EXACT_TIE";

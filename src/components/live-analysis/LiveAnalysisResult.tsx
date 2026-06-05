@@ -14,8 +14,8 @@ interface Props {
   confirmedOutcome: 'WIN' | 'LOSS' | null;
   saveToStats: (analysisData: any, outcome: 'WIN' | 'LOSS') => void;
   setMode: (val: 'live' | 'test' | 'bulk') => void;
-  tradingDirection: 'UP' | 'DOWN' | 'NO_TRADE' | null;
-  actualDirection: 'UP' | 'DOWN' | null;
+  tradingDirection: 'LONG' | 'NO_TRADE' | null;
+  actualDirection: 'PROFIT' | 'LOSS' | null;
   testModeLeftSlice: string | null;
   testModeRightSlice: string | null;
   autoGradeStatus: 'idle' | 'grading' | 'done' | 'failed';
@@ -494,15 +494,15 @@ export function LiveAnalysisResult({
             <View style={tw`flex-row items-center justify-center mb-4 gap-2`}>
               <View style={tw`bg-black bg-opacity-30 border border-white border-opacity-10 rounded-lg px-4 py-2`}>
                 <Text style={tw`text-white text-opacity-40 text-[9px] uppercase tracking-widest`}>Predicted</Text>
-                <Text style={tw`font-black text-lg ${tradingDirection === 'UP' ? 'text-green-400' : tradingDirection === 'DOWN' ? 'text-red-400' : 'text-white text-opacity-50'}`}>
-                  {tradingDirection === 'UP' ? '▲ UP' : tradingDirection === 'DOWN' ? '▼ DOWN' : '— NO TRADE'}
+                <Text style={tw`font-black text-lg ${tradingDirection === 'LONG' ? 'text-green-400' : 'text-white text-opacity-50'}`}>
+                  {tradingDirection === 'LONG' ? '▲ LONG ENTRY' : '— NO TRADE'}
                 </Text>
               </View>
               <Text style={tw`text-white text-opacity-30 text-xl`}>/</Text>
               <View style={tw`bg-black bg-opacity-30 border border-white border-opacity-10 rounded-lg px-4 py-2`}>
                 <Text style={tw`text-white text-opacity-40 text-[9px] uppercase tracking-widest`}>Actual</Text>
-                <Text style={tw`font-black text-lg ${actualDirection === 'UP' ? 'text-green-400' : actualDirection === 'DOWN' ? 'text-red-400' : 'text-white text-opacity-50'}`}>
-                  {actualDirection === 'UP' ? '▲ PROFIT' : actualDirection === 'DOWN' ? '▼ LOSS' : '— FLAT'}
+                <Text style={tw`font-black text-lg ${actualDirection === 'PROFIT' ? 'text-green-400' : actualDirection === 'LOSS' ? 'text-red-400' : 'text-white text-opacity-50'}`}>
+                  {actualDirection === 'PROFIT' ? '▲ PROFIT' : actualDirection === 'LOSS' ? '▼ LOSS' : '— FLAT'}
                 </Text>
               </View>
             </View>

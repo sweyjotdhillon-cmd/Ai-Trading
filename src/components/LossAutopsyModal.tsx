@@ -199,7 +199,7 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, p
       const cases = judge.cases || { bull: { j1: 0, j2: 0, j3: 0 }, bear: { j1: 0, j2: 0, j3: 0 } };
       const margin = Number(judge.margin || Math.abs(bullTotal - bearTotal));
       let opposingSideData: any = null;
-      if (tradeSignal === 'LONG' || tradeSignal === 'CALL') {
+      if (tradeSignal === 'LONG') {
         // Opponent is BEAR
         const bearCases = cases.bear || { j1: 0, j2: 0, j3: 0 };
         const maxBear = Math.max(bearCases.j1, bearCases.j2, bearCases.j3);
@@ -260,7 +260,7 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, p
 
       const stepsJ2 = [
         { name: 'Oscillator Oversold/Overbought', bull: rsiVal < 30 ? 2.5 : 0, bear: rsiVal > 70 ? 2.5 : 0, info: 'RSI trigger bonus weight' },
-        { name: 'Opening Breakout Gaps', bull: (tradeSignal === 'LONG' || tradeSignal === 'CALL') && J2_Bull > 2.5 ? 1.5 : 0, bear: (tradeSignal === 'NO_TRADE') && J2_Bear > 2.5 ? 1.5 : 0, info: 'Adds weight when standard gaps support the signal' }
+        { name: 'Opening Breakout Gaps', bull: tradeSignal === 'LONG' && J2_Bull > 2.5 ? 1.5 : 0, bear: (tradeSignal === 'NO_TRADE') && J2_Bear > 2.5 ? 1.5 : 0, info: 'Adds weight when standard gaps support the signal' }
       ];
 
       const stepsJ3 = [
@@ -313,7 +313,7 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, p
       };
 
       const judgeFlaws: string[] = [];
-      if (tradeSignal === 'LONG' || tradeSignal === 'CALL') {
+      if (tradeSignal === 'LONG') {
         judgeFlaws.push(`Judge 1 (Trend) awarded ${J1_Bull.toFixed(1)} Bull points vs ${J1_Bear.toFixed(1)} Bear points. However, the entry close price at $${eClose ? eClose.toFixed(2) : '—'} was located directly below the key Resistance Lord ($${lResistance ? lResistance.toFixed(2) : '—'}). Because this level failed to break out, selling rejection immediately followed, dissolving the trade's point weight.`);
         if (bUpper > 0) {
           judgeFlaws.push(`Judge 2 (Mean Reversion) assigned ${J2_Bull.toFixed(1)} points near the Bollinger Upper Band ($${bUpper.toFixed(2)}). Reversal was highly probable, neutralizing the upward bias.`);
@@ -361,7 +361,7 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, p
           originalJudge: { total: totalScore },
           contrarianJudge: { total: -totalScore }
         },
-        contrarianSignal: (tradeSignal === 'LONG' || tradeSignal === 'CALL') ? 'NO_TRADE' : 'LONG',
+        contrarianSignal: tradeSignal === 'LONG' ? 'NO_TRADE' : 'LONG',
         contrarianConfidence: 100 - finalConfidence,
         contrarianRuling: 'Deterministic contrarian from local scoring inversion.',
         newRootCauses,
@@ -799,11 +799,11 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, p
                           <View style={tw`flex-row justify-between items-center mb-1`}>
                             <Text style={tw`text-gray-300 text-xs font-bold`}>Opposing Force Drag (Negative Point Pressure)</Text>
                             <Text style={tw`text-red-400 text-xs font-bold`}>
-                              -${((tradeSignal === 'LONG' || tradeSignal === 'CALL') ? (analysisData?.judge?.cases?.bear?.total ?? 0) : (analysisData?.judge?.cases?.bull?.total ?? 0)).toFixed(1)} points
+                              -${(tradeSignal === 'LONG' ? (analysisData?.judge?.cases?.bear?.total ?? 0) : (analysisData?.judge?.cases?.bull?.total ?? 0)).toFixed(1)} points
                             </Text>
                           </View>
                           <Text style={tw`text-gray-400 text-[10px]`}>
-                            The losing side actively counters points. For this {tradeSignal} trade, the opposing {(tradeSignal === 'LONG' || tradeSignal === 'CALL') ? 'Bear' : 'Bull'} case resisted with a core score of {(tradeSignal === 'LONG' || tradeSignal === 'CALL') ? (analysisData?.judge?.cases?.bear?.total ?? 0).toFixed(1) : (analysisData?.judge?.cases?.bull?.total ?? 0).toFixed(1)} points, creating direct execution friction.
+                            The losing side actively counters points. For this {tradeSignal} trade, the opposing {tradeSignal === 'LONG' ? 'Bear' : 'Bull'} case resisted with a core score of {tradeSignal === 'LONG' ? (analysisData?.judge?.cases?.bear?.total ?? 0).toFixed(1) : (analysisData?.judge?.cases?.bull?.total ?? 0).toFixed(1)} points, creating direct execution friction.
                           </Text>
                         </View>
 

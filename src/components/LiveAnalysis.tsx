@@ -152,7 +152,7 @@ export function LiveAnalysis() {
 
   // Live Trading Loop States
   const [tradingPhase, setTradingPhase] = useState<'IDLE' | 'ANALYSING_DIRECTION' | 'WAITING_FOR_ENTRY' | 'ENTRY_CONFIRMED'>('IDLE');
-  const [tradingDirection, setTradingDirection] = useState<'UP' | 'DOWN' | 'NO_TRADE' | null>(null);
+  const [tradingDirection, setTradingDirection] = useState<'LONG' | 'NO_TRADE' | null>(null);
   
   // Real-Time Scout (10s Tick)
   const [scoutActive, setScoutActive] = useState(false);
@@ -259,8 +259,8 @@ export function LiveAnalysis() {
   const [absoluteMin, setAbsoluteMin] = useState<number | null>(null);
   const [absoluteMax, setAbsoluteMax] = useState<number | null>(null);
   const [splitXPercent, setSplitXPercent] = useState<number | null>(null);
-  const actualDirection: 'UP' | 'DOWN' | null =
-    confirmedOutcome === 'WIN' ? 'UP' : confirmedOutcome === 'LOSS' ? 'DOWN' : null;
+  const actualDirection: 'PROFIT' | 'LOSS' | null =
+    confirmedOutcome === 'WIN' ? 'PROFIT' : confirmedOutcome === 'LOSS' ? 'LOSS' : null;
   const [statsData, setStatsData] = useState<any[]>(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -905,10 +905,8 @@ export function LiveAnalysis() {
       setAutoGradeReason(j.reason || '');
       setAutoGradeConfidence(Number(j.confidence) || 0);
       setAutoGradeRawOutcome(j.rawOutcome || '');
-      if (j.outcome === 'UP' || j.outcome === 'DOWN') {
-        const isWin =
-          (tradingDirection === 'UP'   && j.outcome === 'UP') ||
-          (tradingDirection === 'DOWN' && j.outcome === 'DOWN');
+      if (j.outcome === 'UP') {
+        const isWin = tradingDirection === 'LONG';
         saveToStats(analysis, isWin ? 'WIN' : 'LOSS');
         setAutoGradeStatus('done');
       } else {
@@ -950,7 +948,7 @@ export function LiveAnalysis() {
                 initial={{ scale: 1.5, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 exit={{ scale: 2, opacity: 0 }}
-                className={`flex-1 justify-center items-center absolute inset-0 ${tradingDirection === 'UP' ? 'bg-green-600' : (tradingDirection === 'DOWN' ? 'bg-red-600' : 'bg-yellow-700')}`}
+                className={`flex-1 justify-center items-center absolute inset-0 ${tradingDirection === 'LONG' ? 'bg-green-600' : 'bg-yellow-700'}`}
                 style={{ display: 'flex', zIndex: 50 }}
               >
                {/* High-speed scanning tech background */}
@@ -966,7 +964,7 @@ export function LiveAnalysis() {
                    transition={{ duration: 0.2, repeat: Infinity }}
                  >
                    <Text style={tw`text-white font-[Anton] text-[120px] leading-[0.85] uppercase text-center mb-6`}>
-                      {tradingDirection === 'UP' ? 'PULL UP' : (tradingDirection === 'DOWN' ? 'PULL DOWN' : 'HOLD')}
+                      {tradingDirection === 'LONG' ? 'EXECUTE LONG' : 'HOLD'}
                    </Text>
                  </motion.div>
                  
@@ -978,7 +976,7 @@ export function LiveAnalysis() {
                    transition={{ delay: 0.2 }}
                  >
                    <Text style={tw`text-white font-black text-5xl tracking-tighter uppercase text-center`}>
-                      {tradingDirection === 'UP' ? 'EXECUTE NOW' : (tradingDirection === 'DOWN' ? 'EXECUTE NOW' : 'SIGNAL ABORTED')}
+                      {tradingDirection === 'LONG' ? 'EXECUTE NOW' : 'SIGNAL ABORTED'}
                    </Text>
                    {isStable && (
                      <View style={tw`absolute -top-6 -right-6 bg-[#1A1308] border border-[#D9B382] px-3 py-1 rounded-full`}>
@@ -1042,7 +1040,7 @@ export function LiveAnalysis() {
                 tw`text-xs font-medium`,
                 systemNotice.type === 'success' ? tw`text-green-200` :
                 systemNotice.type === 'error' ? tw`text-red-200` :
-                tw`text-zinc-200`
+                tw`text-gray-200`
               ]}>
                 {systemNotice.text}
               </Text>
@@ -1253,19 +1251,19 @@ export function LiveAnalysis() {
               <AlertTriangle className="text-yellow-400" size={20} />
             </View>
             <View>
-              <Text style={tw`font-sans font-black text-sm text-zinc-100 uppercase tracking-wider`}>Educational Utility Only</Text>
-              <Text style={tw`font-mono text-[9px] text-zinc-500 uppercase tracking-widest`}>Regulatory Notice (SEBI / India)</Text>
+              <Text style={tw`font-sans font-black text-sm text-white uppercase tracking-wider`}>Educational Utility Only</Text>
+              <Text style={tw`font-mono text-[9px] text-gray-400 uppercase tracking-widest`}>Regulatory Notice (SEBI / India)</Text>
             </View>
           </div>
 
           <ScrollView style={tw`max-h-[250px] mb-6 pr-1`}>
-            <Text style={tw`font-sans text-xs text-zinc-300 leading-relaxed mb-4`}>
-              Genspark <Text style={tw`font-bold text-yellow-400`}>ai trading ChartLens</Text> is an <Text style={tw`font-bold text-zinc-100`}>Educational Analysis Tool</Text>. It is <Text style={tw`font-bold text-emerald-400`}>NOT registered</Text> with the Securities and Exchange Board of India (SEBI) as an Investment Adviser, Research Analyst, or Portfolio Manager.
+            <Text style={tw`font-sans text-xs text-gray-200 leading-relaxed mb-4`}>
+              Genspark <Text style={tw`font-bold text-yellow-400`}>ai trading ChartLens</Text> is an <Text style={tw`font-bold text-white`}>Educational Analysis Tool</Text>. It is <Text style={tw`font-bold text-red-400`}>NOT registered</Text> with the Securities and Exchange Board of India (SEBI) as an Investment Adviser, Research Analyst, or Portfolio Manager.
             </Text>
-            <Text style={tw`font-sans text-xs text-zinc-400 leading-relaxed mb-4`}>
-              This application extracts geometrical structures and indicator math from pasted or streamed chart images to generate experimental analysis. All outputs are for conceptual and simulation learning only — they do <Text style={tw`font-bold text-zinc-200`}>not constitute personalized advice, buy/sell recommendations</Text>, or promises of profits.
+            <Text style={tw`font-sans text-xs text-gray-300 leading-relaxed mb-4`}>
+              This application extracts geometrical structures and indicator math from pasted or streamed chart images to generate experimental analysis. All outputs are for conceptual and simulation learning only — they do <Text style={tw`font-bold text-white`}>not constitute personalized advice, buy/sell recommendations</Text>, or promises of profits.
             </Text>
-            <Text style={tw`font-sans text-xs text-zinc-400 leading-relaxed`}>
+            <Text style={tw`font-sans text-xs text-gray-300 leading-relaxed`}>
               Trading involves a high risk of permanent capital loss. You are solely responsible for executing any actual trades on your registered broker. By placing orders, you verify that you understand standard exchange risk caps and compliance frameworks.
             </Text>
           </ScrollView>
@@ -1295,8 +1293,8 @@ export function LiveAnalysis() {
   );
 }
 
-const AnimatedArrows = ({ direction }: { direction: 'UP' | 'DOWN' | 'NO_TRADE' }) => {
-  const isUp = direction === 'UP';
+const AnimatedArrows = ({ direction }: { direction: 'LONG' | 'NO_TRADE' }) => {
+  const isUp = direction === 'LONG';
   const isNeutral = direction === 'NO_TRADE';
 
   return (

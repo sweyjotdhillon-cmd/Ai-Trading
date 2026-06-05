@@ -128,10 +128,10 @@ export async function runSingleAnalysis(params: {
   onJudgeLogs?: (logs: any) => void;
   isTestMode?: boolean;
   isManifestCheck?: boolean;
-  onDirectionFound?: (direction: 'UP' | 'DOWN' | 'NO_TRADE') => void;
+  onDirectionFound?: (direction: 'LONG' | 'NO_TRADE') => void;
 }): Promise<{
   analysis: any;
-  direction: 'UP' | 'DOWN' | 'NO_TRADE';
+  direction: 'LONG' | 'NO_TRADE';
   outcome: 'WIN' | 'LOSS' | 'NEUTRAL';
   confidence: number;
   reason: string;
@@ -358,7 +358,7 @@ export async function runSingleAnalysis(params: {
   const { frameStable, debugTrace } = payload;
   const decision = debugTrace.decision;
   const meta = debugTrace.meta;
-  const initialMappedDirection = decision.winner === 'BULL' ? 'UP' : (decision.winner === 'BEAR' ? 'DOWN' : 'NO_TRADE');
+  const initialMappedDirection = decision.winner === 'BULL' ? 'LONG' : 'NO_TRADE';
   if (onDirectionFound) {
     onDirectionFound(initialMappedDirection);
   }
@@ -617,8 +617,6 @@ export async function runSingleAnalysis(params: {
                  outcome = 'NEUTRAL';
              } else if (finalDecision.winner === 'BULL') {
                  outcome = actualDirection === 'UP' ? 'WIN' : 'LOSS';
-             } else if (finalDecision.winner === 'BEAR') {
-                 outcome = actualDirection === 'DOWN' ? 'WIN' : 'LOSS';
              }
            }
          }
@@ -653,7 +651,7 @@ export async function runSingleAnalysis(params: {
     }
   }
 
-  const mappedDirection = finalDecision.winner === 'BULL' ? 'UP' : (finalDecision.winner === 'BEAR' ? 'DOWN' : 'NO_TRADE');
+  const mappedDirection = finalDecision.winner === 'BULL' ? 'LONG' : 'NO_TRADE';
 
   const cases = finalDecision.cases || { bull: { j1: 0, j2: 0, j3: 0, total: 0 }, bear: { j1: 0, j2: 0, j3: 0, total: 0 } };
   const J1 = cases.bull.j1 + cases.bear.j1;
