@@ -19,9 +19,7 @@ export interface ChartRenderResult {
 }
 
 const BULL_BODY_COLOR  = '#26a69a';   // HSV ≈ (175°, 0.77, 0.64) — inside bull band
-const BULL_WICK_COLOR  = '#26a69a';
 const BEAR_BODY_COLOR  = '#ef5350';   // HSV ≈ (1°, 0.65, 0.94) — inside bear band
-const BEAR_WICK_COLOR  = '#ef5350';
 const BACKGROUND_COLOR = '#131722';   // Dark background — matches TradingView default
 const AXIS_TEXT_COLOR  = '#d1d4dc';   // Light grey — readable by axisReader
 const GRID_COLOR       = '#1e222d';   // Subtle grid lines
