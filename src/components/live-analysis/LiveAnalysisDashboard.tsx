@@ -211,6 +211,8 @@ export function LiveAnalysisDashboard({
               )}
               {isCameraActive && (
                 <Pressable
+                   accessibilityRole="button"
+                   accessibilityLabel="Stop Camera"
                    onPress={stopCamera}
                    style={({ pressed }) => [tw`absolute top-2 right-2 bg-red-500/80 p-1.5 rounded-md`, { opacity: pressed ? 0.7 : 1 }]}
                  >
