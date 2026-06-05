@@ -186,13 +186,7 @@ export function LiveAnalysis() {
   const [isCameraActive, setIsCameraActive] = useState(false);
 
 
-  
-  // Offline deterministic mode -> tokens are always healthy (no tokens needed)
-  const [encryptedSystemTokens] = useState<string | undefined>('offline-mode-active');
-  
-  useEffect(() => {
-    // Offline mode, no snapshot needed
-  }, []);
+
 
   useEffect(() => {
     // Check browser support for Picture-in-Picture API
@@ -559,7 +553,6 @@ export function LiveAnalysis() {
               holdingMinutes: holdingMinutes,
               investmentAmount: investmentAmount as string,
               techniquesList,
-              encryptedSystemTokens,
               signal: scoutController.signal,
               isTestMode: false,
               onProgress: () => {}, // silent
@@ -621,7 +614,7 @@ export function LiveAnalysis() {
         worker.terminate();
       }
     };
-  }, [scoutActive, analysis, isCameraActive, tradingPhase, encryptedSystemTokens, graphTimeframe, investmentAmount, holdingMinutes, stockName, techniquesList, tradingDirection]);
+  }, [scoutActive, analysis, isCameraActive, tradingPhase, graphTimeframe, investmentAmount, holdingMinutes, stockName, techniquesList, tradingDirection]);
 
   const closePickers = () => {
     setShowTfPicker(false);
@@ -819,7 +812,6 @@ export function LiveAnalysis() {
             holdingMinutes: holdingMinutes,
             investmentAmount: investmentAmount as string,
             techniquesList,
-            encryptedSystemTokens,
             signal: controller.signal,
             isTestMode: mode === 'test',
             onJudgeLogs: (logs) => setJudgeLogs(prev => ({...prev, ...logs}))
@@ -1115,7 +1107,6 @@ export function LiveAnalysis() {
         preventDefault={preventDefault}
         selectedImage={selectedImage}
         techniquesList={techniquesList}
-        encryptedSystemTokens={encryptedSystemTokens}
         saveToStats={saveToStats}
         prefersReducedMotion={prefersReducedMotion ?? false}
         springProps={springProps}

@@ -122,7 +122,6 @@ export async function runSingleAnalysis(params: {
   holdingMinutes?: string;
   investmentAmount: string;
   techniquesList: any[];
-  encryptedSystemTokens?: string;
   signal: AbortSignal;
   onProgress?: (step: string) => void;
   onJudgeLogs?: (logs: any) => void;

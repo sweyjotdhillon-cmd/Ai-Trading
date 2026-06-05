@@ -35,7 +35,6 @@ interface Props {
   preventDefault: (e: any) => void;
   selectedImage: string | null;
   techniquesList: any[];
-  encryptedSystemTokens: string | undefined;
   saveToStats: (analysisData: any, outcome: 'WIN' | 'LOSS') => void;
   prefersReducedMotion: boolean;
   springProps: any;
@@ -53,7 +52,7 @@ export function LiveAnalysisDashboard({
   investmentAmount, setInvestmentAmount,
   mode, setMode, isCameraActive, startCamera, stopCamera, videoRef, pipActive,
   scoutActive, scoutData, handlePickImage, handleDrop, preventDefault, selectedImage,
-  techniquesList, encryptedSystemTokens, saveToStats,
+  techniquesList, saveToStats,
   springProps, buttonHoverProps, buttonTapProps, cardHoverProps,
   techFileName, handlePickTechnique
 }: Props) {
@@ -269,7 +268,6 @@ export function LiveAnalysisDashboard({
          <View style={mode === 'bulk' ? tw`flex` : tw`hidden`}>
            <BulkTestPanel
               techniquesList={techniquesList}
-              encryptedSystemTokens={encryptedSystemTokens}
               saveToStats={saveToStats}
               stockName={stockName}
               graphTimeframe={graphTimeframe}

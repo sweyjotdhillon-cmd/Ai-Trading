@@ -23,7 +23,6 @@ import { runSingleAnalysis } from '../utils/singleAnalysis';
 
 interface BulkTestPanelProps {
   techniquesList: any[];
-  encryptedSystemTokens?: string;
   saveToStats: (analysisData: any, outcome: 'WIN' | 'LOSS') => void;
   // Global context passes
   stockName: string;
@@ -45,7 +44,6 @@ export interface BatchRun {
 
 export function BulkTestPanel({
   techniquesList,
-  encryptedSystemTokens,
   saveToStats,
   stockName,
   graphTimeframe,
@@ -121,7 +119,6 @@ export function BulkTestPanel({
             holdingMinutes: buildDuration, 
             investmentAmount: '100',
             techniquesList: techniquesList,
-            encryptedSystemTokens,
             signal: new AbortController().signal,
             isManifestCheck: true 
           });
@@ -441,7 +438,6 @@ export function BulkTestPanel({
             holdingMinutes: item.entry.holdingMinutes || holdingMinutes || '5m',
             investmentAmount: item.entry.investmentAmount ? String(item.entry.investmentAmount) : investmentAmount,
             techniquesList: item.entry.techniqueOverrides || techniquesList,
-            encryptedSystemTokens,
             signal: abortControllerRef.current!.signal,
             isTestMode: true,
             onDirectionFound: (dir) => {
