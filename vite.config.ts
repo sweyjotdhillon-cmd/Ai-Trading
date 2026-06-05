@@ -17,6 +17,11 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 3000,
   },
+  preview: {
+    host: true,
+    allowedHosts: true,
+    port: parseInt(process.env.PORT || '4173'),
+  },
   define: {
     'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development')
   }
