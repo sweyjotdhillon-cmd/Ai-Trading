@@ -21,8 +21,8 @@ interface Props {
   investmentAmount: string;
   setInvestmentAmount: (val: string) => void;
 
-  mode: 'live' | 'test' | 'bulk';
-  setMode: (val: 'live' | 'test' | 'bulk') => void;
+  mode: 'live' | 'test' | 'bulk' | 'bot';
+  setMode: (val: 'live' | 'test' | 'bulk' | 'bot') => void;
   isCameraActive: boolean;
   startCamera: () => void;
   stopCamera: () => void;
@@ -173,13 +173,13 @@ export function LiveAnalysisDashboard({
           <View style={tw`flex-row flex-wrap justify-between items-center gap-2 mb-3`}>
              <Text style={tw`text-[8px] font-black text-[#4B5570] uppercase tracking-widest`}>Chart Feed</Text>
              <View style={tw`flex-row flex-wrap bg-black bg-opacity-20 rounded-lg p-0.5 border border-white border-opacity-10`}>
-                {(['live', 'test', 'bulk'] as const).map((m) => (
+                {(['live', 'test', 'bulk', 'bot'] as const).map((m) => (
                   <Pressable
                     key={m}
                     onPress={() => setMode(m)}
                     style={({ pressed }) => [tw`px-3 py-1 rounded-md flex-row items-center`, mode === m ? tw`bg-[#D9B382]` : tw`bg-transparent`, { opacity: pressed ? 0.7 : 1 }]}
                  >
-                   {m === 'live' ? <Camera size={12} color={mode === m ? '#1A1308' : '#4B5570'} /> : m === 'bulk' ? <Layers size={12} color={mode === m ? '#1A1308' : '#4B5570'} /> : <Activity size={12} color={mode === m ? '#1A1308' : '#4B5570'} />}
+                   {m === 'live' ? <Camera size={12} color={mode === m ? '#1A1308' : '#4B5570'} /> : m === 'bulk' ? <Layers size={12} color={mode === m ? '#1A1308' : '#4B5570'} /> : m === 'bot' ? <Activity size={12} color={mode === m ? '#1A1308' : '#4B5570'} /> : <Activity size={12} color={mode === m ? '#1A1308' : '#4B5570'} />}
                    <Text style={[tw`ml-1.5 text-[8px] font-black uppercase`, mode === m ? tw`text-[#1A1308]` : tw`text-[#4B5570]`]}>{m}</Text>
                  </Pressable>
                ))}

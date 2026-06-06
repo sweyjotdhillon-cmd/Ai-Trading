@@ -4,6 +4,9 @@ import { LiveAnalysisDebate } from './live-analysis/LiveAnalysisDebate';
 import { LiveAnalysisResult } from './live-analysis/LiveAnalysisResult';
 import { ScalpCopilotHUD } from './ScalpCopilotHUD';
 import { ComplianceFooter } from './ComplianceFooter';
+import { BotSetupScreen, BotStartPayload } from './BotSetupScreen';
+import { useBotLoop } from '../hooks/useBotLoop';
+import { getDefaultScalpConfig } from '../quant/scalpingEngine';
 import { useState, useRef, useEffect } from 'react';
 import { useWakeLock } from '../hooks/useWakeLock';
 import { antiImagine } from '../utils/antiImagine';
@@ -87,7 +90,17 @@ export function LiveAnalysis() {
   const [isBusy, setIsBusy] = useState(false);
   const [analysisStep, setAnalysisStep] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<any | null>(null);
-  const [mode, setMode] = useState<'live' | 'test' | 'bulk'>('live');
+  const [mode, setMode] = useState<'live' | 'test' | 'bulk' | 'bot'>('live');
+  const [botPayload, setBotPayload] = useState<BotStartPayload | null>(null);
+
+  const bot = useBotLoop(
+    botPayload?.symbol ?? null,
+    botPayload?.timeframeMinutes ?? 3,
+    botPayload?.capital ?? 100000,
+    botPayload?.minConfidence ?? 70,
+    botPayload?.config ?? getDefaultScalpConfig()
+  );
+
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [calibrationFrame, setCalibrationFrame] = useState<ImageData | null>(null);
   const [isStable, setIsStable] = useState(false);
@@ -912,6 +925,10 @@ export function LiveAnalysis() {
   };
 
   const winner = analysis?.judge?.winner;
+
+  if (mode === 'bot' && !botPayload) {
+    return <BotSetupScreen onStart={setBotPayload} />;
+  }
 
   return (
     <View style={[

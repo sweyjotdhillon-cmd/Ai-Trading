@@ -43,7 +43,7 @@ for(let i=0; i<100; i++) {
 // but with our strong score (75+ base), even a -30 boundary bias leaves 45, which is > 35 (CALL).
 // Wait, if it leaves 45 it's not > 60. So let's offset the priceAxis so Y % is 0.
 const sysUp = evaluateSignal(uptrend, { percent: () => -1000 } as any);
-assert(sysUp.signal === 'CALL', 'Uptrend should yield CALL. got: ' + sysUp.signal);
+assert(sysUp.signal === 'LONG', 'Uptrend should yield LONG. got: ' + sysUp.signal);
 console.log("Uptrend confidence:", sysUp.confidence);
 // We'll require CALL, and confidence >= 35
 assert(sysUp.confidence >= 35, 'Uptrend confidence > 35');
@@ -65,7 +65,7 @@ for(let i=0; i<100; i++) {
   });
 }
 const sysDown = evaluateSignal(downtrend, { percent: () => 1000 } as any);
-assert(sysDown.signal === 'PUT', 'Downtrend should yield PUT. got: ' + sysDown.signal);
+assert(sysDown.signal === 'NO_TRADE', 'Downtrend should yield NO_TRADE. got: ' + sysDown.signal);
 
 // 5. Noise (seeded LCG)
 const noise = [];
@@ -92,11 +92,11 @@ assert(sysNoise.signal === 'NO_TRADE', 'Noise should yield NO_TRADE. got: ' + sy
 
 // 6. Stability filter
 resetStability();
-const stab1 = emitStability({ signal: 'CALL', confidence: 100 } as any);
+const stab1 = emitStability({ signal: 'LONG', confidence: 100 } as any);
 assert(!stab1.stable, 'Not stable after 1');
-const stab2 = emitStability({ signal: 'CALL', confidence: 100 } as any);
+const stab2 = emitStability({ signal: 'LONG', confidence: 100 } as any);
 assert(!stab2.stable, 'Not stable after 2');
-const stab3 = emitStability({ signal: 'CALL', confidence: 100 } as any);
+const stab3 = emitStability({ signal: 'LONG', confidence: 100 } as any);
 assert(stab3.stable, 'Stable after 3');
 
 console.log('✅ All quant unit tests passed!');
