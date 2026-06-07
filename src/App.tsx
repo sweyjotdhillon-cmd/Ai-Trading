@@ -368,6 +368,8 @@ function App() {
           <View style={styles.globalErrorHeader}>
             <Text style={styles.globalErrorTitle}>{globalErrors.length} Application Error(s)</Text>
             <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss all errors"
               style={({ pressed }) => [styles.clearErrorsButton, { opacity: pressed ? 0.7 : 1 }]}
               onPress={() => setGlobalErrors([])}
             >

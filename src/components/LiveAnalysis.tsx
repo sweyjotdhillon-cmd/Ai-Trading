@@ -1169,7 +1169,12 @@ export function LiveAnalysis() {
                 {systemNotice.text}
               </Text>
             </View>
-            <Pressable onPress={() => setSystemNotice(null)} style={tw`p-1 bg-white/5 rounded-full`}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss notice"
+              onPress={() => setSystemNotice(null)}
+              style={tw`p-1 bg-white/5 rounded-full`}
+            >
               <X size={12} color="#A1A1AA" />
             </Pressable>
           </View>
