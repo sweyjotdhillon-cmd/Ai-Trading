@@ -191,7 +191,7 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
   const previewConfig = buildConfigFromPreset(preset, Number(capitalInput) || 100000, instrument, timeframe);
 
   return (
-    <div className="flex flex-col gap-6 p-6 bg-gray-900 min-h-screen text-white max-w-lg mx-auto">
+    <div className="flex flex-col gap-6 p-6 bg-gray-900 h-full overflow-y-auto text-white max-w-lg mx-auto pb-24">
       <div className="bg-gray-800 p-6 rounded-lg border border-gray-700">
         <h1 className="text-2xl font-bold mb-2">🤖 BOT SETUP</h1>
         <p className="text-sm text-gray-400">Configure before starting automated mode</p>

@@ -1,12 +1,24 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useStockFeed }               from './useStockFeed';
 import { useScalpPositionWatcher }    from './useScalpPositionWatcher';
+import { useWakeLock }                from './useWakeLock';
 import { ohlcvToDataUrl }             from '../utils/chartRenderer';
 import { runSingleAnalysis }          from '../utils/singleAnalysis';
 import { evaluateScalpSignal }         from '../quant/scalpingEngine';
 import { checkRiskCaps, onTradeClosed } from '../quant/riskGuard';
 import { loadRiskState, saveRiskState } from '../quant/riskGuard';
 import { loadScalpConfig }            from '../quant/scalpingEngine';
+import { atr } from '../quant/indicators';
+import { findSwingPivots } from '../quant/marketStructure';
+import {
+  writeTrade_Open,
+  writeTrade_Close,
+  writeStats_Update,
+  loadStats,
+  loadOpenTrade,
+  loadTodayTrades,
+} from '../services/botTradeService';
+import { auth } from '../services/firebase';
 import {
   OHLCV, ScalpingPlan, ScalpConfig, RiskState, TradeOutcome
 } from '../types';
@@ -49,6 +61,7 @@ export interface BotSessionStats {
 
 export interface UseBotLoopResult {
   // State
+  symbol:             string | null;
   phase:              BotPhase;
   currentPrice:       number | null;
   ohlcvBuffer:        OHLCV[];
@@ -111,6 +124,13 @@ function emptyStats(): BotSessionStats {
   };
 }
 
+function isPreClose(nowMs: number): boolean {
+  const ist     = new Date(nowMs + 5.5 * 60 * 60 * 1000);
+  const minutes = ist.getUTCHours() * 60 + ist.getUTCMinutes();
+  // 3:15 PM IST = 915 minutes. Block new entries from 915 onward.
+  return minutes >= 915;
+}
+
 export function useBotLoop(
   symbol:            string | null,
   timeframeMinutes:  number,
@@ -129,6 +149,8 @@ export function useBotLoop(
   const [lastConfidence,  setLastConfidence]  = useState(0);
   const [lastBlockReason, setLastBlockReason] = useState<string | null>(null);
 
+  const { requestLock, releaseLock } = useWakeLock();
+
   // Refs (do not trigger re-renders)
   const botEnabledRef     = useRef(false);    // true when bot is running
   const analyzingRef      = useRef(false);    // true while runSingleAnalysis is in progress
@@ -136,6 +158,28 @@ export function useBotLoop(
   const abortRef          = useRef<AbortController | null>(null);
   const stabilityRef      = useRef(0);        // mirrors stabilityCount for use inside callbacks
   const riskStateRef      = useRef<RiskState>(loadRiskState());
+  const analysisErrorCount = useRef(0);
+  const ANALYSIS_CIRCUIT_LIMIT = 3;
+
+  const lastValidPriceRef = useRef<number | null>(null);
+  const SPIKE_THRESHOLD   = 0.05; // 5% single-tick change = anomalous
+
+  const uidRef = useRef<string | null>(null);
+
+  // Release wake lock on unmount
+  useEffect(() => {
+    return () => {
+      releaseLock();
+    };
+  }, [releaseLock]);
+
+  // Keep uid in sync with Firebase Auth state
+  useEffect(() => {
+    const unsub = auth.onAuthStateChanged(user => {
+      uidRef.current = user?.uid ?? null;
+    });
+    return () => unsub();
+  }, []);
 
   const feed = useStockFeed(
     symbol,
@@ -149,6 +193,87 @@ export function useBotLoop(
     activeTrade?.openedAt ?? null   // passes trade open timestamp
   );
 
+  const closeActiveTrade = useCallback(async (
+    exitPrice: number,
+    outcome:   TradeOutcome
+  ) => {
+    if (!activeTrade) return;
+
+    // 1. Mark trade as closed in React local state immediately
+    const tempClosedTrade = {
+      ...activeTrade,
+      exitPrice,
+      outcome,
+    };
+
+    // 2. Compute finalized stats in Firebase (handles broker charges & capital calc)
+    let finalized = { realizedPnL: 0, realizedPnLPct: 0, rMultiple: 0, brokerCharges: 0 };
+    if (uidRef.current) {
+      try {
+        finalized = await writeTrade_Close(uidRef.current, tempClosedTrade, exitPrice, capital);
+      } catch (err) {
+        console.error('[BotLoop] writeTrade_Close fail, calculating locally...', err);
+        // Fallback local calc
+        const posSize      = activeTrade.plan.positionSize ?? 1;
+        const grossPnL     = (exitPrice - activeTrade.entryPrice) * posSize;
+        finalized.realizedPnL = grossPnL;
+        finalized.realizedPnLPct = capital > 0 ? (grossPnL / capital) * 100 : 0;
+        finalized.rMultiple = activeTrade.plan.riskRupees > 0 ? grossPnL / activeTrade.plan.riskRupees : 0;
+      }
+    } else {
+      // Offline fallback
+      const posSize      = activeTrade.plan.positionSize ?? 1;
+      const grossPnL     = (exitPrice - activeTrade.entryPrice) * posSize;
+      finalized.realizedPnL = grossPnL;
+      finalized.realizedPnLPct = capital > 0 ? (grossPnL / capital) * 100 : 0;
+      finalized.rMultiple = activeTrade.plan.riskRupees > 0 ? grossPnL / activeTrade.plan.riskRupees : 0;
+    }
+
+    const closed: BotTradeRecord = {
+      ...activeTrade,
+      exitPrice,
+      outcome,
+      realizedPnL:     finalized.realizedPnL,
+      realizedPnLPct:  finalized.realizedPnLPct,
+      rMultiple:       finalized.rMultiple,
+      closedAt:        Date.now(),
+      durationMinutes: Math.round((Date.now() - activeTrade.openedAt) / 60_000),
+    };
+
+    setTradeHistory(h => [closed, ...h]);
+
+    // 3. Update session stats & write to Firestore
+    setSessionStats(prev => {
+      const next = updateStats(prev, closed);
+      if (uidRef.current) {
+        // Today's daily P&L (for tracking daily cap limits)
+        const todayPnL = [closed, ...tradeHistory]
+          .filter(t => {
+            const tDate = new Date(t.openedAt + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
+            const today = new Date(Date.now()  + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
+            return tDate === today;
+          })
+          .reduce((sum, t) => sum + (t.realizedPnL ?? 0), 0);
+
+        writeStats_Update(uidRef.current, next, todayPnL).catch(e =>
+          console.error('[BotLoop] writeStats_Update fail:', e)
+        );
+      }
+      return next;
+    });
+
+    // 4. Update risk guard state
+    riskStateRef.current = loadRiskState();
+    const nextRisk = onTradeClosed(riskStateRef.current, finalized.realizedPnL, config.risk);
+    riskStateRef.current = nextRisk;
+    saveRiskState(nextRisk);
+
+    setActiveTrade(null);
+    setActivePlan(null);
+    setPhase('SCANNING');
+
+  }, [activeTrade, tradeHistory, capital, config]);
+
   const startBot = useCallback(() => {
     if (!symbol) return;
     botEnabledRef.current = true;
@@ -156,69 +281,32 @@ export function useBotLoop(
     setStabilityCount(0);
     setLastBlockReason(null);
     setPhase('SCANNING');
-  }, [symbol]);
+    requestLock(); // prevent screen sleep during bot operation
+  }, [symbol, requestLock]);
 
   const stopBot = useCallback(() => {
     botEnabledRef.current = false;
     abortRef.current?.abort();
+
+    // Force-close any active trade at last known price before stopping
+    if (phase === 'IN_TRADE' && activeTrade && feed.currentPrice) {
+      closeActiveTrade(feed.currentPrice, 'MANUAL_EXIT');
+    }
+
+    releaseLock();
     setPhase('IDLE');
     setActivePlan(null);
     stabilityRef.current = 0;
     setStabilityCount(0);
-  }, []);
+    analysisErrorCount.current = 0;
+  }, [phase, activeTrade, feed.currentPrice, closeActiveTrade, releaseLock]);
 
   const pauseBot = useCallback(() => {
     // Suspend analysis but keep position watcher alive
     botEnabledRef.current = false;
+    // Wake lock intentionally kept during pause — position watcher may still be active
     if (phase !== 'IN_TRADE') setPhase('IDLE');
   }, [phase]);
-
-  const closeActiveTrade = useCallback((
-    exitPrice: number,
-    outcome:   TradeOutcome
-  ) => {
-    setActiveTrade(prev => {
-      if (!prev) return null;
-
-      const grossPnL       = (exitPrice - prev.entryPrice) * (prev.plan.positionSizeShares ?? 1);
-      const brokerCharges  = prev.plan.brokerChargesEstimate ?? 0;
-      const realizedPnL    = grossPnL - brokerCharges;
-      const realizedPnLPct = (realizedPnL / capital) * 100;
-      const rMultiple      = prev.plan.riskAmount > 0
-        ? realizedPnL / prev.plan.riskAmount
-        : 0;
-      const durationMinutes = Math.round((Date.now() - prev.openedAt) / 60000);
-
-      const closed: BotTradeRecord = {
-        ...prev,
-        exitPrice,
-        outcome,
-        realizedPnL,
-        realizedPnLPct,
-        rMultiple,
-        closedAt: Date.now(),
-        durationMinutes,
-      };
-
-      // Update history
-      setTradeHistory(h => [closed, ...h]);
-
-      // Update session stats
-      setSessionStats(s => updateStats(s, closed));
-
-      // Update risk state
-      riskStateRef.current = loadRiskState();
-      const nextRisk = onTradeClosed(riskStateRef.current, realizedPnL, config.risk);
-      riskStateRef.current = nextRisk;
-      saveRiskState(nextRisk);
-
-      return null; // clear active trade
-    });
-
-    setActivePlan(null);
-    setPhase('SCANNING');
-
-  }, [capital, config]);
 
   const forceExit = useCallback(() => {
     if (phase !== 'IN_TRADE' || !activeTrade || !feed.currentPrice) return;
@@ -226,7 +314,12 @@ export function useBotLoop(
   }, [phase, activeTrade, feed.currentPrice, closeActiveTrade]);
 
   const runAnalysisCycle = useCallback(async () => {
-    if (!symbol || feed.ohlcvBuffer.length < 10) return;
+    if (!symbol) return;
+    // Need at least 15 candles: 14 for ATR14 + 1 current
+    if (feed.ohlcvBuffer.length < 15) {
+      setLastBlockReason(`WARMUP: ${feed.ohlcvBuffer.length}/15 candles loaded. Waiting...`);
+      return;
+    }
 
     analyzingRef.current = true;
     abortRef.current?.abort();
@@ -252,6 +345,8 @@ export function useBotLoop(
       });
 
       if (!result) return;
+
+      analysisErrorCount.current = 0; // reset circuit breaker on success
 
       const winner     = result.winner;      // 'BULL' | 'BEAR' | 'NO_TRADE'
       const confidence = result.finalConfidence ?? 0;
@@ -301,9 +396,30 @@ export function useBotLoop(
         return;
       }
 
+      // Pre-close gate — no new entries in last 15 minutes of session
+      if (isPreClose(Date.now())) {
+        setLastBlockReason('PRE_CLOSE: No new entries after 15:15 IST. Monitoring active trades only.');
+        setPhase('SCANNING');
+        return;
+      }
+
       // Step 7 — All gates passed — build scalping plan
       const entryPrice = feed.currentPrice;
       if (!entryPrice) return;
+
+      // Price spike detection — ignore ticks that jump >5% from last known good price
+      if (lastValidPriceRef.current !== null) {
+        const changePct = Math.abs(entryPrice - lastValidPriceRef.current) / lastValidPriceRef.current;
+        if (changePct > SPIKE_THRESHOLD) {
+          setLastBlockReason(
+            `PRICE_SPIKE: ${(changePct * 100).toFixed(1)}% change in one tick ` +
+            `(${lastValidPriceRef.current.toFixed(2)} → ${entryPrice.toFixed(2)}). Skipping.`
+          );
+          // Do not update lastValidPriceRef — keep the last known good price
+          return;
+        }
+      }
+      lastValidPriceRef.current = entryPrice;
 
       const ist = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
       const mm = ist.getUTCHours() * 60 + ist.getUTCMinutes();
@@ -311,21 +427,63 @@ export function useBotLoop(
         open: c.open, high: c.high, low: c.low, close: c.close,
         xCenter: i, isBull: c.close >= c.open
       }));
+
+      // Compute real ATR14 from OHLCV buffer
+      const highs  = feed.ohlcvBuffer.map(c => c.high);
+      const lows   = feed.ohlcvBuffer.map(c => c.low);
+      const closes = feed.ohlcvBuffer.map(c => c.close);
+
+      const atr14Arr   = atr(feed.ohlcvBuffer, 14);
+      const pivotArr   = findSwingPivots(highs, lows, 2);
+
+      // VWAP proxy — rolling HLC/3 average
+      const vwapArr = feed.ohlcvBuffer.map((c, idx) => (highs[idx] + lows[idx] + closes[idx]) / 3);
+
+      const lastAtr = atr14Arr[atr14Arr.length - 1];
+      if (!lastAtr || lastAtr <= 0 || !isFinite(lastAtr)) {
+        setLastBlockReason('ATR_INVALID: insufficient candle data for ATR14 (need 14+ candles)');
+        return;
+      }
+
       const ctx = {
         config,
-        riskState: riskStateRef.current,
-        pivots: [],
-        atr14: ohlc.map(() => entryPrice * 0.001),
-        vwapProxy: ohlc.map(() => entryPrice),
-        nowMsEpoch: Date.now(),
+        riskState:                  riskStateRef.current,
+        pivots:                     pivotArr,
+        atr14:                      atr14Arr,
+        vwapProxy:                  vwapArr,
+        nowMsEpoch:                 Date.now(),
         nowISTMinutesSinceMidnight: mm,
-        currentBarIndex: ohlc.length - 1
+        currentBarIndex:            ohlc.length - 1,
       };
 
       const decision = evaluateScalpSignal(ohlc, { winner: result.winner || 'NO_TRADE' }, ctx as any);
       const plan = decision.plan;
       if (!plan) {
         setLastBlockReason('PLAN_FAIL: evaluateScalpSignal returned no plan');
+        stabilityRef.current = 0;
+        setStabilityCount(0);
+        setPhase('SCANNING');
+        return;
+      }
+
+      // Sanity check — SL must be below entry, TP1 and TP2 must be above entry
+      const planValid =
+        plan.stopLoss   < plan.entry        &&
+        plan.takeProfit1 > plan.entry       &&
+        plan.takeProfit2 > plan.takeProfit1 &&
+        plan.rrRatio     >= (config.minRR ?? 1.5) &&
+        plan.riskRupees  > 0                &&
+        isFinite(plan.stopLoss)             &&
+        isFinite(plan.takeProfit1)          &&
+        isFinite(plan.takeProfit2);
+
+      if (!planValid) {
+        setLastBlockReason(
+          `PLAN_INVALID: SL=${plan.stopLoss.toFixed(2)} ` +
+          `Entry=${plan.entry.toFixed(2)} ` +
+          `TP1=${plan.takeProfit1.toFixed(2)} ` +
+          `TP2=${plan.takeProfit2.toFixed(2)} — geometry invalid, skipping.`
+        );
         stabilityRef.current = 0;
         setStabilityCount(0);
         setPhase('SCANNING');
@@ -357,9 +515,30 @@ export function useBotLoop(
       setActiveTrade(trade);
       setPhase('IN_TRADE');
 
+      // Write OPEN trade to Firestore
+      if (uidRef.current) {
+        writeTrade_Open(uidRef.current, trade).catch(err =>
+          console.warn('[BotLoop] writeTrade_Open failed:', err)
+        );
+      }
+
     } catch (err: any) {
       if (err.name === 'AbortError') return;
-      setLastBlockReason(`ANALYSIS_ERROR: ${err.message}`);
+
+      // Circuit breaker — halt analysis after 3 consecutive errors
+      analysisErrorCount.current += 1;
+      if (analysisErrorCount.current >= ANALYSIS_CIRCUIT_LIMIT) {
+        setPhase('HALTED');
+        setLastBlockReason(
+          `CIRCUIT_BREAK: Analysis failed ${analysisErrorCount.current}× in a row. ` +
+          `Last error: ${err.message}. Stop and restart bot.`
+        );
+        botEnabledRef.current = false;
+      } else {
+        setLastBlockReason(
+          `ANALYSIS_ERROR (${analysisErrorCount.current}/${ANALYSIS_CIRCUIT_LIMIT}): ${err.message}`
+        );
+      }
     } finally {
       analyzingRef.current = false;
     }
@@ -375,7 +554,11 @@ export function useBotLoop(
     if (analyzingRef.current) return;
     if (phase === 'IN_TRADE') return;
     if (phase === 'IDLE') return;
-    if (feed.ohlcvBuffer.length < 10) return; // need minimum candles
+    // Need at least 15 candles: 14 for ATR14 + 1 current
+    if (feed.ohlcvBuffer.length < 15) {
+      setLastBlockReason(`WARMUP: ${feed.ohlcvBuffer.length}/15 candles loaded. Waiting...`);
+      return;
+    }
 
     // Guard: stale data — do not analyze on frozen prices
     if (feed.isStale) {
@@ -416,7 +599,38 @@ export function useBotLoop(
     }
   }, [feed.marketOpen, phase, lastBlockReason]);
 
+  const isIdle = phase === 'IDLE';
+
+  // Session Recovery & Firebase Syncing
+  useEffect(() => {
+    if (!uidRef.current) return;
+    const uid = uidRef.current;
+
+    async function recoverSession() {
+      try {
+        const [stats, trades, openTrade] = await Promise.all([
+          loadStats(uid),
+          loadTodayTrades(uid),
+          loadOpenTrade(uid)
+        ]);
+
+        if (stats)     setSessionStats(stats);
+        if (trades)    setTradeHistory(trades);
+        if (openTrade) {
+          setActiveTrade(openTrade);
+          setActivePlan(openTrade.plan);
+          setPhase('IN_TRADE');
+        }
+      } catch (err) {
+        console.error('[BotLoop] Session recovery failed:', err);
+      }
+    }
+
+    recoverSession();
+  }, [isIdle]); // runs when bot is toggled or idle/active transitions occur
+
   return {
+    symbol,
     phase,
     currentPrice:    feed.currentPrice,
     ohlcvBuffer:     feed.ohlcvBuffer,

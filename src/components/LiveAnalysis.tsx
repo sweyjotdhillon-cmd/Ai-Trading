@@ -5,6 +5,7 @@ import { LiveAnalysisResult } from './live-analysis/LiveAnalysisResult';
 import { ScalpCopilotHUD } from './ScalpCopilotHUD';
 import { ComplianceFooter } from './ComplianceFooter';
 import { BotSetupScreen, BotStartPayload } from './BotSetupScreen';
+import { BotDashboard } from './BotDashboard';
 import { useBotLoop } from '../hooks/useBotLoop';
 import { getDefaultScalpConfig } from '../quant/scalpingEngine';
 import { useState, useRef, useEffect } from 'react';
@@ -17,7 +18,9 @@ import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { 
   Sparkles, 
   AlertTriangle,
-  X
+  X,
+  Bot,
+  Crosshair
 } from 'lucide-react';
 import tw from 'twrnc';
 import { isCalibrated } from '../vision/colorCalibration';
@@ -100,6 +103,13 @@ export function LiveAnalysis() {
     botPayload?.minConfidence ?? 70,
     botPayload?.config ?? getDefaultScalpConfig()
   );
+
+  // Auto-start bot the moment the user completes setup
+  useEffect(() => {
+    if (botPayload && mode === 'bot') {
+      bot.startBot();
+    }
+  }, [botPayload, mode, bot]);
 
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [calibrationFrame, setCalibrationFrame] = useState<ImageData | null>(null);
@@ -926,8 +936,73 @@ export function LiveAnalysis() {
 
   const winner = analysis?.judge?.winner;
 
+  // Bot mode — setup screen
   if (mode === 'bot' && !botPayload) {
-    return <BotSetupScreen onStart={setBotPayload} />;
+    return (
+      <div className="flex flex-col h-full bg-[#0A0B0E]">
+        {/* Bot mode header strip */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800/60 bg-zinc-900/40">
+          <div className="flex items-center gap-2 font-black text-xs text-zinc-300 uppercase tracking-widest">
+            <Bot size={14} className="text-emerald-400" />
+            <span>Bot Setup</span>
+          </div>
+          <button
+            onClick={() => setMode('live')}
+            className="flex items-center gap-1.5 text-[10px] font-mono text-zinc-500 hover:text-zinc-300 transition-colors"
+          >
+            <Crosshair size={11} /> Switch to Manual Analysis
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          <BotSetupScreen onStart={setBotPayload} />
+        </div>
+      </div>
+    );
+  }
+
+  // Bot mode — dashboard (bot is configured and running)
+  if (mode === 'bot' && botPayload) {
+    return (
+      <div className="flex flex-col h-full bg-[#0A0B0E]">
+        {/* Bot mode header strip */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800/60 bg-zinc-900/40">
+          <div className="flex items-center gap-2">
+            <Bot size={14} className="text-emerald-400 animate-pulse" />
+            <span className="text-xs font-black text-zinc-300 uppercase tracking-widest">
+              Bot Mode
+            </span>
+            <span className="text-[10px] font-mono text-zinc-600">
+              {botPayload.symbol}
+            </span>
+          </div>
+          <button
+            onClick={() => {
+              bot.stopBot();
+              setBotPayload(null);
+              setMode('live');
+            }}
+            className="flex items-center gap-1.5 text-[10px] font-mono text-zinc-500 hover:text-zinc-300 transition-colors"
+          >
+            <Crosshair size={11} /> Back to Manual Analysis
+          </button>
+        </div>
+
+        {/* Main dashboard — scrollable */}
+        <div className="flex-1 overflow-y-auto">
+          <BotDashboard
+            bot={bot}
+            capital={botPayload.capital}
+            symbol={botPayload.symbol}
+            onStop={() => {
+              bot.stopBot();
+              setBotPayload(null);
+              setMode('live');
+            }}
+            onPause={bot.pauseBot}
+          />
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -1010,6 +1085,45 @@ export function LiveAnalysis() {
 
       {mode === 'live' && tradingPhase === 'WAITING_FOR_ENTRY' && tradingDirection && (
           <AnimatedArrows direction={tradingDirection} />
+      )}
+
+      {botPayload && (
+        <div className={`p-3 text-[10px] font-mono transition-colors border-b z-50 flex items-center justify-between ${
+          bot.phase === 'IN_TRADE'
+            ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+            : bot.phase === 'HALTED'
+            ? 'bg-rose-500/10 border-rose-500/20 text-rose-400'
+            : 'bg-sky-500/10 border-sky-500/20 text-sky-400'
+        }`}>
+          <span className="flex items-center gap-2">
+            <span className={`w-1.5 h-1.5 rounded-full ${
+              bot.phase === 'IN_TRADE' ? 'bg-emerald-400 animate-pulse' :
+              bot.phase === 'HALTED'   ? 'bg-rose-400' : 'bg-sky-400 animate-pulse'
+            }`} />
+            {bot.phase}
+          </span>
+          <span>{bot.symbol ?? botPayload.symbol}</span>
+          <span>
+            {bot.currentPrice != null
+              ? `₹${bot.currentPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+              : '—'}
+          </span>
+          {bot.phase === 'IN_TRADE' && bot.unrealizedPnL != null && (
+            <span className={bot.unrealizedPnL >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
+              {bot.unrealizedPnL >= 0 ? '+' : ''}₹{bot.unrealizedPnL.toFixed(0)} live
+            </span>
+          )}
+          {bot.phase === 'IN_TRADE' && bot.activePlan && (
+            <span className="text-zinc-500">
+              SL: <strong className="text-rose-400">
+                ₹{(bot.trailSL || bot.activePlan.stopLoss).toFixed(2)}
+              </strong>
+              {' '} TP2: <strong className="text-emerald-400">
+                ₹{bot.activePlan.takeProfit2.toFixed(2)}
+              </strong>
+            </span>
+          )}
+        </div>
       )}
 
       <ScrollView 
