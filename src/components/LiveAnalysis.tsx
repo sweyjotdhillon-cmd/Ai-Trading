@@ -101,7 +101,8 @@ export function LiveAnalysis() {
     botPayload?.timeframeMinutes ?? 3,
     botPayload?.capital ?? 100000,
     botPayload?.minConfidence ?? 70,
-    botPayload?.config ?? getDefaultScalpConfig()
+    botPayload?.config ?? getDefaultScalpConfig(),
+    botPayload?.techniquesList ?? []
   );
 
   // Auto-start bot the moment the user completes setup

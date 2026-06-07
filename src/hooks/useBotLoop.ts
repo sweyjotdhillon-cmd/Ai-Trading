@@ -3,6 +3,7 @@ import { useStockFeed }               from './useStockFeed';
 import { useScalpPositionWatcher }    from './useScalpPositionWatcher';
 import { useWakeLock }                from './useWakeLock';
 import { ohlcvToDataUrl }             from '../utils/chartRenderer';
+import { vwapProxy }                  from '../quant/vwapProxy';
 import { runSingleAnalysis }          from '../utils/singleAnalysis';
 import { evaluateScalpSignal }         from '../quant/scalpingEngine';
 import { checkRiskCaps, onTradeClosed } from '../quant/riskGuard';
@@ -77,6 +78,11 @@ export interface UseBotLoopResult {
   feedError:          string | null;
   isStale:            boolean;
   candleCount:        number;
+  lastChartUrl:      string | null;    // base64 PNG of last analyzed chart
+  lastAnalyzedAt:    number | null;    // timestamp of last analysis
+  isAnalyzing:       boolean;          // true while runSingleAnalysis is running
+  cooldownRemainsMs: number | null;    // ms until cooldown ends, null if not cooling
+  techniqueCount:    number;           // how many techniques are active
 
   // Actions
   startBot:   () => void;
@@ -137,6 +143,7 @@ export function useBotLoop(
   capital:           number,           // ₹ total capital for position sizing
   minConfidence:     number,           // 0–100, user-set threshold
   config:            ScalpConfig,
+  techniquesList:    any[],            // ← ADD: from BotStartPayload, empty if no file
 ): UseBotLoopResult {
   // State (drives UI re-renders)
   const [phase,           setPhase]           = useState<BotPhase>('IDLE');
@@ -148,6 +155,10 @@ export function useBotLoop(
   const [lastSignal,      setLastSignal]      = useState<string | null>(null);
   const [lastConfidence,  setLastConfidence]  = useState(0);
   const [lastBlockReason, setLastBlockReason] = useState<string | null>(null);
+  const [lastChartUrl,     setLastChartUrl]     = useState<string | null>(null);
+  const [lastAnalyzedAt,   setLastAnalyzedAt]   = useState<number | null>(null);
+  const [isAnalyzing,      setIsAnalyzing]      = useState(false);
+  const [cooldownRemainsMs,setCooldownRemainsMs] = useState<number | null>(null);
 
   const { requestLock, releaseLock } = useWakeLock();
 
@@ -160,11 +171,13 @@ export function useBotLoop(
   const riskStateRef      = useRef<RiskState>(loadRiskState());
   const analysisErrorCount = useRef(0);
   const ANALYSIS_CIRCUIT_LIMIT = 3;
+  const noTechWarnedRef   = useRef(false);
 
   const lastValidPriceRef = useRef<number | null>(null);
   const SPIKE_THRESHOLD   = 0.05; // 5% single-tick change = anomalous
 
-  const uidRef = useRef<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(auth.currentUser?.uid ?? null);
+  const uidRef = useRef<string | null>(auth.currentUser?.uid ?? null);
 
   // Release wake lock on unmount
   useEffect(() => {
@@ -176,6 +189,7 @@ export function useBotLoop(
   // Keep uid in sync with Firebase Auth state
   useEffect(() => {
     const unsub = auth.onAuthStateChanged(user => {
+      setUserId(user?.uid ?? null);
       uidRef.current = user?.uid ?? null;
     });
     return () => unsub();
@@ -278,6 +292,7 @@ export function useBotLoop(
     if (!symbol) return;
     botEnabledRef.current = true;
     stabilityRef.current  = 0;
+    noTechWarnedRef.current = false;
     setStabilityCount(0);
     setLastBlockReason(null);
     setPhase('SCANNING');
@@ -321,6 +336,12 @@ export function useBotLoop(
       return;
     }
 
+    // Warn if no techniques — analysis still runs but J4 will score zero
+    if (techniquesList.length === 0 && !noTechWarnedRef.current) {
+      noTechWarnedRef.current = true;
+      setLastBlockReason('NO_TECHNIQUES: Upload a technique file in Bot Setup for better signal quality. Continuing with J1/J2/J3 only.');
+    }
+
     analyzingRef.current = true;
     abortRef.current?.abort();
     abortRef.current = new AbortController();
@@ -333,6 +354,11 @@ export function useBotLoop(
         return;
       }
 
+      // Store chart image for live display
+      setLastChartUrl(dataUrl);
+      setLastAnalyzedAt(Date.now());
+      setIsAnalyzing(true);
+
       // Step 2 — Run full analysis pipeline (vision → indicators → judges)
       const result = await runSingleAnalysis({
         imageDataUrl:     dataUrl,
@@ -340,7 +366,7 @@ export function useBotLoop(
         graphTimeframe:   `${timeframeMinutes}m`,
         holdingMinutes:   `${timeframeMinutes}m`,
         investmentAmount: String(capital),
-        techniquesList:   [],            // load from config if available
+        techniquesList,
         signal:           abortRef.current.signal,
       });
 
@@ -436,8 +462,8 @@ export function useBotLoop(
       const atr14Arr   = atr(feed.ohlcvBuffer, 14);
       const pivotArr   = findSwingPivots(highs, lows, 2);
 
-      // VWAP proxy — rolling HLC/3 average
-      const vwapArr = feed.ohlcvBuffer.map((c, idx) => (highs[idx] + lows[idx] + closes[idx]) / 3);
+      // VWAP proxy — anchored
+      const vwapArr = vwapProxy(feed.ohlcvBuffer, { mode: 'ANCHORED' });
 
       const lastAtr = atr14Arr[atr14Arr.length - 1];
       if (!lastAtr || lastAtr <= 0 || !isFinite(lastAtr)) {
@@ -541,8 +567,9 @@ export function useBotLoop(
       }
     } finally {
       analyzingRef.current = false;
+      setIsAnalyzing(false);
     }
-  }, [symbol, timeframeMinutes, capital, minConfidence, config, feed]);
+  }, [symbol, timeframeMinutes, capital, minConfidence, config, feed, techniquesList]);
 
   useEffect(() => {
     // Guard: only run if a new candle actually arrived
@@ -599,12 +626,41 @@ export function useBotLoop(
     }
   }, [feed.marketOpen, phase, lastBlockReason]);
 
+  // Cooldown countdown ticker
+  useEffect(() => {
+    if (phase !== 'COOLDOWN') {
+      setCooldownRemainsMs(null);
+      return;
+    }
+    const tick = () => {
+      const state = loadRiskState();
+      const remaining = state.cooldownUntil > 0
+        ? Math.max(0, state.cooldownUntil - Date.now())
+        : null;
+      setCooldownRemainsMs(remaining);
+      // Auto-exit cooldown when timer reaches zero
+      if (remaining === 0) {
+        setPhase('SCANNING');
+        setCooldownRemainsMs(null);
+      }
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [phase]);
+
   const isIdle = phase === 'IDLE';
 
   // Session Recovery & Firebase Syncing
   useEffect(() => {
-    if (!uidRef.current) return;
-    const uid = uidRef.current;
+    if (!userId) {
+      setSessionStats(emptyStats());
+      setTradeHistory([]);
+      setActiveTrade(null);
+      setActivePlan(null);
+      return;
+    }
+    const uid = userId;
 
     async function recoverSession() {
       try {
@@ -627,7 +683,7 @@ export function useBotLoop(
     }
 
     recoverSession();
-  }, [isIdle]); // runs when bot is toggled or idle/active transitions occur
+  }, [isIdle, userId]); // runs when bot is toggled or user changes
 
   return {
     symbol,
@@ -657,5 +713,10 @@ export function useBotLoop(
     unrealizedPnL:    watcher.unrealizedPnL,
     unrealizedPnLPct: watcher.unrealizedPnLPct,
     timeRemainingMs:  watcher.timeRemainingMs,
+    lastChartUrl,
+    lastAnalyzedAt,
+    isAnalyzing,
+    cooldownRemainsMs,
+    techniqueCount:    techniquesList.length,
   };
 }

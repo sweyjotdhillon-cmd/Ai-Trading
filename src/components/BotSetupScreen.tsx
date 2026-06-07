@@ -14,6 +14,8 @@ export interface BotStartPayload {
   capital:          number;
   timeframeMinutes: number;
   minConfidence:    number;
+  techniquesList:   any[];      // ← ADD: user-uploaded techniques, empty if none loaded
+  techFileName:     string | null; // ← ADD: display name for the loaded file
 }
 
 interface BotSetupScreenProps {
@@ -133,6 +135,46 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
   const [errors, setErrors] = useState<string[]>([]);
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const [techniquesList, setTechniquesList] = useState<any[]>([]);
+  const [techFileName,   setTechFileName]   = useState<string | null>(null);
+  const [techError,      setTechError]      = useState<string | null>(null);
+
+  const handleTechFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.name.endsWith('.json')) {
+      setTechError('Only .json technique files are supported.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const json = JSON.parse(ev.target?.result as string);
+        const parsed: any[] = Array.isArray(json)
+          ? json
+          : (json.techniques ?? json.list ?? []);
+        if (!Array.isArray(parsed) || parsed.length === 0) {
+          setTechError('File parsed but contains zero techniques. Check the format.');
+          return;
+        }
+        setTechniquesList(parsed);
+        setTechFileName(file.name);
+        setTechError(null);
+      } catch {
+        setTechError('Invalid JSON — could not parse the technique file.');
+      }
+    };
+    reader.readAsText(file);
+    // Reset input so the same file can be re-uploaded
+    e.target.value = '';
+  };
+
+  const handleClearTechniques = () => {
+    setTechniquesList([]);
+    setTechFileName(null);
+    setTechError(null);
+  };
+
   useEffect(() => {
     if (query.length < 2) {
       setSearchResults([]);
@@ -185,8 +227,10 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
       capital:          parsedCapital,
       timeframeMinutes: timeframe,
       minConfidence,
+      techniquesList,
+      techFileName,
     });
-  }, [selectedStock, capitalInput, preset, instrument, timeframe, minConfidence, onStart]);
+  }, [selectedStock, capitalInput, preset, instrument, timeframe, minConfidence, techniquesList, techFileName, onStart]);
 
   const previewConfig = buildConfigFromPreset(preset, Number(capitalInput) || 100000, instrument, timeframe);
 
@@ -322,6 +366,51 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
         <div className="text-xs text-gray-400 mt-1">
           Bot will only trade signals above {minConfidence}%
         </div>
+      </div>
+
+      {/* Technique File Upload */}
+      <div className="bg-gray-800 p-4 rounded-lg flex flex-col gap-2">
+        <label className="text-[11px] font-mono text-zinc-400 uppercase tracking-wider font-bold">
+          Technique File
+        </label>
+
+        {techFileName ? (
+          // File loaded state
+          <div className="flex items-center justify-between px-4 py-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl">
+            <div>
+              <span className="text-xs font-mono font-bold text-emerald-400">
+                ✓ {techFileName}
+              </span>
+              <span className="block text-[10px] font-mono text-emerald-600 mt-0.5">
+                {techniquesList.length} techniques loaded
+              </span>
+            </div>
+            <button
+              onClick={handleClearTechniques}
+              className="text-[10px] font-mono text-zinc-500 hover:text-rose-400 transition-colors"
+            >
+              Remove
+            </button>
+          </div>
+        ) : (
+          // No file state
+          <label className="flex flex-col items-center justify-center px-4 py-5 bg-zinc-800/40 border border-dashed border-zinc-700 rounded-xl cursor-pointer hover:border-zinc-500 transition-colors">
+            <span className="text-zinc-400 text-xs font-mono mb-1">Upload .json technique file</span>
+            <span className="text-zinc-600 text-[10px] font-mono text-center">
+              Without a technique file, J4 judge scores zero. Signal quality will be lower.
+            </span>
+            <input
+              type="file"
+              accept=".json"
+              className="hidden"
+              onChange={handleTechFileUpload}
+            />
+          </label>
+        )}
+
+        {techError && (
+          <span className="text-[10px] font-mono text-rose-400">{techError}</span>
+        )}
       </div>
 
       <div className="bg-gray-800 p-4 rounded-lg flex flex-col gap-2 font-mono text-xs">

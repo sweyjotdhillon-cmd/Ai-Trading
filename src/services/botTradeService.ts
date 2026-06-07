@@ -1,6 +1,6 @@
 import {
   doc, collection,
-  setDoc, updateDoc, getDoc, getDocs,
+  setDoc, updateDoc, getDoc, getDocs, deleteDoc,
   query, where, orderBy, limit,
   serverTimestamp,
   DocumentReference
@@ -58,7 +58,7 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
 }
 
 // tradeBot/{uid}/trades/{tradeId}  — one doc per trade
-// tradeBot/{uid}/stats             — single rolling stats doc
+// tradeBot/{uid}/stats/global      — single rolling stats doc
 // tradeBot/{uid}/sessions/{date}   — daily session grouping (YYYY-MM-DD IST)
 
 function tradesCol(uid: string) {
@@ -70,7 +70,7 @@ function tradeDoc(uid: string, tradeId: string): DocumentReference {
 }
 
 function statsDoc(uid: string): DocumentReference {
-  return doc(db, 'tradeBot', uid, 'stats');
+  return doc(db, 'tradeBot', uid, 'stats', 'global');
 }
 
 // Returns YYYY-MM-DD in IST for session grouping
@@ -190,7 +190,7 @@ export async function writeStats_Update(
   stats: BotSessionStats,
   dailyPnL: number          // today's P&L only, separate from all-time
 ): Promise<void> {
-  const path = `tradeBot/${uid}/stats`;
+  const path = `tradeBot/${uid}/stats/global`;
   try {
     const payload = {
       uid,
@@ -217,7 +217,7 @@ export async function writeStats_Update(
 export async function loadStats(
   uid: string
 ): Promise<BotSessionStats | null> {
-  const path = `tradeBot/${uid}/stats`;
+  const path = `tradeBot/${uid}/stats/global`;
   try {
     const snap = await getDoc(statsDoc(uid));
     if (!snap.exists()) return null;
@@ -340,3 +340,20 @@ export async function loadTodayTrades(
     }
   }
 }
+
+export async function purgeAllSavedData(uid: string): Promise<void> {
+  const path = `tradeBot/${uid}`;
+  try {
+    // 1. Delete global stats document
+    await deleteDoc(statsDoc(uid));
+    
+    // 2. Fetch all trades and delete each document
+    const q = query(tradesCol(uid));
+    const snap = await getDocs(q);
+    const deletePromises = snap.docs.map(docSnap => deleteDoc(docSnap.ref));
+    await Promise.all(deletePromises);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+

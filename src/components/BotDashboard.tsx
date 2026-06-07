@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import {
   Activity, TrendingUp, TrendingDown, Shield,
   AlertTriangle, CheckCircle, Clock, Target,
@@ -40,6 +40,12 @@ const OUTCOME_CONFIG: Record<string, { label: string; color: string; bg: string 
   TIME_EXIT:   { label: 'TIME',     color: 'text-orange-400',  bg: 'bg-orange-500/10'  },
   MANUAL_EXIT: { label: 'MANUAL',   color: 'text-zinc-400',    bg: 'bg-zinc-700/40'    },
 };
+
+interface Toast {
+  id:      string;
+  message: string;
+  type:    'win' | 'loss' | 'info' | 'warning';
+}
 
 function EquityCurve({ trades }: { trades: BotTradeRecord[] }) {
   const closed = trades.filter(t => t.realizedPnL !== null);
@@ -136,6 +142,55 @@ function TimeBar({
 
 export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashboardProps) {
 
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const prevPhaseRef    = useRef<string>('');
+  const prevOutcomeRef  = useRef<string | null>(null);
+
+  const addToast = (message: string, type: Toast['type']) => {
+    const id = Date.now().toString() + Math.random().toString(36).substr(2, 5);
+    setToasts(prev => [{ id, message, type }, ...prev].slice(0, 4));
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 4000);
+  };
+
+  // Fire toasts on key state changes
+  useEffect(() => {
+    const phaseValue = bot.phase;
+
+    // Trade opened
+    if (phaseValue === 'IN_TRADE' && prevPhaseRef.current !== 'IN_TRADE') {
+      addToast(`LONG entered at ₹${bot.activePlan?.entry?.toFixed(2) ?? '—'}`, 'info');
+    }
+
+    // Trade closed outcomes
+    if (bot.tradeHistory.length > 0) {
+      const latest  = bot.tradeHistory[0];
+      const outcome = latest.outcome;
+      if (outcome && outcome !== prevOutcomeRef.current) {
+        prevOutcomeRef.current = outcome;
+        if (outcome === 'TP2_HIT') addToast(`TP2 HIT ✓  +₹${latest.realizedPnL?.toFixed(0)}`, 'win');
+        else if (outcome === 'TP1_HIT') addToast(`TP1 HIT ✓  +₹${latest.realizedPnL?.toFixed(0)}`, 'win');
+        else if (outcome === 'TRAIL_HIT') addToast(`Trailing stop ✓  +₹${latest.realizedPnL?.toFixed(0)}`, 'win');
+        else if (outcome === 'SL_HIT') addToast(`SL hit  −₹${Math.abs(latest.realizedPnL ?? 0).toFixed(0)}`, 'loss');
+        else if (outcome === 'TIME_EXIT') addToast('Time exit — max hold reached', 'warning');
+        else if (outcome === 'MANUAL_EXIT') addToast('Manual exit executed', 'info');
+      }
+    }
+
+    // TP1 milestone
+    if (bot.tp1Hit && prevPhaseRef.current === 'IN_TRADE') {
+      addToast('TP1 reached — SL moved to break-even', 'info');
+    }
+
+    // Halted
+    if (phaseValue === 'HALTED' && prevPhaseRef.current !== 'HALTED') {
+      addToast(`Bot halted: ${bot.lastBlockReason ?? 'Unknown reason'}`, 'warning');
+    }
+
+    prevPhaseRef.current = phaseValue;
+  }, [bot.phase, bot.tradeHistory, bot.tp1Hit, bot.activePlan, bot.lastBlockReason]);
+
   const phase  = PHASE_CONFIG[bot.phase];
   const pnlPos = (bot.sessionStats.totalPnL ?? 0) >= 0;
 
@@ -161,6 +216,125 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
   return (
     <div className="w-full h-full flex flex-col gap-3 bg-[#0A0B0E] p-4 overflow-y-auto pb-24">
 
+      {/* Toast notifications */}
+      <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
+        {toasts.map(t => (
+          <div
+            key={t.id}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-xs font-mono font-bold shadow-2xl backdrop-blur-sm transition-all animate-in slide-in-from-right ${
+              t.type === 'win'     ? 'bg-emerald-900/90 border-emerald-500/50 text-emerald-300' :
+              t.type === 'loss'    ? 'bg-rose-900/90 border-rose-500/50 text-rose-300' :
+              t.type === 'warning' ? 'bg-orange-900/90 border-orange-500/50 text-orange-300' :
+                                     'bg-zinc-900/90 border-zinc-600/50 text-zinc-300'
+            }`}
+          >
+            {t.type === 'win'     ? '✓' :
+             t.type === 'loss'    ? '✗' :
+             t.type === 'warning' ? '⚠' : 'ℹ'} {t.message}
+          </div>
+        ))}
+      </div>
+
+      {/* ── SECTION 0: Chart Preview ───────────────────────────────── */}
+      {bot.lastChartUrl && (
+        <div className="relative bg-zinc-900/40 border border-zinc-800/40 rounded-xl overflow-hidden">
+          {/* Chart image */}
+          <img
+            src={bot.lastChartUrl}
+            alt="Last analyzed chart"
+            className="w-full h-auto object-cover"
+            style={{ imageRendering: 'pixelated', maxHeight: '180px' }}
+          />
+
+          {/* Analyzing overlay */}
+          {bot.isAnalyzing && (
+            <div className="absolute inset-0 bg-[#131722]/60 backdrop-blur-[1px] flex items-center justify-center">
+              <div className="flex items-center gap-2 px-4 py-2 bg-zinc-900/80 rounded-full border border-[#D9B382]/30">
+                <div className="w-2 h-2 rounded-full bg-[#D9B382] animate-pulse" />
+                <span className="text-[10px] font-mono font-bold text-[#D9B382] uppercase tracking-widest">
+                  Analyzing...
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Entry / SL / TP overlays on chart — horizontal price lines */}
+          {bot.phase === 'IN_TRADE' && bot.activePlan && bot.currentPrice && (() => {
+            const plan     = bot.activePlan;
+            const priceMin = Math.min(plan.stopLoss, bot.currentPrice ?? plan.entry) * 0.998;
+            const priceMax = Math.max(plan.takeProfit2, bot.currentPrice ?? plan.entry) * 1.002;
+            const range    = priceMax - priceMin;
+            const toY      = (price: number) =>
+              `${(100 - ((price - priceMin) / range) * 100).toFixed(1)}%`;
+
+            return (
+              <div className="absolute inset-0 pointer-events-none">
+                {/* SL line */}
+                <div className="absolute left-0 right-0 border-t border-rose-500/70 border-dashed flex items-center"
+                  style={{ top: toY(bot.trailSL || plan.stopLoss) }}>
+                  <span className="bg-rose-500/80 text-white text-[8px] font-mono px-1 ml-1 rounded">
+                    SL {plan.stopLoss.toFixed(1)}
+                  </span>
+                </div>
+                {/* TP1 line */}
+                {!bot.tp1Hit && (
+                  <div className="absolute left-0 right-0 border-t border-teal-400/70 border-dashed flex items-center"
+                    style={{ top: toY(plan.takeProfit1) }}>
+                    <span className="bg-teal-500/80 text-white text-[8px] font-mono px-1 ml-1 rounded">
+                      TP1 {plan.takeProfit1.toFixed(1)}
+                    </span>
+                  </div>
+                )}
+                {/* TP2 line */}
+                <div className="absolute left-0 right-0 border-t border-emerald-400/70 border-dashed flex items-center"
+                  style={{ top: toY(plan.takeProfit2) }}>
+                  <span className="bg-emerald-500/80 text-white text-[8px] font-mono px-1 ml-1 rounded">
+                    TP2 {plan.takeProfit2.toFixed(1)}
+                  </span>
+                </div>
+                {/* Entry line */}
+                <div className="absolute left-0 right-0 border-t border-[#D9B382]/60 border-dashed flex items-center"
+                  style={{ top: toY(plan.entry) }}>
+                  <span className="bg-[#D9B382]/80 text-[#1A1308] text-[8px] font-mono font-bold px-1 ml-1 rounded">
+                    E {plan.entry.toFixed(1)}
+                  </span>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Bottom metadata strip */}
+          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-[#0A0B0E]/90 to-transparent px-3 py-2 flex justify-between items-end">
+            <span className="text-[9px] font-mono text-zinc-500">
+              {bot.lastAnalyzedAt
+                ? `Last scan ${Math.round((Date.now() - bot.lastAnalyzedAt) / 1000)}s ago`
+                : 'Awaiting scan'}
+            </span>
+            <span className="text-[9px] font-mono text-zinc-600">
+              {bot.candleCount} candles
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Warmup bar — when bot has no chart yet */}
+      {!bot.lastChartUrl && bot.phase !== 'IDLE' && (
+        <div className="bg-zinc-900/40 border border-zinc-800/40 rounded-xl p-4 text-center">
+          <div className="text-[10px] font-mono text-zinc-500 mb-2 uppercase tracking-wider">
+            Building candle history...
+          </div>
+          <div className="w-full bg-zinc-800 rounded-full h-1.5">
+            <div
+              className="bg-[#D9B382] h-1.5 rounded-full transition-all duration-500"
+              style={{ width: `${Math.min(100, (bot.candleCount / 15) * 100).toFixed(0)}%` }}
+            />
+          </div>
+          <div className="text-[10px] font-mono text-zinc-600 mt-1.5">
+            {bot.candleCount}/15 candles
+          </div>
+        </div>
+      )}
+
       {/* ── SECTION 1: Status Header ─────────────────────────────────── */}
       <div className="flex items-center justify-between bg-zinc-900/60 border border-zinc-800/60 rounded-xl px-4 py-3">
         <div className="flex items-center gap-3">
@@ -172,6 +346,15 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
 
           {/* Symbol */}
           <span className="font-mono text-sm font-bold text-zinc-300">{symbol}</span>
+
+          {/* Techniques status */}
+          <span className={`flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded-full border ${
+            bot.techniqueCount > 0
+              ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
+              : 'text-amber-500 bg-amber-500/10 border-amber-500/20'
+          }`}>
+            🚀 {bot.techniqueCount === 0 ? '0 TECHNIQUES LOADED' : `${bot.techniqueCount} TECHNIQUES`}
+          </span>
 
           {/* Market status */}
           <span className={`flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded-full border ${
@@ -227,6 +410,25 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
         </div>
       )}
 
+      {/* Cooldown countdown */}
+      {bot.phase === 'COOLDOWN' && bot.cooldownRemainsMs != null && (
+        <div className="flex items-center justify-between px-4 py-2.5 bg-orange-500/10 border border-orange-500/20 rounded-xl">
+          <div className="flex items-center gap-2 text-orange-400 text-xs font-mono">
+            <Clock size={12} />
+            <span className="font-black uppercase tracking-wider">Cooldown</span>
+          </div>
+          <span className="font-mono text-sm font-black text-orange-300">
+            {Math.floor(bot.cooldownRemainsMs / 60000)}m {Math.floor((bot.cooldownRemainsMs % 60000) / 1000)}s
+          </span>
+          <div className="w-24 bg-orange-900/40 rounded-full h-1.5 overflow-hidden">
+            <div
+              className="bg-orange-500 h-1.5 rounded-full transition-all duration-1000"
+              style={{ width: `${Math.min(100, (bot.cooldownRemainsMs / 600_000) * 100).toFixed(0)}%` }}
+            />
+          </div>
+        </div>
+      )}
+
       {/* ── SECTION 2: Live Price + Last Signal ──────────────────────── */}
       <div className="grid grid-cols-2 gap-3">
         <div className="bg-zinc-900/40 border border-zinc-800/40 rounded-xl p-3.5">
@@ -242,14 +444,44 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
         </div>
 
         <div className="bg-zinc-900/40 border border-zinc-800/40 rounded-xl p-3.5">
-          <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-wider">Last Signal</span>
-          <div className={`mt-1 font-mono text-lg font-black ${
+          <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-wider">Confidence</span>
+          <div className="mt-2 relative">
+            {/* Arc gauge — SVG */}
+            <svg viewBox="0 0 80 48" className="w-full h-12">
+              {/* Background arc */}
+              <path
+                d="M 8 44 A 32 32 0 0 1 72 44"
+                fill="none" stroke="#27272a" strokeWidth="5"
+                strokeLinecap="round"
+              />
+              {/* Filled arc based on confidence */}
+              <path
+                d="M 8 44 A 32 32 0 0 1 72 44"
+                fill="none"
+                stroke={
+                  bot.lastConfidence >= 75 ? '#34d399' :
+                  bot.lastConfidence >= 60 ? '#D9B382' : '#71717a'
+                }
+                strokeWidth="5"
+                strokeLinecap="round"
+                strokeDasharray={`${(bot.lastConfidence / 100) * 100.5} 100.5`}
+              />
+              {/* Value text */}
+              <text x="40" y="43" textAnchor="middle"
+                fontSize="11" fontWeight="900" fontFamily="monospace"
+                fill={
+                  bot.lastConfidence >= 75 ? '#34d399' :
+                  bot.lastConfidence >= 60 ? '#D9B382' : '#71717a'
+                }
+              >
+                {bot.lastConfidence.toFixed(0)}%
+              </text>
+            </svg>
+          </div>
+          <div className={`text-center text-[9px] font-mono font-bold mt-0.5 ${
             bot.lastSignal === 'LONG' ? 'text-emerald-400' : 'text-zinc-500'
           }`}>
             {bot.lastSignal ?? 'WAITING'}
-          </div>
-          <div className="text-[10px] font-mono text-zinc-600 mt-0.5">
-            Confidence: <span className="text-amber-400 font-bold">{bot.lastConfidence.toFixed(1)}%</span>
           </div>
         </div>
       </div>
