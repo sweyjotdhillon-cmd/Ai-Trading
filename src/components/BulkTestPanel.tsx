@@ -620,7 +620,12 @@ export function BulkTestPanel({
                 {bulkNotice.text}
               </Text>
             </View>
-            <Pressable onPress={() => setBulkNotice(null)} style={tw`p-1.5 bg-black/20 rounded-full`}>
+            <Pressable
+              onPress={() => setBulkNotice(null)}
+              style={tw`p-1.5 bg-black/20 rounded-full`}
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss notice"
+            >
               <X size={14} color="#000" />
             </Pressable>
           </View>
