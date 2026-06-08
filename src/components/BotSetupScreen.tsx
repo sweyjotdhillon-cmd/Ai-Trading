@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ScalpConfig, RiskConfig, ScalpInstrument, SLMode, TPMode } from '../types';
 import { getDefaultScalpConfig } from '../quant/scalpingEngine';
+import { searchNSEStocks as searchSymbols } from '../services/stockPriceFeed';
 
 interface StockSearchResult {
   symbol:   string;   // e.g. 'RELIANCE.NS'
@@ -28,7 +29,8 @@ function buildConfigFromPreset(
   preset:           RiskPreset,
   capital:          number,
   instrument:       ScalpInstrument,
-  timeframeMinutes: number
+  timeframeMinutes: number,
+  marketHoursGate:  boolean
 ): ScalpConfig {
   const base = getDefaultScalpConfig();
 
@@ -92,6 +94,7 @@ function buildConfigFromPreset(
     ...chosen,
     capitalRupees: capital,
     instrument,
+    enableMarketHoursGate: marketHoursGate,
     risk: {
       ...base.risk,
       ...(chosen.risk ?? {}),
@@ -99,24 +102,23 @@ function buildConfigFromPreset(
   };
 }
 
-const BASE_URL = 'https://military-jobye-haiqstudios-14f59639.koyeb.app';
-
-async function searchStocks(query: string): Promise<StockSearchResult[]> {
-  if (query.trim().length < 2) return [];
-  const res = await fetch(
-    `${BASE_URL}/search?q=${encodeURIComponent(query.trim())}`,
-    { signal: AbortSignal.timeout(6000) }
-  );
-  if (!res.ok) throw new Error(`Search failed ${res.status}`);
-  const data = await res.json();
-
-  if (!Array.isArray(data)) return [];
-  return data.slice(0, 8).map((item: any) => ({
-    symbol:   String(item.symbol ?? ''),
-    name:     String(item.shortname ?? item.longname ?? item.symbol ?? ''),
-    exchange: String(item.exchange ?? item.quoteType ?? ''),
-  })).filter((r: any) => r.symbol.length > 0);
-}
+const POPULAR_STOCKS: StockSearchResult[] = [
+  { symbol: 'RELIANCE:NSE',   name: 'Reliance Industries',       exchange: 'NSE' },
+  { symbol: 'TCS:NSE',        name: 'Tata Consultancy Services', exchange: 'NSE' },
+  { symbol: 'HDFCBANK:NSE',   name: 'HDFC Bank',                 exchange: 'NSE' },
+  { symbol: 'INFY:NSE',       name: 'Infosys',                   exchange: 'NSE' },
+  { symbol: 'ICICIBANK:NSE',  name: 'ICICI Bank',                exchange: 'NSE' },
+  { symbol: 'SBIN:NSE',       name: 'State Bank of India',       exchange: 'NSE' },
+  { symbol: 'BHARTIARTL:NSE', name: 'Bharti Airtel',             exchange: 'NSE' },
+  { symbol: 'ITC:NSE',        name: 'ITC Limited',               exchange: 'NSE' },
+  { symbol: 'LT:NSE',         name: 'Larsen & Toubro',           exchange: 'NSE' },
+  { symbol: 'MARUTI:NSE',     name: 'Maruti Suzuki',             exchange: 'NSE' },
+  { symbol: 'BAJFINANCE:NSE', name: 'Bajaj Finance',             exchange: 'NSE' },
+  { symbol: 'TITAN:NSE',      name: 'Titan Company',             exchange: 'NSE' },
+  { symbol: 'HINDUNILVR:NSE', name: 'Hindustan Unilever',        exchange: 'NSE' },
+  { symbol: 'WIPRO:NSE',      name: 'Wipro',                     exchange: 'NSE' },
+  { symbol: 'ADANIENT:NSE',   name: 'Adani Enterprises',         exchange: 'NSE' },
+];
 
 export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
   const [query,          setQuery]          = useState('');
@@ -131,6 +133,7 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
   const [instrument,        setInstrument]        = useState<ScalpInstrument>('EQUITY_INTRADAY');
   const [minConfidence,     setMinConfidence]     = useState(70);
   const [capitalInput,      setCapitalInput]      = useState('100000');
+  const [marketHoursGate,   setMarketHoursGate]   = useState(false);
 
   const [errors, setErrors] = useState<string[]>([]);
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -177,8 +180,14 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
 
   useEffect(() => {
     if (query.length < 2) {
-      setSearchResults([]);
-      setSearchError(null);
+      // Show popular stocks when nothing is typed yet
+      if (query.length === 0 && !selectedStock) {
+        setSearchResults(POPULAR_STOCKS);
+        setSearchError(null);
+      } else {
+        setSearchResults([]);
+        setSearchError(null);
+      }
       return;
     }
     if (searchTimeout.current) clearTimeout(searchTimeout.current);
@@ -186,11 +195,13 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
       setIsSearching(true);
       setSearchError(null);
       try {
-        const results = await searchStocks(query);
+        const results = await searchSymbols(query);
         setSearchResults(results);
-        if (results.length === 0) setSearchError('No results found');
+        if (results.length === 0) setSearchError('No NSE/BSE results found — try manual entry below');
       } catch (e: any) {
-        setSearchError('Search failed — check your connection');
+        const msg = e.message?.startsWith('TIMEOUT') ? e.message
+          : `Search failed: ${e.message ?? 'Unknown error'}`;
+        setSearchError(msg);
       } finally {
         setIsSearching(false);
       }
@@ -198,7 +209,7 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
     return () => {
       if (searchTimeout.current) clearTimeout(searchTimeout.current);
     };
-  }, [query]);
+  }, [query, selectedStock]);
 
   const handleSelectStock = useCallback((result: StockSearchResult) => {
     setSelectedStock(result);
@@ -219,7 +230,7 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
     setErrors(errs);
     if (errs.length > 0) return;
 
-    const config = buildConfigFromPreset(preset, parsedCapital, instrument, timeframe);
+    const config = buildConfigFromPreset(preset, parsedCapital, instrument, timeframe, marketHoursGate);
 
     onStart({
       symbol:           selectedStock!.symbol,
@@ -230,9 +241,9 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
       techniquesList,
       techFileName,
     });
-  }, [selectedStock, capitalInput, preset, instrument, timeframe, minConfidence, techniquesList, techFileName, onStart]);
+  }, [selectedStock, capitalInput, preset, instrument, timeframe, minConfidence, techniquesList, techFileName, marketHoursGate, onStart]);
 
-  const previewConfig = buildConfigFromPreset(preset, Number(capitalInput) || 100000, instrument, timeframe);
+  const previewConfig = buildConfigFromPreset(preset, Number(capitalInput) || 100000, instrument, timeframe, marketHoursGate);
 
   return (
     <div className="flex flex-col gap-6 p-6 bg-gray-900 h-full overflow-y-auto text-white max-w-lg mx-auto pb-24">
@@ -269,20 +280,82 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
             />
             {isSearching && <div className="absolute right-3 top-2 text-gray-400 text-sm">...</div>}
             {searchResults.length > 0 && (
-              <div className="absolute top-full left-0 right-0 bg-gray-800 border border-gray-600 rounded mt-1 max-h-48 overflow-y-auto z-10">
-                {searchResults.map(res => (
-                  <button 
-                    key={res.symbol}
-                    onClick={() => handleSelectStock(res)}
-                    className="w-full text-left p-2 hover:bg-gray-700 border-b border-gray-700 last:border-0"
+              <div className="absolute top-full left-0 right-0 bg-gray-800 border border-gray-600 rounded mt-1 max-h-48 overflow-y-auto z-10 shadow-xl">
+                {searchResults.map(result => (
+                  <div
+                    key={result.symbol}
+                    onClick={() => handleSelectStock(result)}
+                    className="flex items-center justify-between px-3 py-2.5 hover:bg-zinc-700/60 cursor-pointer transition-colors border-b border-zinc-800/40 last:border-0 text-left"
                   >
-                    <div className="font-bold text-sm">{res.symbol}</div>
-                    <div className="text-xs text-gray-400 truncate">{res.name} | {res.exchange}</div>
-                  </button>
+                    <div>
+                      <span className="text-sm font-mono font-bold text-zinc-200 block">{result.symbol}</span>
+                      <span className="block text-[10px] font-mono text-zinc-400 mt-0.5">{result.name}</span>
+                    </div>
+                    <span className="text-[9px] font-mono px-1.5 py-0.5 bg-sky-500/10 text-sky-400 border border-sky-500/20 rounded shrink-0">
+                      {result.exchange}
+                    </span>
+                  </div>
                 ))}
               </div>
             )}
-            {searchError && <div className="text-red-400 text-sm mt-1">{searchError}</div>}
+            {searchError && (
+              <div className="mt-2 flex flex-col gap-2">
+                <p className="text-rose-400 text-xs font-mono">{searchError}</p>
+
+                {/* Manual symbol entry fallback — always available when search fails */}
+                <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3">
+                  <p className="text-amber-400 text-[10px] font-mono font-bold uppercase tracking-wider mb-2">
+                    ⚡ Manual Entry — Enter symbol directly
+                  </p>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="e.g. RELIANCE:NSE or TCS:NSE"
+                      className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm font-mono text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-amber-500/50"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          const val = (e.target as HTMLInputElement).value.trim().toUpperCase();
+                          if (val.length > 2) {
+                            const symbol = val.includes(':')  ? val
+                                         : val.includes('.NS') ? val.replace('.NS', ':NSE')
+                                         : val.includes('.BO') ? val.replace('.BO', ':BSE')
+                                         : `${val}:NSE`;
+                            handleSelectStock({
+                              symbol,
+                              name:     symbol,
+                              exchange: symbol.includes('BSE') ? 'BSE' : 'NSE',
+                            });
+                          }
+                        }
+                      }}
+                    />
+                    <button
+                      onClick={(e) => {
+                        const input = (e.currentTarget.previousSibling as HTMLInputElement);
+                        const val   = input.value.trim().toUpperCase();
+                        if (val.length > 2) {
+                          const symbol = val.includes(':')  ? val
+                                       : val.includes('.NS') ? val.replace('.NS', ':NSE')
+                                       : val.includes('.BO') ? val.replace('.BO', ':BSE')
+                                       : `${val}:NSE`;
+                          handleSelectStock({
+                            symbol,
+                            name:     symbol,
+                            exchange: symbol.includes('BSE') ? 'BSE' : 'NSE',
+                          });
+                        }
+                      }}
+                      className="px-3 py-2 bg-amber-500/20 border border-amber-500/40 rounded-lg text-amber-400 text-xs font-bold hover:bg-amber-500/30 transition-colors"
+                    >
+                      Use
+                    </button>
+                  </div>
+                  <p className="text-zinc-400 text-[9px] font-mono mt-1.5">
+                    NSE stocks: append :NSE (RELIANCE:NSE) · BSE stocks: append :BSE (RELIANCE:BSE)
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -365,6 +438,34 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
         />
         <div className="text-xs text-gray-400 mt-1">
           Bot will only trade signals above {minConfidence}%
+        </div>
+      </div>
+
+      <div className="bg-gray-800 p-4 rounded-lg flex flex-col gap-2" id="market-hours-gate-container">
+        <h2 className="font-bold text-gray-300 flex justify-between items-center text-sm md:text-base">
+          <span>MARKET HOUR ENFORCEMENT</span>
+          <span className={`text-[9px] font-mono px-2 py-0.5 rounded font-bold uppercase tracking-wider ${marketHoursGate ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'}`}>
+            {marketHoursGate ? 'ENFORCED' : 'ALLOW 24/7 (AFTER-HOURS MODE)'}
+          </span>
+        </h2>
+        
+        <div className="flex items-center justify-between mt-1.5 py-1">
+          <div className="flex flex-col flex-1 pr-4">
+            <span className="text-xs text-gray-200 font-semibold">Enforce Market Hours (09:15-15:30 IST)</span>
+            <span className="text-[10px] text-gray-400 leading-normal mt-0.5">
+              If OFF, the bot will trade 24/7. It will fetch previous historical candles from Twelve Data to pre-seed the indicators, and simulate micro-fluctuations so you can run and trade outside market hours.
+            </span>
+          </div>
+          <button
+            onClick={() => setMarketHoursGate(!marketHoursGate)}
+            className={`px-3 py-1.5 rounded text-xs font-bold font-mono transition-colors border ${
+              marketHoursGate 
+                ? 'bg-amber-500/20 border-amber-500/50 text-amber-400 hover:bg-amber-500/30' 
+                : 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400 hover:bg-emerald-500/30'
+            }`}
+          >
+            {marketHoursGate ? 'ON' : 'OFF'}
+          </button>
         </div>
       </div>
 

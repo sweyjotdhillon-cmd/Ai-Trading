@@ -173,22 +173,41 @@ export function LiveAnalysisDashboard({
           <View style={tw`flex-row flex-wrap justify-between items-center gap-2 mb-3`}>
              <Text style={tw`text-[8px] font-black text-[#4B5570] uppercase tracking-widest`}>Chart Feed</Text>
              <View style={tw`flex-row flex-wrap bg-black bg-opacity-20 rounded-lg p-0.5 border border-white border-opacity-10`}>
-                {(['live', 'test', 'bulk', 'bot'] as const).map((m) => (
+                {(['live', 'bulk', 'bot'] as const).map((m) => (
                   <Pressable
                     key={m}
-                    onPress={() => setMode(m)}
-                    style={({ pressed }) => [tw`px-3 py-1 rounded-md flex-row items-center`, mode === m ? tw`bg-[#D9B382]` : tw`bg-transparent`, { opacity: pressed ? 0.7 : 1 }]}
+                    onPress={() => setMode(m === 'live' ? (selectedImage ? 'test' : 'live') : m)}
+                    style={({ pressed }) => [tw`px-3 py-1 rounded-md flex-row items-center`, (m === 'live' ? (mode === 'live' || mode === 'test') : mode === m) ? tw`bg-[#D9B382]` : tw`bg-transparent`, { opacity: pressed ? 0.7 : 1 }]}
                  >
-                   {m === 'live' ? <Camera size={12} color={mode === m ? '#1A1308' : '#4B5570'} /> : m === 'bulk' ? <Layers size={12} color={mode === m ? '#1A1308' : '#4B5570'} /> : m === 'bot' ? <Bot size={12} color={mode === m ? '#1A1308' : '#4B5570'} /> : <Activity size={12} color={mode === m ? '#1A1308' : '#4B5570'} />}
-                   <Text style={[tw`ml-1.5 text-[8px] font-black uppercase`, mode === m ? tw`text-[#1A1308]` : tw`text-[#4B5570]`]}>{m}</Text>
+                   {m === 'live' ? <Camera size={12} color={(mode === 'live' || mode === 'test' || mode === m) ? '#1A1308' : '#4B5570'} /> : m === 'bulk' ? <Layers size={12} color={mode === m ? '#1A1308' : '#4B5570'} /> : m === 'bot' ? <Bot size={12} color={mode === m ? '#1A1308' : '#4B5570'} /> : <Activity size={12} color={mode === m ? '#1A1308' : '#4B5570'} />}
+                   <Text style={[tw`ml-1.5 text-[8px] font-black uppercase`, (m === 'live' ? (mode === 'live' || mode === 'test') : mode === m) ? tw`text-[#1A1308]` : tw`text-[#4B5570]`]}>{m}</Text>
                  </Pressable>
                ))}
             </View>
          </View>
 
-         {mode === 'live' && (
-            <View style={tw`w-full bg-black bg-opacity-20 rounded-xl overflow-hidden border border-white border-opacity-10 items-center justify-center`}>
-              {Platform.OS === 'web' && (
+         {(mode === 'live' || mode === 'test') && (
+            <View style={tw`w-full bg-black bg-opacity-20 rounded-xl overflow-hidden border border-white border-opacity-10 items-center justify-center min-h-[160px]`}>
+              {selectedImage && (
+                <View style={tw`w-full h-[160px] relative`}>
+                  <Image source={{ uri: selectedImage }} style={tw`w-full h-full`} resizeMode="contain" />
+                  <Pressable
+                    onPress={() => {
+                      // @ts-expect-error Reset back to live camera
+                      setSelectedImage(null);
+                      setMode('live');
+                    }}
+                    style={({ pressed }) => [
+                      tw`absolute top-2 right-2 bg-black bg-opacity-70 border border-white border-opacity-20 px-2 py-1.5 rounded-lg flex-row items-center`,
+                      { opacity: pressed ? 0.75 : 1 }
+                    ]}
+                  >
+                    <Camera size={11} color="#D9B382" style={tw`mr-1`} />
+                    <Text style={tw`text-[#D9B382] font-black text-[8px] uppercase tracking-wider`}>Use Live Feed</Text>
+                  </Pressable>
+                </View>
+              )}
+              {Platform.OS === 'web' && isCameraActive && (
                 <video
                   ref={videoRef}
                   autoPlay
@@ -197,14 +216,31 @@ export function LiveAnalysisDashboard({
                   style={{ width: '100%', height: 160, objectFit: 'cover' }}
                 />
               )}
-              {!isCameraActive && (
-                <View style={tw`absolute inset-0 bg-black bg-opacity-20 items-center justify-center`}>
+              {!isCameraActive && !selectedImage && (
+                <View style={tw`flex-col sm:flex-row items-center justify-center gap-4 w-full py-8 px-4`}>
                   <Pressable
                      onPress={startCamera}
-                     style={({ pressed }) => [tw`bg-[#D9B382] px-6 py-3 rounded-lg flex-row items-center`, { opacity: pressed ? 0.7 : 1 }]}
+                     style={({ pressed }) => [tw`bg-[#D9B382] px-5 py-2.5 rounded-lg flex-row items-center`, { opacity: pressed ? 0.7 : 1 }]}
                    >
-                     <Camera size={18} color="#1A1308" />
-                     <Text style={tw`text-[#1A1308] font-black ml-2`}>Start Camera</Text>
+                     <Camera size={14} color="#1A1308" />
+                     <Text style={tw`text-[#1A1308] font-bold text-xs ml-1.5`}>Start Camera</Text>
+                  </Pressable>
+
+                  <Text style={tw`text-[#4B5570] text-[9px] font-black uppercase tracking-wider`}>OR</Text>
+
+                  <Pressable
+                    onPress={handlePickImage}
+                    // @ts-expect-error React Native Web missing typings
+                    onDrop={handleDrop}
+                    onDragOver={preventDefault}
+                    onDragEnter={preventDefault}
+                    style={({ pressed }) => [
+                      tw`px-5 py-2.5 rounded-lg bg-white bg-opacity-5 border border-dashed border-white border-opacity-10 flex-row items-center`,
+                      { opacity: pressed ? 0.7 : 1 }
+                    ]}
+                  >
+                    <Upload size={12} color="#D9B382" style={tw`mr-1.5`} />
+                    <Text style={tw`text-[#D9B382] text-xs font-bold`}>Sync Chart Image</Text>
                   </Pressable>
                 </View>
               )}

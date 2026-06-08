@@ -1,12 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { OHLCV } from '../types';
+import { fetchLivePrice, fetchTimeSeries } from '../services/stockPriceFeed';
 
-const POLL_INTERVAL_MS   = 10_000;
+const POLL_INTERVAL_MS   = 15_000; // 15s — 2 keys alternating = ~750 credits/day each
 const MAX_BUFFER_SIZE    = 60;
 const MAX_FAILURES       = 3;
 const STALE_THRESHOLD    = 5;
 const API_TIMEOUT_MS     = 8_000;
-const BASE_URL           = 'https://military-jobye-haiqstudios-14f59639.koyeb.app';
 
 interface LiveCandle {
   open:             number;
@@ -68,16 +68,6 @@ function isMarketOpen(nowMs: number): boolean {
   if (day === 0 || day === 6) return false;
   const minutes   = ist.getUTCHours() * 60 + ist.getUTCMinutes();
   return minutes >= 555 && minutes <= 930;    // 09:15 = 555, 15:30 = 930
-}
-
-async function fetchCurrentPrice(symbol: string): Promise<number> {
-  const url = `${BASE_URL}/stock?symbol=${encodeURIComponent(symbol)}&res=num`;
-  const res = await fetch(url, { signal: AbortSignal.timeout(API_TIMEOUT_MS) });
-  if (!res.ok) throw new Error(`API ${res.status}`);
-  const data = await res.json();
-  const price = Number(data.current_price);
-  if (!isFinite(price) || price <= 0) throw new Error('Invalid price');
-  return price;
 }
 
 function tickLiveCandle(
@@ -152,6 +142,9 @@ export function useStockFeed(
   const intervalRef      = useRef<ReturnType<typeof setInterval> | null>(null);
   const prevSymbolRef    = useRef<string | null>(null);
   const prevTfRef        = useRef<number>(timeframeMinutes);
+  const simOffsetRef     = useRef<number>(0);
+  const lastKnownPriceRef = useRef<number | null>(null);
+  const lastKnownPriceAt  = useRef<number | null>(null);
 
   // ── Reset when symbol changes ──────────────────────────────────────────────
   useEffect(() => {
@@ -170,6 +163,9 @@ export function useStockFeed(
       lastPriceRef.current  = null;
       staleTicks.current    = 0;
       failureCount.current  = 0;
+      simOffsetRef.current  = 0;
+      lastKnownPriceRef.current = null;
+      lastKnownPriceAt.current  = null;
       setCurrentPrice(null);
       setOhlcvBuffer([]);
       setCurrentCandle(null);
@@ -193,9 +189,29 @@ export function useStockFeed(
   useEffect(() => {
     if (!symbol) return;
     const stored = loadBuffer(symbol, timeframeMinutes);
-    if (stored.length > 0) {
+    if (stored.length > 5) { // Ensure we have enough data (at least 5 bars) to be useful, otherwise refresh
       setOhlcvBuffer(stored);
       setIsLoading(false);
+    } else {
+      setIsLoading(true);
+      fetchTimeSeries(symbol, timeframeMinutes, MAX_BUFFER_SIZE)
+        .then((history) => {
+          setOhlcvBuffer(history);
+          saveBuffer(symbol, timeframeMinutes, history);
+          setError(null);
+        })
+        .catch((err) => {
+          console.warn('[StockFeed] Failed to pre-seed historical candles:', err.message);
+          // Fallback to empty if both stored and fetch fail
+          if (stored.length > 0) {
+            setOhlcvBuffer(stored);
+          } else {
+            setOhlcvBuffer([]);
+          }
+        })
+        .finally(() => {
+          setIsLoading(false);
+        });
     }
   }, [symbol, timeframeMinutes]);
 
@@ -203,14 +219,35 @@ export function useStockFeed(
   const tick = useCallback(async () => {
     if (!symbol) return;
 
-    const nowMs = Date.now();
-    setMarketOpen(isMarketOpen(nowMs));
+    const nowMs       = Date.now();
+    let marketIsOpen  = isMarketOpen(nowMs);
 
     try {
-      const price = await fetchCurrentPrice(symbol);
+      const result = await fetchLivePrice(symbol);
+      let price  = result.price;
+      marketIsOpen = result.marketState === 'REGULAR';
+      setMarketOpen(marketIsOpen);
+
+      // If market is closed, simulate realistic micro-fluctuations around the closing price so the bot can trade 24/7
+      if (!marketIsOpen) {
+        if (simOffsetRef.current === 0) {
+          simOffsetRef.current = price;
+        }
+        const change = (Math.random() - 0.5) * 0.0016; // up to +/- 0.08% change per tick
+        simOffsetRef.current = simOffsetRef.current * (1 + change);
+
+        // Maintain simulated price within 2.0% deviation from the actual close price
+        const dev = (simOffsetRef.current - price) / price;
+        if (Math.abs(dev) > 0.02) {
+          simOffsetRef.current = price * (1 + (dev > 0 ? 0.01 : -0.01));
+        }
+        price = Number(simOffsetRef.current.toFixed(2));
+      } else {
+        simOffsetRef.current = 0;
+      }
 
       // Staleness check — only during market hours
-      if (isMarketOpen(nowMs)) {
+      if (marketIsOpen) {
         if (price === lastPriceRef.current) {
           staleTicks.current += 1;
           if (staleTicks.current >= STALE_THRESHOLD) setIsStale(true);
@@ -219,9 +256,11 @@ export function useStockFeed(
           setIsStale(false);
         }
       }
-      lastPriceRef.current = price;
 
-      // Reset failure state
+      lastPriceRef.current      = price;
+      lastKnownPriceRef.current = price;
+      lastKnownPriceAt.current  = nowMs;
+
       failureCount.current = 0;
       setConsecutiveFailures(0);
       setError(null);
@@ -229,43 +268,94 @@ export function useStockFeed(
       setCurrentPrice(price);
       setLastUpdated(nowMs);
 
-      // Candle building
+      // Candle building — always build candles (even outside market hours) so that the bot's analysis loop can tick 24/7
       const { next, completed } = tickLiveCandle(
-        liveCandleRef.current,
-        price,
-        nowMs,
-        timeframeMs
+        liveCandleRef.current, price, nowMs, timeframeMs
       );
       liveCandleRef.current = next;
+      setCurrentCandle({ open: next.open, high: next.high, low: next.low, close: next.close, volume: 0 });
 
-      // Expose current forming candle for UI
-      setCurrentCandle({
-        open:   next.open,
-        high:   next.high,
-        low:    next.low,
-        close:  next.close,
-        volume: 0,
-      });
-
-      // If a candle completed, push to buffer
       if (completed) {
         setOhlcvBuffer(prev => {
           const updated = [...prev, completed];
           const capped  = updated.length > MAX_BUFFER_SIZE
-            ? updated.slice(updated.length - MAX_BUFFER_SIZE)
-            : updated;
+            ? updated.slice(updated.length - MAX_BUFFER_SIZE) : updated;
           saveBuffer(symbol, timeframeMinutes, capped);
           return capped;
         });
       }
 
     } catch (err: any) {
+      // If market is closed and we have a last known price — not really an error
+      if (!marketIsOpen && lastKnownPriceRef.current !== null) {
+        // Simulate realistic micro-fluctuations around the last known price
+        if (simOffsetRef.current === 0) {
+          simOffsetRef.current = lastKnownPriceRef.current;
+        }
+        const change = (Math.random() - 0.5) * 0.0016; // up to +/- 0.08% change per tick
+        simOffsetRef.current = simOffsetRef.current * (1 + change);
+
+        // Maintain simulated price within 2.0% deviation from the actual close price
+        const dev = (simOffsetRef.current - lastKnownPriceRef.current) / lastKnownPriceRef.current;
+        if (Math.abs(dev) > 0.02) {
+          simOffsetRef.current = lastKnownPriceRef.current * (1 + (dev > 0 ? 0.01 : -0.01));
+        }
+        const simulatedPrice = Number(simOffsetRef.current.toFixed(2));
+
+        // Show last known price silently — market closed is expected
+        setCurrentPrice(simulatedPrice);
+        setIsLoading(false);
+        setError(null); // clear any previous error — this is normal
+        setConsecutiveFailures(0);
+        failureCount.current = 0;
+
+        // Even on fetch failure during market closed, continue building candles from simulated price to keep the bot active
+        const { next, completed } = tickLiveCandle(
+          liveCandleRef.current, simulatedPrice, nowMs, timeframeMs
+        );
+        liveCandleRef.current = next;
+        setCurrentCandle({ open: next.open, high: next.high, low: next.low, close: next.close, volume: 0 });
+
+        if (completed) {
+          setOhlcvBuffer(prev => {
+            const updated = [...prev, completed];
+            const capped  = updated.length > MAX_BUFFER_SIZE
+              ? updated.slice(updated.length - MAX_BUFFER_SIZE) : updated;
+            saveBuffer(symbol, timeframeMinutes, capped);
+            return capped;
+          });
+        }
+        return;
+      }
+
+      // Real error during market hours
       failureCount.current += 1;
       setConsecutiveFailures(failureCount.current);
-      if (failureCount.current >= MAX_FAILURES) {
-        setError(`Feed unavailable (${failureCount.current} failures): ${err.message}`);
+
+      // Diagnose the error for the user
+      const raw = err.message ?? 'Unknown error';
+      let diagnosis = raw;
+
+      if (raw.includes('SYMBOL_NOT_FOUND')) {
+        diagnosis = `Symbol not found — try a different ticker`;
+      } else if (raw.includes('AUTH_FAILED')) {
+        diagnosis = `API key error — check your Twelve Data account`;
+      } else if (raw.includes('ALL_KEYS_EXHAUSTED')) {
+        diagnosis = `Daily API limit reached — resets at midnight IST`;
+      } else if (raw.includes('TimeoutError') || raw.includes('AbortError')) {
+        diagnosis = `Request timed out — check your internet connection`;
+      } else if (raw.startsWith('HTTP 404')) {
+        diagnosis = `Symbol not found (404) — ticker may be delisted or misspelled`;
+      } else if (raw.startsWith('HTTP 429')) {
+        diagnosis = `Rate limited — too many requests, waiting for key rotation`;
       }
-      // Do NOT clear currentPrice — position watcher must keep running
+
+      if (failureCount.current >= MAX_FAILURES) {
+        setError(`${diagnosis} (${failureCount.current} consecutive failures)`);
+      } else {
+        // Show warning but keep last known price visible
+        setError(`Warning: ${diagnosis} — retrying...`);
+      }
     }
   }, [symbol, timeframeMs, timeframeMinutes]);
 

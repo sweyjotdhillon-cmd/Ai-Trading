@@ -657,7 +657,10 @@ export function LiveAnalysis() {
     const file = e.dataTransfer?.files[0];
     if (file && file.type.startsWith('image/')) {
       const reader = new FileReader();
-      reader.onload = () => setSelectedImage(reader.result as string);
+      reader.onload = () => {
+        setSelectedImage(reader.result as string);
+        setMode('test');
+      };
       reader.readAsDataURL(file);
     }
   };
@@ -675,6 +678,7 @@ export function LiveAnalysis() {
       const reader = new FileReader();
       reader.onload = () => {
         setSelectedImage(reader.result as string);
+        setMode('test');
       };
       reader.readAsDataURL(file);
     }

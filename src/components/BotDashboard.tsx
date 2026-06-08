@@ -5,7 +5,6 @@ import {
   Zap, BarChart2, List, Wifi, WifiOff, Pause, Square
 } from 'lucide-react';
 import { UseBotLoopResult, BotPhase, BotTradeRecord } from '../hooks/useBotLoop';
-import { TradeOutcome } from '../types';
 
 interface BotDashboardProps {
   bot:      UseBotLoopResult;
@@ -336,8 +335,8 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
       )}
 
       {/* ── SECTION 1: Status Header ─────────────────────────────────── */}
-      <div className="flex items-center justify-between bg-zinc-900/60 border border-zinc-800/60 rounded-xl px-4 py-3">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-col md:flex-row gap-4 items-stretch md:items-center justify-between bg-zinc-900/60 border border-zinc-800/60 rounded-xl px-4 py-3">
+        <div className="flex flex-wrap items-center gap-2 md:gap-3">
           {/* Phase badge */}
           <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-black uppercase tracking-wider ${phase.color} ${phase.bg} ${phase.border}`}>
             <Activity size={12} className={phase.pulse ? 'animate-pulse' : ''} />
@@ -375,33 +374,81 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
         </div>
 
         {/* Controls */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between md:justify-end gap-3 border-t border-zinc-800/40 md:border-t-0 pt-2.5 md:pt-0">
           <StabilityDots />
-          <button
-            onClick={onPause}
-            className="p-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-400 transition-colors"
-            title="Pause bot"
-          >
-            <Pause size={14} />
-          </button>
-          <button
-            onClick={onStop}
-            className="p-2 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 transition-colors"
-            title="Stop bot"
-          >
-            <Square size={14} />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onPause}
+              className="p-2.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-400 transition-colors"
+              title="Pause bot"
+            >
+              <Pause size={14} />
+            </button>
+            <button
+              onClick={onStop}
+              className="p-2.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 transition-colors"
+              title="Stop bot"
+            >
+              <Square size={14} />
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Feed error */}
-      {bot.feedError && (
-        <div className="flex items-center gap-2 px-4 py-2.5 bg-rose-500/10 border border-rose-500/30 rounded-xl text-rose-400 text-xs font-mono">
-          <AlertTriangle size={12} />
-          {bot.feedError}
-          <span className="ml-auto text-rose-600">({bot.consecutiveFailures} failures)</span>
+      {/* Market closed info — shown when outside trading hours */}
+      {!bot.marketOpen && bot.phase !== 'IDLE' && !bot.feedError && (
+        <div className="flex items-center justify-between px-4 py-2.5 bg-zinc-800/60 border border-zinc-700/40 rounded-xl">
+          <div className="flex items-center gap-2 text-xs font-mono text-zinc-400">
+            <WifiOff size={12} />
+            <span>Market closed — showing last known price</span>
+          </div>
+          {bot.currentPrice && (
+            <span className="text-xs font-mono font-bold text-zinc-300">
+              ₹{bot.currentPrice.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+            </span>
+          )}
         </div>
       )}
+
+      {/* Feed error */}
+      {bot.feedError && (() => {
+        const err = bot.feedError;
+
+        // Categorise error severity
+        const isSymbolError   = err.includes('not found') || err.includes('404');
+        const isAuthError     = err.includes('API key') || err.includes('AUTH');
+        const isDailyLimit    = err.includes('Daily API limit') || err.includes('ALL_KEYS');
+        const isRetrying      = err.includes('retrying');
+
+        const bgColor    = isSymbolError || isAuthError || isDailyLimit
+          ? 'bg-rose-500/10 border-rose-500/30'
+          : isRetrying
+          ? 'bg-amber-500/10 border-amber-500/30'
+          : 'bg-rose-500/10 border-rose-500/30';
+
+        const textColor  = isRetrying ? 'text-amber-400' : 'text-rose-400';
+        const icon       = isSymbolError  ? '⊘'
+                         : isAuthError    ? '🔑'
+                         : isDailyLimit   ? '📊'
+                         : isRetrying     ? '⟳'
+                         : '⚠';
+
+        const action     = isSymbolError  ? 'Go back and try a different symbol'
+                         : isAuthError    ? 'Check your Twelve Data API key'
+                         : isDailyLimit   ? 'Limit resets at midnight IST'
+                         : isRetrying     ? 'Will retry automatically'
+                         : `${bot.consecutiveFailures}/${3} failures before halt`;
+
+        return (
+          <div className={`flex flex-col gap-1 px-4 py-3 border rounded-xl ${bgColor}`}>
+            <div className={`flex items-center gap-2 text-xs font-mono font-bold ${textColor}`}>
+              <span>{icon}</span>
+              <span className="flex-1">{err}</span>
+            </div>
+            <span className="text-[10px] font-mono text-zinc-500 pl-5">{action}</span>
+          </div>
+        );
+      })()}
 
       {/* Last block reason */}
       {bot.lastBlockReason && bot.phase !== 'IN_TRADE' && (
@@ -430,7 +477,7 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
       )}
 
       {/* ── SECTION 2: Live Price + Last Signal ──────────────────────── */}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="bg-zinc-900/40 border border-zinc-800/40 rounded-xl p-3.5">
           <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-wider">Current Price</span>
           <div className="mt-1 font-mono text-xl font-black text-zinc-100">
@@ -509,7 +556,7 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
           </div>
 
           {/* THE CORE — Entry / SL / TP1 / TP2 */}
-          <div className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             {/* Entry */}
             <div className="bg-zinc-800/40 rounded-lg p-2.5 border border-zinc-700/40">
               <span className="block text-[9px] font-mono text-[#D9B382]/80 uppercase tracking-wider mb-1">
@@ -589,7 +636,7 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
       )}
 
       {/* ── SECTION 4: Session Stats ──────────────────────────────────── */}
-      <div className="grid grid-cols-4 gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         {/* Total P&L */}
         <div className="bg-zinc-900/40 border border-zinc-800/40 rounded-xl p-3 text-center">
           <span className="block text-[9px] font-mono text-zinc-500 uppercase tracking-wider mb-1">Session P&L</span>

@@ -1,6 +1,6 @@
 import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
 import { getFirestore, Firestore }              from 'firebase/firestore';
-import { getAuth, Auth }                        from 'firebase/auth';
+import { getAuth, Auth, setPersistence, browserLocalPersistence } from 'firebase/auth';
 
 const firebaseConfig = {
   projectId:         'gen-lang-client-0935111175',
@@ -19,4 +19,10 @@ const app: FirebaseApp =
 
 export const db:   Firestore = getFirestore(app);
 export const auth: Auth      = getAuth(app);
+
+// Explicitly enforce local persistence for robust session state recovery (especially on mobile browsers/devices)
+setPersistence(auth, browserLocalPersistence).catch(err => {
+  console.warn('[Firebase Auth] Failed to enforce local browser persistence:', err);
+});
+
 export default app;

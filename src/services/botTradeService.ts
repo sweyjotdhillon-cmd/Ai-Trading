@@ -37,8 +37,13 @@ interface FirestoreErrorInfo {
 }
 
 function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null): never {
+  const errMsg = error instanceof Error ? error.message : String(error);
+  const isSecurityOrPermissionError = 
+    errMsg.toLowerCase().includes('permission') || 
+    errMsg.toLowerCase().includes('insufficient');
+
   const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
+    error: errMsg,
     authInfo: {
       userId: auth.currentUser?.uid,
       email: auth.currentUser?.email,
@@ -53,7 +58,12 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
     operationType,
     path
   };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
+
+  if (isSecurityOrPermissionError) {
+    console.error('Firestore Error: ', JSON.stringify(errInfo));
+  } else {
+    console.warn('[Firestore Network Monitor] Operation failed (not a permission error):', errMsg, `(Op: ${operationType}, Path: ${path})`);
+  }
   throw new Error(JSON.stringify(errInfo));
 }
 

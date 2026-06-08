@@ -416,14 +416,14 @@ export function useBotLoop(
       }
 
       // Step 6 — Market hours gate
-      if (!feed.marketOpen) {
+      if (config.enableMarketHoursGate && !feed.marketOpen) {
         setLastBlockReason('MARKET_CLOSED: outside 09:15–15:30 IST');
         setPhase('SCANNING');
         return;
       }
 
       // Pre-close gate — no new entries in last 15 minutes of session
-      if (isPreClose(Date.now())) {
+      if (config.enableMarketHoursGate && isPreClose(Date.now())) {
         setLastBlockReason('PRE_CLOSE: No new entries after 15:15 IST. Monitoring active trades only.');
         setPhase('SCANNING');
         return;
@@ -616,7 +616,7 @@ export function useBotLoop(
   // Auto-halt if market closes mid-session
   useEffect(() => {
     if (!botEnabledRef.current) return;
-    if (!feed.marketOpen && phase === 'SCANNING') {
+    if (config.enableMarketHoursGate && !feed.marketOpen && phase === 'SCANNING') {
       setPhase('HALTED');
       setLastBlockReason('MARKET_CLOSED');
     }
@@ -624,7 +624,7 @@ export function useBotLoop(
         lastBlockReason === 'MARKET_CLOSED') {
       setPhase('SCANNING'); // auto-resume when market reopens
     }
-  }, [feed.marketOpen, phase, lastBlockReason]);
+  }, [feed.marketOpen, phase, lastBlockReason, config.enableMarketHoursGate]);
 
   // Cooldown countdown ticker
   useEffect(() => {

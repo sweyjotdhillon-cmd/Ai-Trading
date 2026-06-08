@@ -441,8 +441,9 @@ export function BulkTestPanel({
             signal: abortControllerRef.current!.signal,
             isTestMode: true,
             onDirectionFound: (dir) => {
+              const mappedDir = dir === 'LONG' ? 'UP' : (dir === 'SHORT' ? 'DOWN' : 'NO_TRADE');
               setQueue(q => q.map((r, idx2) => 
-                idx2 === i ? { ...r, earlyDirection: dir } : r
+                idx2 === i ? { ...r, earlyDirection: mappedDir } : r
               ));
             }
           });
@@ -460,8 +461,12 @@ export function BulkTestPanel({
           } else if (expected === 'UP' || expected === 'DOWN') {
             if (predicted === 'NO_TRADE') {
               finalOutcome = 'NEUTRAL';
+            } else if (predicted === 'LONG') {
+              finalOutcome = expected === 'UP' ? 'WIN' : 'LOSS';
+            } else if (predicted === 'SHORT') {
+              finalOutcome = expected === 'DOWN' ? 'WIN' : 'LOSS';
             } else {
-              finalOutcome = predicted === expected ? 'WIN' : 'LOSS';
+              finalOutcome = 'NEUTRAL';
             }
           }
 
