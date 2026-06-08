@@ -142,6 +142,7 @@ function TimeBar({
 export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashboardProps) {
 
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [showTech, setShowTech] = useState(false);
   const prevPhaseRef    = useRef<string>('');
   const prevOutcomeRef  = useRef<string | null>(null);
 
@@ -532,6 +533,152 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
           </div>
         </div>
       </div>
+
+      {/* ── Live Analysis Judge Panel ── */}
+      {bot.lastAnalysisResult && (() => {
+        const judgeObj   = bot.lastAnalysisResult?.judge || {};
+        const casesObj   = judgeObj.cases || null;
+        const winner     = judgeObj.winner || 'NO_TRADE';
+        const ruling     = judgeObj.ruling || '—';
+        const confidence = judgeObj.finalConfidence ?? 0;
+        const techEval   = judgeObj.techniquesEvaluation || null;
+
+        return (
+          <div className={`rounded-xl border p-4 ${
+            winner === 'BULL' ? 'bg-emerald-950/40 border-emerald-500/30' :
+            winner === 'BEAR' ? 'bg-red-950/40 border-red-500/30' :
+            'bg-zinc-900/60 border-white/10'
+          }`}>
+
+            {/* Header */}
+            <div className="flex flex-row items-center justify-between mb-3 pb-3 border-b border-white/10">
+              <div className="flex flex-row items-center gap-2">
+                <span className="text-[#D9B382] text-[10px] font-black uppercase tracking-widest">4-Judge Arbitrator</span>
+              </div>
+              <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                winner === 'BULL' ? 'bg-emerald-500/20 text-emerald-400' :
+                winner === 'BEAR' ? 'bg-red-500/20 text-red-400' :
+                'bg-zinc-700/40 text-zinc-400'
+              }`}>
+                {winner}
+              </span>
+            </div>
+
+            {/* J1/J2/J3 Bull vs Bear scorecards */}
+            {casesObj && (
+              <div className="flex flex-row gap-2 mb-3">
+                {(['bull', 'bear'] as const).map(side => {
+                  const data = casesObj[side] || { j1: 0, j2: 0, j3: 0, total: 0 };
+                  const isWinner = side.toUpperCase() === winner;
+                  const color = side === 'bull' ? '#22C55E' : '#EF4444';
+                  return (
+                    <div key={side} className={`flex-1 bg-black/30 rounded-xl p-3 border ${isWinner ? (side === 'bull' ? 'border-emerald-500/40' : 'border-red-500/40') : 'border-white/5'}`}>
+                      <p className={`text-[9px] font-black uppercase tracking-widest mb-2 ${side === 'bull' ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {side === 'bull' ? '🐂 Bull Case' : '🐻 Bear Case'}
+                      </p>
+                      {[
+                        { label: 'J1 Pattern', val: data.j1, max: 4 },
+                        { label: 'J2 Indicator', val: data.j2, max: 4 },
+                        { label: 'J3 Reversal', val: data.j3, max: 3 },
+                      ].map((j, i) => (
+                        <div key={i} className="mb-1.5">
+                          <div className="flex flex-row justify-between mb-0.5">
+                            <span className="text-[8px] text-zinc-500 uppercase">{j.label}</span>
+                            <span className="text-[8px] font-mono text-white">{j.val}/{j.max}</span>
+                          </div>
+                          <div className="h-1 bg-white/10 rounded-full overflow-hidden">
+                            <div
+                              className="h-full rounded-full transition-all duration-1000"
+                              style={{ width: `${(j.val / j.max) * 100}%`, backgroundColor: color }}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                      <div className="mt-2 pt-2 border-t border-white/10 flex flex-row justify-between">
+                        <span className="text-[8px] text-[#D9B382] font-black uppercase">Total</span>
+                        <span className={`text-[10px] font-black ${isWinner ? (side === 'bull' ? 'text-emerald-400' : 'text-red-400') : 'text-white'}`}>
+                          {data.total}/12.0
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Ruling */}
+            <div className="mb-3 bg-black/20 rounded-xl p-3 border border-[#D9B382]/15">
+              <p className="text-[8px] text-[#D9B382] font-black uppercase tracking-widest mb-1">Arbitrator Ruling</p>
+              <p className="text-white text-[10px] leading-4">{ruling}</p>
+            </div>
+
+            {/* Technique Scoring Panel */}
+            {techEval && (
+              <div className="bg-black/20 rounded-xl border border-dashed border-[#D9B382]/30 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setShowTech(!showTech)}
+                  className="w-full flex flex-row items-center justify-between p-3"
+                >
+                  <div className="flex flex-row items-center gap-2">
+                    <span className="text-[9px] font-black text-white uppercase tracking-wider">
+                      Verification Engine — {techEval.totalTechniques} Techniques
+                    </span>
+                  </div>
+                  <div className="flex flex-row items-center gap-2">
+                    <span className="text-[8px] font-black text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded">
+                      🐂 +{(techEval.bulldogPoints ?? 0).toFixed(1)} Bull
+                    </span>
+                    <span className="text-[8px] font-black text-red-400 bg-red-500/10 px-2 py-0.5 rounded">
+                      🐻 +{(techEval.peerPoints ?? 0).toFixed(1)} Bear
+                    </span>
+                    <span className="text-[8px] text-zinc-400">{showTech ? '▲' : '▼'}</span>
+                  </div>
+                </button>
+
+                {showTech && (
+                  <div className="px-3 pb-3 border-t border-white/10">
+                    {/* Bull techniques */}
+                    <p className="text-[8px] font-black text-emerald-400 uppercase mt-3 mb-2">🐂 Bullish Techniques</p>
+                    {(techEval.bullList || []).map((tech: any, i: number) => (
+                      <div key={i} className="flex flex-row items-start justify-between mb-2">
+                        <div className="flex-1 mr-2">
+                          <p className={`text-[9px] font-bold ${tech.matched ? 'text-white' : 'text-zinc-500'}`}>• {tech.name}</p>
+                          <p className={`text-[7px] leading-3 pl-2 ${tech.matched ? 'text-zinc-300' : 'text-zinc-600'}`}>{tech.process}</p>
+                        </div>
+                        <div className="flex flex-row items-center gap-1 shrink-0">
+                          <span className={`text-[9px] font-black ${tech.matched ? 'text-emerald-400' : 'text-zinc-600'}`}>
+                            {tech.matched ? `+${tech.pointsEarned.toFixed(1)}` : '0.0'}
+                          </span>
+                          <span className="text-[9px]">{tech.matched ? '✅' : '⚪'}</span>
+                        </div>
+                      </div>
+                    ))}
+
+                    {/* Bear techniques */}
+                    <p className="text-[8px] font-black text-red-400 uppercase mt-3 mb-2">🐻 Bearish Techniques</p>
+                    {(techEval.bearList || []).map((tech: any, i: number) => (
+                      <div key={i} className="flex flex-row items-start justify-between mb-2">
+                        <div className="flex-1 mr-2">
+                          <p className={`text-[9px] font-bold ${tech.matched ? 'text-white' : 'text-zinc-500'}`}>• {tech.name}</p>
+                          <p className={`text-[7px] leading-3 pl-2 ${tech.matched ? 'text-zinc-300' : 'text-zinc-600'}`}>{tech.process}</p>
+                        </div>
+                        <div className="flex flex-row items-center gap-1 shrink-0">
+                          <span className={`text-[9px] font-black ${tech.matched ? 'text-red-400' : 'text-zinc-600'}`}>
+                            {tech.matched ? `+${tech.pointsEarned.toFixed(1)}` : '0.0'}
+                          </span>
+                          <span className="text-[9px]">{tech.matched ? '✅' : '⚪'}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+          </div>
+        );
+      })()}
 
       {/* ── SECTION 3: Active Position (IN_TRADE only) ───────────────── */}
       {bot.phase === 'IN_TRADE' && bot.activePlan && (

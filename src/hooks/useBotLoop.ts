@@ -83,6 +83,7 @@ export interface UseBotLoopResult {
   isAnalyzing:       boolean;          // true while runSingleAnalysis is running
   cooldownRemainsMs: number | null;    // ms until cooldown ends, null if not cooling
   techniqueCount:    number;           // how many techniques are active
+  lastAnalysisResult: any | null;
 
   // Actions
   startBot:   () => void;
@@ -159,6 +160,8 @@ export function useBotLoop(
   const [lastAnalyzedAt,   setLastAnalyzedAt]   = useState<number | null>(null);
   const [isAnalyzing,      setIsAnalyzing]      = useState(false);
   const [cooldownRemainsMs,setCooldownRemainsMs] = useState<number | null>(null);
+  const [botActive,        setBotActive]        = useState(false);
+  const [lastAnalysisResult, setLastAnalysisResult] = useState<any | null>(null);
 
   const { requestLock, releaseLock } = useWakeLock();
 
@@ -199,7 +202,7 @@ export function useBotLoop(
   const feed = useStockFeed(
     symbol,
     timeframeMinutes,
-    botEnabledRef.current && phase !== 'IDLE'
+    botActive && phase !== 'IDLE'
   );
 
   const watcher = useScalpPositionWatcher(
@@ -293,6 +296,7 @@ export function useBotLoop(
     if (!symbol) return;
     initialAnalysisFiredRef.current = false;
     botEnabledRef.current = true;
+    setBotActive(true);
     stabilityRef.current  = 0;
     noTechWarnedRef.current = false;
     setStabilityCount(0);
@@ -303,6 +307,7 @@ export function useBotLoop(
 
   const stopBot = useCallback(() => {
     botEnabledRef.current = false;
+    setBotActive(false);
     abortRef.current?.abort();
 
     // Force-close any active trade at last known price before stopping
@@ -321,6 +326,7 @@ export function useBotLoop(
   const pauseBot = useCallback(() => {
     // Suspend analysis but keep position watcher alive
     botEnabledRef.current = false;
+    setBotActive(false);
     // Wake lock intentionally kept during pause — position watcher may still be active
     if (phase !== 'IN_TRADE') setPhase('IDLE');
   }, [phase]);
@@ -376,12 +382,13 @@ export function useBotLoop(
 
       analysisErrorCount.current = 0; // reset circuit breaker on success
 
-      const winner     = result.winner;      // 'BULL' | 'BEAR' | 'NO_TRADE'
-      const confidence = result.finalConfidence ?? 0;
-      const direction  = winner === 'BULL' ? 'LONG' : 'NO_TRADE';
+      const winner     = result.analysis?.judge?.winner ?? 'NO_TRADE';
+      const confidence = result.analysis?.judge?.finalConfidence ?? result.confidence ?? 0;
+      const direction: 'LONG' | 'NO_TRADE' = winner === 'BULL' ? 'LONG' : 'NO_TRADE';
 
       setLastSignal(direction);
       setLastConfidence(confidence);
+      setLastAnalysisResult(result.analysis);
 
       // Step 3 — Stability filter (manual tracking since we own the loop)
       if (direction === 'LONG') {
@@ -484,7 +491,7 @@ export function useBotLoop(
         currentBarIndex:            ohlc.length - 1,
       };
 
-      const decision = evaluateScalpSignal(ohlc, { winner: result.winner || 'NO_TRADE' }, ctx as any);
+      const decision = evaluateScalpSignal(ohlc, { winner: result.analysis?.judge?.winner || 'NO_TRADE' }, ctx as any);
       const plan = decision.plan;
       if (!plan) {
         setLastBlockReason('PLAN_FAIL: evaluateScalpSignal returned no plan');
@@ -748,6 +755,7 @@ export function useBotLoop(
     lastChartUrl,
     lastAnalyzedAt,
     isAnalyzing,
+    lastAnalysisResult,
     cooldownRemainsMs,
     techniqueCount:    techniquesList.length,
   };
