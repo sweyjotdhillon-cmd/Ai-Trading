@@ -172,6 +172,7 @@ export function useBotLoop(
   const analysisErrorCount = useRef(0);
   const ANALYSIS_CIRCUIT_LIMIT = 3;
   const noTechWarnedRef   = useRef(false);
+  const initialAnalysisFiredRef = useRef(false);
 
   const lastValidPriceRef = useRef<number | null>(null);
   const SPIKE_THRESHOLD   = 0.05; // 5% single-tick change = anomalous
@@ -290,6 +291,7 @@ export function useBotLoop(
 
   const startBot = useCallback(() => {
     if (!symbol) return;
+    initialAnalysisFiredRef.current = false;
     botEnabledRef.current = true;
     stabilityRef.current  = 0;
     noTechWarnedRef.current = false;
@@ -595,6 +597,36 @@ export function useBotLoop(
 
     runAnalysisCycle();
   }, [feed.candleCount, feed.isStale, phase, feed.ohlcvBuffer.length, runAnalysisCycle]);
+
+  // Trigger analysis once immediately when the initial candle buffer first loads
+  // (covers market-closed scenario where no new candles will ever close)
+  useEffect(() => {
+    if (!botEnabledRef.current) return;
+    if (phase === 'IDLE') return;
+    if (phase === 'IN_TRADE') return;
+    if (analyzingRef.current) return;
+    if (feed.ohlcvBuffer.length < 15) return;
+    if (initialAnalysisFiredRef.current) return;
+
+    // Fire once when buffer first reaches 15+ candles
+    initialAnalysisFiredRef.current = true;
+    runAnalysisCycle();
+  }, [feed.ohlcvBuffer.length, phase, runAnalysisCycle]);
+
+  // Re-run analysis every 2 minutes even if no new candle closes (market-closed sim mode)
+  useEffect(() => {
+    if (phase === 'IDLE' || phase === 'IN_TRADE' || phase === 'HALTED') return;
+    if (feed.ohlcvBuffer.length < 15) return;
+
+    const intervalId = setInterval(() => {
+      if (!botEnabledRef.current) return;
+      if (analyzingRef.current) return;
+      if (phase === 'IN_TRADE' || phase === 'IDLE') return;
+      runAnalysisCycle();
+    }, 2 * 60 * 1000); // every 2 minutes
+
+    return () => clearInterval(intervalId);
+  }, [phase, feed.ohlcvBuffer.length, runAnalysisCycle]);
 
   useEffect(() => {
     if (phase !== 'IN_TRADE') return;

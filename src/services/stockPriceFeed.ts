@@ -234,7 +234,7 @@ export async function searchNSEStocks(query: string): Promise<StockSearchResult[
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query }),
-      signal: AbortSignal.timeout(6_000)
+      signal: AbortSignal.timeout(6000)
     });
     if (res.ok) {
       const data = await res.json();
@@ -246,7 +246,7 @@ export async function searchNSEStocks(query: string): Promise<StockSearchResult[
     console.warn('[stockPriceFeed] Local server search failed, trying public CORS proxies:', err);
   }
 
-  // 2. Fallback: Yahoo Finance Search API via CORS proxy chain
+  // Fallback: Yahoo Finance Search API via CORS proxy chain
   const targetUrl = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=8&newsCount=0&enableFuzzyQuery=false&region=IN`;
 
   for (const proxy of PROXY_CHAIN) {
@@ -305,39 +305,129 @@ export async function fetchTimeSeries(
   timeframeMinutes: number,
   outputsize = 60
 ): Promise<OHLCV[]> {
+  // 1. Try local server-side proxy route first (most robust)
   try {
     const res = await fetch('/api/stock/history', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ symbol, timeframeMinutes, outputsize }),
-      signal: AbortSignal.timeout(10_000)
+      signal: AbortSignal.timeout(10000)
     });
     if (res.ok) {
-      return await res.json();
+      const candles = await res.json();
+      if (Array.isArray(candles) && candles.length >= 5) {
+        return candles;
+      }
     }
   } catch (err) {
     console.warn('[stockPriceFeed] Failed to fetch history from local-server:', err);
   }
 
-  // Fallback: If local server fails, return simulated history so chart doesn't break
-  const history: OHLCV[] = [];
-  let lastPrice = 1000;
-  for (let i = 0; i < outputsize; i++) {
-    const pctChange = (Math.random() - 0.5) * 0.006;
-    const o = lastPrice;
-    const c = lastPrice * (1 - pctChange);
-    const h = Math.max(o, c) * (1 + Math.random() * 0.003);
-    const l = Math.min(o, c) * (1 - Math.random() * 0.003);
-    history.push({
-      open: Number(o.toFixed(2)),
-      high: Number(h.toFixed(2)),
-      low: Number(l.toFixed(2)),
-      close: Number(c.toFixed(2)),
-      volume: Math.floor(Math.random() * 50000) + 5000
-    });
-    lastPrice = c;
+  // 2. Try fetching real historical candles from Yahoo Finance proxies directly
+  const { yahoo } = parseSymbol(symbol);
+
+  // Map timeframe to Yahoo Finance interval and range
+  const interval = timeframeMinutes <= 1  ? '1m'
+                 : timeframeMinutes <= 2  ? '2m'
+                 : timeframeMinutes <= 5  ? '5m'
+                 : timeframeMinutes <= 15 ? '15m'
+                 : timeframeMinutes <= 30 ? '30m'
+                 : timeframeMinutes <= 60 ? '60m'
+                 : '1d';
+
+  const range    = timeframeMinutes <= 5  ? '2d'
+                 : timeframeMinutes <= 60 ? '5d'
+                 : '1mo';
+
+  const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahoo)}?interval=${interval}&range=${range}&includePrePost=false`;
+
+  const proxies = [
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`,
+    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`,
+    `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`,
+  ];
+
+  for (let i = 0; i < proxies.length; i++) {
+    try {
+      const res = await fetch(proxies[i], {
+        signal: AbortSignal.timeout(12000),
+        headers: { 'Accept': 'application/json' },
+      });
+
+      if (!res.ok) continue;
+
+      let text = await res.text();
+
+      // allorigins /get wraps in {contents: "..."}
+      if (i === 2) {
+        try { text = JSON.parse(text).contents ?? text; } catch { continue; }
+      }
+
+      const json   = JSON.parse(text);
+      const result = json?.chart?.result?.[0];
+      if (!result) continue;
+
+      const timestamps: number[]   = result.timestamp ?? [];
+      const quote                   = result.indicators?.quote?.[0];
+      if (!quote || timestamps.length === 0) continue;
+
+      const opens   = quote.open   as (number | null)[];
+      const highs   = quote.high   as (number | null)[];
+      const lows    = quote.low    as (number | null)[];
+      const closes  = quote.close  as (number | null)[];
+      const volumes = quote.volume as (number | null)[];
+
+      const candles: OHLCV[] = [];
+      for (let j = 0; j < timestamps.length; j++) {
+        const o = opens[j], h = highs[j], l = lows[j], c = closes[j];
+        if (o == null || h == null || l == null || c == null) continue;
+        if (!isFinite(o) || !isFinite(h) || !isFinite(l) || !isFinite(c)) continue;
+        if (c <= 0) continue;
+        candles.push({
+          open:   Number(o.toFixed(2)),
+          high:   Number(h.toFixed(2)),
+          low:    Number(l.toFixed(2)),
+          close:  Number(c.toFixed(2)),
+          volume: Number(volumes?.[j] ?? 0),
+        });
+      }
+
+      if (candles.length === 0) continue;
+
+      // Return last `outputsize` candles
+      return candles.slice(-outputsize);
+
+    } catch (err: any) {
+      console.warn(`[fetchTimeSeries] proxy ${i} failed:`, err.message);
+    }
   }
-  history.reverse();
-  return history;
+
+  // 3. Fallback: fetch real price first, then simulate around it
+  console.warn('[fetchTimeSeries] All proxies failed — generating fallback candles around live price');
+  try {
+    const live = await fetchLivePrice(symbol);
+    let lastPrice = live.price;  // Use real current price as base
+    const fallbackHistory: OHLCV[] = [];
+    for (let i = 0; i < outputsize; i++) {
+      const pctChange = (Math.random() - 0.5) * 0.004;
+      const o = lastPrice;
+      const c = lastPrice * (1 + pctChange);
+      const h = Math.max(o, c) * (1 + Math.random() * 0.002);
+      const l = Math.min(o, c) * (1 - Math.random() * 0.002);
+      fallbackHistory.push({
+        open: Number(o.toFixed(2)),
+        high: Number(h.toFixed(2)),
+        low: Number(l.toFixed(2)),
+        close: Number(c.toFixed(2)),
+        volume: Math.floor(Math.random() * 50000) + 5000,
+      });
+      lastPrice = c;
+    }
+    fallbackHistory.reverse();
+    return fallbackHistory;
+  } catch (err: any) {
+    console.error('[fetchTimeSeries] Fallback price simulation failed:', err.message);
+    return [];
+  }
 }
 
