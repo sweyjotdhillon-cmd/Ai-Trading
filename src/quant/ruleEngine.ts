@@ -959,6 +959,14 @@ export function evaluateSignal(
   // Scale thresholds down in testMode by a factor of 0.35 to allow diagnostic/backtest signals to emit
   const testModeFactor = horizonArg?.isTestMode ? 0.35 : 1.0;
 
+  // Threshold definitions (Default minimum difference of 1.0 required)
+  let minMarginThreshold = 1.0 * scaleThresholdFactor * testModeFactor;
+  let minStrengthThreshold = 4.0 * scaleThresholdFactor * testModeFactor;
+  if (reversalDominant) {
+    minMarginThreshold *= 0.85;
+    minStrengthThreshold *= 0.85;
+  }
+
   const rawWinningTotal = bullTotal > bearTotal ? bullTotal : bearTotal;
   const initialConfidence = Math.round((rawWinningTotal * skepticMultiplier / confidenceDenominator) * 100);
 
@@ -1015,12 +1023,6 @@ export function evaluateSignal(
   const margin = Number(Math.abs(adjustedBull - adjustedBear).toFixed(2));
   const winningTotal = rawWinner === 'BULL' ? adjustedBull : (rawWinner === 'BEAR' ? adjustedBear : 0);
 
-  let minMarginThreshold = 2.0 * scaleThresholdFactor * testModeFactor;
-  let minStrengthThreshold = 4.0 * scaleThresholdFactor * testModeFactor;
-  if (reversalDominant) {
-    minMarginThreshold *= 0.85;
-    minStrengthThreshold *= 0.85;
-  }
   const minSkepticMarginThreshold = 4.0 * scaleThresholdFactor * testModeFactor;
   const minConfidenceThreshold = 25 * scaleThresholdFactor * testModeFactor;
 

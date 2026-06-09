@@ -52,14 +52,12 @@ export function onTradeClosed(state: RiskState, pnl: number, cfg: RiskConfig, no
   next.dailyPnL += pnl;
   next.tradesToday += 1;
   next.lastTradeAt = now;
+  next.inCooldown = true;
+  next.cooldownUntil = now + (cfg.cooldownMinutes || 1) * 60_000;
   if (pnl < 0) {
     next.consecutiveLosses += 1;
-    next.inCooldown = true;
-    next.cooldownUntil = now + cfg.cooldownMinutes * 60_000;
   } else {
     next.consecutiveLosses = 0;
-    next.inCooldown = false;
-    next.cooldownUntil = 0;
   }
   saveRiskState(next);
   return next;

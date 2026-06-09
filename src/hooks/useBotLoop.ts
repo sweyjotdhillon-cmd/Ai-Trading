@@ -94,6 +94,7 @@ export interface UseBotLoopResult {
   pauseBot:   () => void;
   forceExit:  () => void;             // manual exit current trade
   manualBuy:  () => Promise<void>;
+  reEvaluate: () => Promise<void>;   // manual force re-analyze current candle
 
   // Position watcher live data — null when not in trade
   trailSL:          number;
@@ -192,6 +193,10 @@ export function useBotLoop(
   const lastValidPriceRef = useRef<number | null>(null);
   const SPIKE_THRESHOLD   = 0.05; // 5% single-tick change = anomalous
 
+  const lastAnalyzedCandleTimeRef = useRef<number | null>(null);
+  const [isInTrade, setIsInTrade] = useState<boolean>(false);
+  const isInTradeRef = useRef<boolean>(false);
+
   const [userId, setUserId] = useState<string | null>(auth.currentUser?.uid ?? null);
   const uidRef = useRef<string | null>(auth.currentUser?.uid ?? null);
 
@@ -239,6 +244,9 @@ export function useBotLoop(
   const activeTradesRef = useRef<BotTradeRecord[]>([]);
   useEffect(() => {
     activeTradesRef.current = activeTrades;
+    const active = activeTrades.length > 0;
+    isInTradeRef.current = active;
+    setIsInTrade(active);
   }, [activeTrades]);
 
   const tradeHistoryRef = useRef<BotTradeRecord[]>([]);
@@ -275,14 +283,15 @@ export function useBotLoop(
     };
 
     // 2. Perform optimistic local UI state updates instantly
-    // The initial investment (cash entry cost) is returned plus the realized profit/loss
-    setVirtualBalance(prev => parseFloat((prev + invested + realizedPnL).toFixed(2)));
+    // Credit back the proceeds from selling (exitPrice * posSize)
+    const saleProceeds = parseFloat((exitPrice * posSize).toFixed(2));
+    setVirtualBalance(prev => parseFloat((prev + saleProceeds).toFixed(2)));
     setTradeHistory(h => [closed, ...h]);
 
     setActiveTrades(prev => {
       const filtered = prev.filter(t => t.id !== tradeId);
       if (filtered.length === 0) {
-        setPhase('SCANNING');
+        setPhase('COOLDOWN');
       }
       return filtered;
     });
@@ -326,9 +335,8 @@ export function useBotLoop(
     if (uidRef.current) {
       writeTrade_Close(uidRef.current, closed, exitPrice, invested)
         .then(async (finalized) => {
-          // Add back the invested amount + the net PnL from the trade
-          const delta = invested + finalized.realizedPnL;
-          const newBalance = await updateVirtualBalance(uidRef.current!, delta);
+          // Add back the sale proceeds
+          const newBalance = await updateVirtualBalance(uidRef.current!, saleProceeds);
           if (newBalance > 0) {
             setVirtualBalance(newBalance);
           }
@@ -399,6 +407,10 @@ export function useBotLoop(
 
   const manualBuy = useCallback(async () => {
     if (!symbol || !feed.currentPrice) return;
+    if (isInTradeRef.current) {
+      setLastBlockReason('IN_TRADE: cannot perform manual buy while already in trade');
+      return;
+    }
     if (activeTradesRef.current.length >= (activeConfig.maxConcurrentTrades ?? 1)) return;
     if (virtualBalance < (activeConfig.investmentPerTrade ?? 10000)) return;
     if (feed.ohlcvBuffer.length < 15) return;
@@ -440,6 +452,17 @@ export function useBotLoop(
       return;
     }
 
+    const invested = plan.investmentRupees ?? (entryPrice * plan.positionSize);
+    const estCharges = plan.brokerCharges ?? 0;
+    const totalDeduct = parseFloat((invested + estCharges).toFixed(2));
+
+    if (virtualBalance < totalDeduct) {
+      setLastBlockReason(`INSUFFICIENT_BALANCE: ₹${virtualBalance.toFixed(0)} available, ` +
+        `₹${totalDeduct.toFixed(0)} required (inclusive of brokerage ₹${estCharges.toFixed(0)})`
+      );
+      return;
+    }
+
     const trade: BotTradeRecord = {
       id:              Date.now().toString(),
       symbol,
@@ -453,33 +476,49 @@ export function useBotLoop(
       closedAt:        null,
       durationMinutes: null,
       plan,
+      balanceSnapshot: virtualBalance,
     };
-
-    const reqBal = plan.investmentRupees ?? (activeConfig.investmentPerTrade ?? 10000);
 
     setActiveTrades(prev => [...prev, trade]);
     setActivePlans(prev => [...prev, plan]);
     setPhase('IN_TRADE');
 
-    // Deduct reqBal from local virtualBalance state instantly!
-    setVirtualBalance(prev => parseFloat((prev - reqBal).toFixed(2)));
+    // Deduct totalDeduct from local virtualBalance state instantly!
+    setVirtualBalance(prev => parseFloat((prev - totalDeduct).toFixed(2)));
 
     if (uidRef.current) {
       writeTrade_Open(uidRef.current, trade).catch(err =>
         console.warn('[BotLoop] manualBuy writeTrade_Open failed:', err)
       );
       // Decrease virtual balance in Firestore!
-      updateVirtualBalance(uidRef.current, -reqBal).catch(err =>
+      updateVirtualBalance(uidRef.current, -totalDeduct).catch(err =>
         console.error('[BotLoop] Failed to decrease virtual balance on manual open:', err)
       );
     }
   }, [symbol, feed.currentPrice, feed.ohlcvBuffer, activeConfig, virtualBalance]);
 
-  const runAnalysisCycle = useCallback(async () => {
+  const reEvaluate = useCallback(async () => {
+    lastAnalyzedCandleTimeRef.current = null;
+    setLastBlockReason('RE-EVALUATING: Forcing fresh scan of current market price and patterns...');
+    await runAnalysisCycle(true);
+  }, [runAnalysisCycle]);
+
+  const runAnalysisCycle = useCallback(async (isForced: boolean = false) => {
     if (!symbol) return;
+    if (isInTradeRef.current) {
+      setLastBlockReason('IN_TRADE: actively managing open scalp position');
+      return;
+    }
     // Need at least 15 candles: 14 for ATR14 + 1 current
     if (feed.ohlcvBuffer.length < 15) {
       setLastBlockReason(`WARMUP: ${feed.ohlcvBuffer.length}/15 candles loaded. Waiting...`);
+      return;
+    }
+
+    const newestCandle = feed.ohlcvBuffer[feed.ohlcvBuffer.length - 1];
+    const newestCandleTime = newestCandle?.timestamp ?? null;
+    if (!isForced && newestCandleTime !== null && newestCandleTime === lastAnalyzedCandleTimeRef.current) {
+      setLastBlockReason('SKIP: Newest candle already analyzed, waiting for next candle close.');
       return;
     }
 
@@ -518,6 +557,10 @@ export function useBotLoop(
       });
 
       if (!result) return;
+
+      if (newestCandleTime !== null) {
+        lastAnalyzedCandleTimeRef.current = newestCandleTime;
+      }
 
       analysisErrorCount.current = 0; // reset circuit breaker on success
 
@@ -665,11 +708,14 @@ export function useBotLoop(
       }
 
       // CHANGE 7 — Insufficient balance gate
-      const reqBal = activeConfig.investmentPerTrade ?? 10000;
-      if (virtualBalance < reqBal) {
+      const invested = plan.investmentRupees ?? (entryPrice * plan.positionSize);
+      const estCharges = plan.brokerCharges ?? 0;
+      const totalDeduct = parseFloat((invested + estCharges).toFixed(2));
+
+      if (virtualBalance < totalDeduct) {
         setLastBlockReason(
           `INSUFFICIENT_BALANCE: ₹${virtualBalance.toFixed(0)} available, ` +
-          `₹${reqBal} required per trade`
+          `₹${totalDeduct.toFixed(0)} required (inclusive of brokerage ₹${estCharges.toFixed(0)})`
         );
         setPhase('HALTED');
         return;
@@ -695,14 +741,15 @@ export function useBotLoop(
         closedAt:        null,
         durationMinutes: null,
         plan,
+        balanceSnapshot: virtualBalance,
       };
       
       setActiveTrades(prev => [...prev, trade]);
       setActivePlans(prev => [...prev, plan]);
       setPhase('IN_TRADE');
 
-      // Deduct reqBal from local virtualBalance state instantly!
-      setVirtualBalance(prev => parseFloat((prev - reqBal).toFixed(2)));
+      // Deduct totalDeduct from local virtualBalance state instantly!
+      setVirtualBalance(prev => parseFloat((prev - totalDeduct).toFixed(2)));
 
       // Write OPEN trade to Firestore
       if (uidRef.current) {
@@ -710,7 +757,7 @@ export function useBotLoop(
           console.warn('[BotLoop] writeTrade_Open failed:', err)
         );
         // Decrease virtual balance in Firestore!
-        updateVirtualBalance(uidRef.current, -reqBal).catch(err =>
+        updateVirtualBalance(uidRef.current, -totalDeduct).catch(err =>
           console.error('[BotLoop] Failed to decrease virtual balance on auto open:', err)
         );
       }
@@ -943,6 +990,7 @@ export function useBotLoop(
     pauseBot,
     forceExit,
     manualBuy,
+    reEvaluate,
 
     // Position watcher live data — null when not in trade
     trailSL,

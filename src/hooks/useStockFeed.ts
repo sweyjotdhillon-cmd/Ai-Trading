@@ -107,6 +107,7 @@ function tickLiveCandle(
     low:    Math.min(live.low,  price),
     close:  price,
     volume: 0,
+    timestamp: live.intervalStartMs,
   };
 
   return {

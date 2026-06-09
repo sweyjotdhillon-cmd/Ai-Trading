@@ -49,7 +49,8 @@ function evaluateConditions(
   getStoch: () => { k: number[], d: number[] },
   getMACD: () => { macd: number[], signal: number[], hist: number[] },
   getATR: () => number[],
-  getBollinger: () => { upper: number[], middle: number[], lower: number[] }
+  getBollinger: () => { upper: number[], middle: number[], lower: number[] },
+  cache?: any
 ): { score: number, matched: number, reasons: string[] } {
 
   // Build a lookup for a candle by reference name
@@ -146,6 +147,21 @@ function evaluateConditions(
         return closes[last] - closes[last - 1];
       }
 
+      case 'trend':
+        return (cache as any).context?.trendState ?? null;
+
+      case 'atSupport': {
+        const yPct = (cache as any).context?.yPercent;
+        if (yPct === null || yPct === undefined) return null;
+        return yPct <= 20 ? true : false;
+      }
+
+      case 'atResistance': {
+        const yPct = (cache as any).context?.yPercent;
+        if (yPct === null || yPct === undefined) return null;
+        return yPct >= 80 ? true : false;
+      }
+
       default: return null;
     }
   }
@@ -201,12 +217,13 @@ function evaluateConditions(
     const fieldVal = getFieldValue(cond.field, cond.candle || 'current');
     const passed   = applyOperator(fieldVal, cond.operator, cond.value, cond.field, cond.candle);
 
+    const condId = cond.id ? `[${cond.id}] ` : '';
     if (passed) {
       totalScore  += cond.weight ?? 1.0;
       matchedCount++;
-      reasons.push(`${cond.field}=${typeof fieldVal === 'number' ? fieldVal.toFixed(3) : fieldVal} ${cond.operator} ${cond.value} ✓`);
+      reasons.push(`${condId}${cond.field}=${typeof fieldVal === 'number' ? fieldVal.toFixed(3) : fieldVal} ${cond.operator} ${cond.value} ✓`);
     } else {
-      reasons.push(`${cond.field}=${typeof fieldVal === 'number' ? fieldVal.toFixed(3) : fieldVal} ${cond.operator} ${cond.value} ✗`);
+      reasons.push(`${condId}${cond.field}=${typeof fieldVal === 'number' ? fieldVal.toFixed(3) : fieldVal} ${cond.operator} ${cond.value} ✗`);
     }
   }
 
@@ -249,13 +266,15 @@ export function evaluateShard(
       // Evaluate CALL side
       const callResult = evaluateConditions(
         techItem.callConditions || [], ohlc, closes, last,
-        getRSI, getStoch, getMACD, getATR, getBollinger
+        getRSI, getStoch, getMACD, getATR, getBollinger,
+        cache
       );
       
       // Evaluate PUT side
       const putResult = evaluateConditions(
         techItem.putConditions || [], ohlc, closes, last,
-        getRSI, getStoch, getMACD, getATR, getBollinger
+        getRSI, getStoch, getMACD, getATR, getBollinger,
+        cache
       );
 
       const scoring = techItem.scoring || { minConditionsForSignal: 0, fullSignalThreshold: 0, halfSignalThreshold: 0, maxScore: 0 };

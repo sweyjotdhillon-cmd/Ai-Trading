@@ -137,6 +137,21 @@ function getFieldValue(obj: any, path: string): any {
     return obj.ohlc?.low ?? obj.low;
   }
 
+  if (cleanPath === 'trend') {
+    // Try direct on obj first (in case window is passed as obj), then skip — handled at call site
+    return obj?.marketContext?.trendState ?? obj?.trendState ?? null;
+  }
+  if (cleanPath === 'atsupport') {
+    const yP = obj?.marketContext?.yPercent ?? obj?.yContext?.yPercent ?? null;
+    if (yP === null) return null;
+    return yP <= 20 ? true : false;
+  }
+  if (cleanPath === 'atresistance') {
+    const yP = obj?.marketContext?.yPercent ?? obj?.yContext?.yPercent ?? null;
+    if (yP === null) return null;
+    return yP >= 80 ? true : false;
+  }
+
   // 3. Probe inside categories by base name
   const baseName = parts[parts.length - 1];
   if (obj[baseName] !== null && obj[baseName] !== undefined && !Number.isNaN(obj[baseName])) {
@@ -273,10 +288,17 @@ export function evaluateTechniques(window: ChartAnalysisWindow, techniques: Tech
       // In real life, conditions might specify their target reference
       // but the prompt says: "Resolve the candle reference: current, prev, prev2, any"
       // Since it's usually inside the condition object (e.g. cond.reference), we'll check that.
-      const ref = (cond as any).reference || "current";
+      const ref = (cond as any).candle || "current";
       
       if (ref === "any") {
-        passed = focusCandles.some(c => checkConditionForCandle(c, cond));
+        const contextFields = ['trend', 'atresistance', 'atsupport'];
+        const fieldNorm = (cond.field || '').toLowerCase().replace(/[\s_.-]/g, '');
+        if (contextFields.includes(fieldNorm)) {
+          // Resolve against the window directly, not individual candles
+          passed = checkConditionForCandle(window, cond);
+        } else {
+          passed = focusCandles.some(c => checkConditionForCandle(c, cond));
+        }
       } else if (ref === "prev") {
         passed = checkConditionForCandle(prev, cond);
       } else if (ref === "prev2") {
@@ -303,10 +325,17 @@ export function evaluateTechniques(window: ChartAnalysisWindow, techniques: Tech
         return evaluateCondition(val, cCond.operator, cCond.value, currVal, prevVal);
       };
 
-      const ref = (cond as any).reference || "current";
+      const ref = (cond as any).candle || "current";
       
       if (ref === "any") {
-        passed = focusCandles.some(c => checkConditionForCandle(c, cond));
+        const contextFields = ['trend', 'atresistance', 'atsupport'];
+        const fieldNorm = (cond.field || '').toLowerCase().replace(/[\s_.-]/g, '');
+        if (contextFields.includes(fieldNorm)) {
+          // Resolve against the window directly, not individual candles
+          passed = checkConditionForCandle(window, cond);
+        } else {
+          passed = focusCandles.some(c => checkConditionForCandle(c, cond));
+        }
       } else if (ref === "prev") {
         passed = checkConditionForCandle(prev, cond);
       } else if (ref === "prev2") {
@@ -344,7 +373,7 @@ export function evaluateTechniques(window: ChartAnalysisWindow, techniques: Tech
       }
     }
 
-    maxPossible += technique.maxScore || 1;
+    maxPossible += technique.scoring?.maxScore ?? 1;
     processed++;
     
     breakdown.push({

@@ -459,13 +459,24 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
 
       {/* Last block reason */}
       {bot.lastBlockReason && bot.phase !== 'IN_TRADE' && (
-        <div className="bg-amber-500/8 border border-amber-500/20 rounded-xl px-4 py-3">
-          <p className="text-[9px] text-amber-500 font-black uppercase tracking-widest mb-1 font-mono">
-            Last Block Reason
-          </p>
-          <p className="text-xs text-amber-300 font-mono break-all leading-normal">
-            {bot.lastBlockReason}
-          </p>
+        <div className="bg-amber-500/8 border border-amber-500/20 rounded-xl px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex-1">
+            <p className="text-[9px] text-amber-500 font-black uppercase tracking-widest mb-1 font-mono">
+              Last Status / Block Reason
+            </p>
+            <p className="text-xs text-amber-300 font-mono break-all leading-normal">
+              {bot.lastBlockReason}
+            </p>
+          </div>
+          {bot.phase !== 'IDLE' && (
+            <button
+              onClick={bot.reEvaluate}
+              id="btn-re-evaluate-status"
+              className="px-3 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 text-[10px] font-black uppercase tracking-wider transition-colors shrink-0 flex items-center gap-1.5 active:scale-[0.98]"
+            >
+              🔄 Re-evaluate
+            </button>
+          )}
         </div>
       )}
 
@@ -814,7 +825,7 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
                       <p className="text-xs font-bold text-zinc-200">{fmt(currentPrice)}</p>
                     </div>
                     <div className={`rounded-xl px-1 py-0.5 flex flex-col items-center justify-center ${borderPnlColor} border`}>
-                      <p className="text-[9px] text-zinc-500 uppercase tracking-widest mb-0.5">P&L</p>
+                      <p className="text-[9px] text-zinc-500 uppercase tracking-widest mb-0.5">LIVE P&L</p>
                       <p className={`text-xs font-black ${textColor}`}>
                         {isPnLPos ? '+' : ''}{fmt(unrealizedPnL)}
                       </p>
@@ -843,14 +854,27 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
                   </div>
 
                   {/* Calculations & charges estimation */}
-                  <div className="p-3.5 grid grid-cols-2 gap-2 text-[10px] text-zinc-500 bg-zinc-950/20">
-                    <div className="flex flex-col gap-1 text-left">
-                      <span>Charges est. <strong className="text-[#D9B382]">{fmt(estCharges)}</strong></span>
-                      <span>Risk <strong className="text-rose-400">{fmt(riskAmount)}</strong></span>
+                  <div className="p-3.5 grid grid-cols-2 gap-4 text-xs text-zinc-300 bg-zinc-950/20">
+                    <div className="flex flex-col gap-2 text-left border-r border-zinc-800/40 pr-2">
+                      <div className="flex flex-col">
+                        <span className="text-[9px] uppercase tracking-widest text-zinc-400 font-bold mb-0.5">Capital Deployed</span>
+                        <strong className="text-zinc-100 text-sm font-sans font-extrabold">{fmt(invested + estCharges)}</strong>
+                        <span className="text-[8px] text-zinc-500 leading-tight">(Invested {fmt(invested)} + Buy Chgs {fmt(estCharges)})</span>
+                      </div>
+                      <div className="flex flex-col mt-1">
+                        <span className="text-[9px] uppercase tracking-widest text-orange-400 font-bold mb-0.5 font-sans">Brokerage Paid</span>
+                        <strong className="text-orange-400 font-mono text-xs">{fmt(estCharges)}</strong>
+                      </div>
                     </div>
-                    <div className="text-right flex flex-col justify-center items-end">
-                      <span className="text-[9px] uppercase tracking-wider mb-0.5">Reward if TP</span>
-                      <strong className="text-emerald-400 text-xs font-black">+{fmt(tpReward)} (net)</strong>
+                    <div className="flex flex-col gap-2 text-right justify-between">
+                      <div className="flex flex-col">
+                        <span className="text-[9px] uppercase tracking-widest text-rose-500 font-bold mb-0.5">Estimated Max Risk</span>
+                        <strong className="text-rose-400 font-mono text-sm leading-tight font-extrabold">-{fmt(Math.abs((entry - sl) * shares))}</strong>
+                      </div>
+                      <div className="flex flex-col mt-1">
+                        <span className="text-[9px] uppercase tracking-widest text-emerald-400 font-bold mb-0.5">Potential Reward</span>
+                        <strong className="text-emerald-400 font-mono text-sm leading-tight font-black">+{fmt(Math.abs((trade.plan.takeProfit1 - entry) * shares))}</strong>
+                      </div>
                     </div>
                   </div>
 
@@ -868,7 +892,7 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
             })}
           </div>
         ) : (
-          <div className="border border-dashed border-zinc-800 rounded-xl p-8 text-center text-zinc-500 bg-zinc-950/20 flex flex-col items-center justify-center gap-2">
+          <div className="border border-dashed border-zinc-800 rounded-xl p-8 text-center text-zinc-500 bg-zinc-950/20 flex flex-col items-center justify-center gap-3">
             <div className="flex items-center justify-center gap-2 text-zinc-400 font-bold font-mono text-xs">
               <div className="w-1.5 h-1.5 bg-zinc-600 rounded-full animate-ping" />
               <span>Waiting for signal...</span>
@@ -876,6 +900,15 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
             <p className="text-[10px] font-mono text-zinc-600 uppercase tracking-widest">
               Bot is scanning {symbol || '—'} · {bot.stabilityCount}/3 signals
             </p>
+            {bot.phase !== 'IDLE' && (
+              <button
+                onClick={bot.reEvaluate}
+                id="btn-re-evaluate-scanning"
+                className="mt-1 px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500/10 to-amber-600/10 hover:from-amber-500/20 hover:to-amber-600/20 border border-amber-500/30 text-amber-400 text-[10px] font-black uppercase tracking-widest transition-all shrink-0 flex items-center gap-1.5 active:scale-[0.98] cursor-pointer shadow-md"
+              >
+                🔄 Re-evaluate Now
+              </button>
+            )}
           </div>
         )}
       </div>

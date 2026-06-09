@@ -27,6 +27,7 @@ export interface OHLCV {
   low: number;
   close: number;
   volume: number;
+  timestamp?: number;
 }
 
 export interface AgentResult {

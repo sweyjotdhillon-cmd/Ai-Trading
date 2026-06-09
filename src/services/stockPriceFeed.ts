@@ -429,6 +429,7 @@ export async function fetchTimeSeries(
           low:    Number(l.toFixed(2)),
           close:  Number(c.toFixed(2)),
           volume: Number(volumes?.[j] ?? 0),
+          timestamp: timestamps[j] * 1000,
         });
       }
 
@@ -447,21 +448,23 @@ export async function fetchTimeSeries(
   try {
     const live = await fetchLivePrice(symbol);
     let lastPrice = live.price;  // Use real current price as base
+    const baseTime = Date.now();
     const fallbackHistory: OHLCV[] = [];
     for (let i = 0; i < outputsize; i++) {
-      const pctChange = (Math.random() - 0.5) * 0.004;
-      const o = lastPrice;
-      const c = lastPrice * (1 + pctChange);
-      const h = Math.max(o, c) * (1 + Math.random() * 0.002);
-      const l = Math.min(o, c) * (1 - Math.random() * 0.002);
-      fallbackHistory.push({
-        open: Number(o.toFixed(2)),
-        high: Number(h.toFixed(2)),
-        low: Number(l.toFixed(2)),
-        close: Number(c.toFixed(2)),
-        volume: Math.floor(Math.random() * 50000) + 5000,
-      });
-      lastPrice = c;
+       const pctChange = (Math.random() - 0.5) * 0.004;
+       const o = lastPrice;
+       const c = lastPrice * (1 + pctChange);
+       const h = Math.max(o, c) * (1 + Math.random() * 0.002);
+       const l = Math.min(o, c) * (1 - Math.random() * 0.002);
+       fallbackHistory.push({
+         open: Number(o.toFixed(2)),
+         high: Number(h.toFixed(2)),
+         low: Number(l.toFixed(2)),
+         close: Number(c.toFixed(2)),
+         volume: Math.floor(Math.random() * 50000) + 5000,
+         timestamp: baseTime - (outputsize - i) * timeframeMinutes * 60 * 1000,
+       });
+       lastPrice = c;
     }
     fallbackHistory.reverse();
     return fallbackHistory;
