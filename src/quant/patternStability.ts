@@ -5,11 +5,10 @@ export class PatternStabilityManager {
   private readonly threshold: number;
   private readonly mode: 'streaming' | 'bar'; // FIXED: add mode field to store evaluation mode
 
-  constructor(consecutiveFramesThreshold: number = 3, mode: 'streaming' | 'bar' = 'bar') { // FIXED: default to 'bar' to bypass consecutive stability checks for single occurrence bar patterns
+  constructor(consecutiveFramesThreshold: number = 3, mode: 'streaming' | 'bar' = 'bar') {
     this.threshold = consecutiveFramesThreshold;
-    // FIXED: if mode defaults to 'bar' but the constructor is called with threshold > 1 without specifying mode,
-    // fallback to 'streaming' to support existing test suites and preserve test expectations.
-    this.mode = (mode === 'bar' && consecutiveFramesThreshold > 1 && arguments.length === 1) ? 'streaming' : mode;
+    // FIX 8: Remove unreliable arguments.length fallback to guarantee TypeScript/strict-mode compatibility
+    this.mode = mode;
   }
 
   public processFrame(currentFramePatterns: PatternEvidence[]): PatternEvidence[] {

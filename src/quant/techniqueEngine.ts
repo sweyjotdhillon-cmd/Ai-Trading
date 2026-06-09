@@ -31,6 +31,7 @@ export interface ChartAnalysisWindow {
   current?: any;
   prev?: any;
   prev2?: any;
+  prev3?: any; // FIX 3: Add optional prev3 field for trailing context
 }
 
 export interface TechniqueBreakdown {
@@ -136,20 +137,29 @@ function getFieldValue(obj: any, path: string): any {
   if (cleanPath === 'low') {
     return obj.ohlc?.low ?? obj.low;
   }
+  if (cleanPath === 'direction') {
+    // FIX 1: Add handler for 'direction' to look into bodyDirection
+    return obj?.geometry?.bodyDirection ?? obj?.bodyDirection ?? null;
+  }
 
   if (cleanPath === 'trend') {
-    // Try direct on obj first (in case window is passed as obj), then skip — handled at call site
-    return obj?.marketContext?.trendState ?? obj?.trendState ?? null;
+    // FIX 2: Check visibleTrend first to match dataExtractor output, with trendState as fallback
+    return obj?.marketContext?.visibleTrend
+        ?? obj?.visibleTrend
+        ?? obj?.trendState
+        ?? null;
   }
   if (cleanPath === 'atsupport') {
-    const yP = obj?.marketContext?.yPercent ?? obj?.yContext?.yPercent ?? null;
-    if (yP === null) return null;
-    return yP <= 20 ? true : false;
+    // FIX 4: Use boolean nearSupport field instead of non-existent yPercent
+    return obj?.marketContext?.nearSupport
+        ?? obj?.nearSupport
+        ?? null;
   }
   if (cleanPath === 'atresistance') {
-    const yP = obj?.marketContext?.yPercent ?? obj?.yContext?.yPercent ?? null;
-    if (yP === null) return null;
-    return yP >= 80 ? true : false;
+    // FIX 4: Use boolean nearResistance field instead of non-existent yPercent
+    return obj?.marketContext?.nearResistance
+        ?? obj?.nearResistance
+        ?? null;
   }
 
   // 3. Probe inside categories by base name
@@ -224,6 +234,12 @@ export function evaluateTechniques(window: ChartAnalysisWindow, techniques: Tech
   const current = window.current || focusCandles.find((c: any) => c.label === 'CURRENT') || focusCandles[focusCandles.length - 1];
   const prev = window.prev || focusCandles.find((c: any) => c.label === 'PREV_1') || focusCandles[focusCandles.length - 2];
   const prev2 = window.prev2 || focusCandles.find((c: any) => c.label === 'PREV_2') || focusCandles[focusCandles.length - 3];
+  
+  // FIX 3: Define prev3 alongside the other candle references for 3-step trailing comparisons
+  const prev3 = window.prev3
+    || focusCandles.find((c: any) => c.label === 'PREV_3')
+    || focusCandles[focusCandles.length - 4]
+    || null;
 
   for (const technique of techniques) {
     // SKIP CHECK
@@ -303,6 +319,9 @@ export function evaluateTechniques(window: ChartAnalysisWindow, techniques: Tech
         passed = checkConditionForCandle(prev, cond);
       } else if (ref === "prev2") {
         passed = checkConditionForCandle(prev2, cond);
+      } else if (ref === "prev3") {
+        // FIX 3: Support evaluation against the 3rd prior candle
+        passed = prev3 ? checkConditionForCandle(prev3, cond) : false;
       } else {
         passed = checkConditionForCandle(current, cond);
       }
@@ -340,6 +359,9 @@ export function evaluateTechniques(window: ChartAnalysisWindow, techniques: Tech
         passed = checkConditionForCandle(prev, cond);
       } else if (ref === "prev2") {
         passed = checkConditionForCandle(prev2, cond);
+      } else if (ref === "prev3") {
+        // FIX 3: Support evaluation against the 3rd prior candle
+        passed = prev3 ? checkConditionForCandle(prev3, cond) : false;
       } else {
         passed = checkConditionForCandle(current, cond);
       }

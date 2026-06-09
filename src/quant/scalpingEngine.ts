@@ -40,19 +40,44 @@ export function findRecentSwingLow(pivots: SwingPivot[], currentBarIndex: number
 }
 
 export function calculateStopLoss(entry: number, mode: SLMode, ctx: ScalpContext): number {
-  const TICK = 0.05;
-  const swing = findRecentSwingLow(ctx.pivots, ctx.currentBarIndex);
+  const atrMultiplierSL = ctx.config.atrMultiplierSL ?? 1.5;
   const atr14 = ctx.atr14[ctx.atr14.length - 1] || entry * 0.01;
+  const slPercent = ctx.config.slPercent ?? 0.5;
 
   let sl: number;
-  if (swing !== undefined) {
-    sl = swing - (2 * TICK);
-  } else {
-    sl = entry - atr14 * 1.5;
-  }
 
-  // Floor: sl must never be more than 1.5% below entry
-  sl = Math.max(sl, entry * 0.985);
+  if (mode === 'PERCENT') {
+    sl = entry - (entry * slPercent / 100);
+    // Floor: sl must never be more than 1.5% below entry for PERCENT mode
+    sl = Math.max(sl, entry * 0.985);
+  } else if (mode === 'ATR') {
+    sl = entry - atrMultiplierSL * atr14;
+  } else if (mode === 'STRUCTURE') {
+    const swing = findRecentSwingLow(ctx.pivots, ctx.currentBarIndex);
+    const limit = 2 * atrMultiplierSL * atr14;
+    if (swing !== undefined) {
+      if (entry - swing <= limit) {
+        sl = swing - 0.3 * atr14;
+      } else {
+        sl = entry - atrMultiplierSL * atr14;
+      }
+    } else {
+      sl = entry - atrMultiplierSL * atr14;
+    }
+  } else {
+    // AUTO mode
+    const swing = findRecentSwingLow(ctx.pivots, ctx.currentBarIndex);
+    const limit = 2 * atrMultiplierSL * atr14;
+    if (swing !== undefined) {
+      if (entry - swing <= limit) {
+        sl = swing - 0.3 * atr14;
+      } else {
+        sl = entry - atrMultiplierSL * atr14;
+      }
+    } else {
+      sl = entry - 0.3 * atr14;
+    }
+  }
 
   return sl;
 }
@@ -60,15 +85,21 @@ export function calculateStopLoss(entry: number, mode: SLMode, ctx: ScalpContext
 export function buildExitPlan(entry: number, sl: number, ctx: ScalpContext) {
   const risk = entry - sl;
   if (risk <= 0) throw new Error('Invalid SL');
-  const ratio = ctx.config.rrRatioChoice ?? 2.0;
-  const tp = entry + risk * ratio;
+  const tp1RMultiple = ctx.config.tp1RMultiple ?? 1.0;
+  const rrRatio = ctx.config.rrRatio ?? 2.0;
+  const tp1 = entry + risk * tp1RMultiple;
+  const tp2 = entry + risk * rrRatio;
+  const trailMultiplier = ctx.config.trailMultiplier ?? 1.5;
+  const atr14 = ctx.atr14[ctx.atr14.length - 1] || entry * 0.01;
+  const trailingDistance = atr14 * trailMultiplier;
+
   return {
-    tp1: tp,
-    tp2: tp,
-    trailingActivate: tp,
-    trailingDistance: risk * 0.3,
-    breakEvenAfter: tp,
-    rr: ratio,
+    tp1,
+    tp2,
+    trailingActivate: tp1,
+    trailingDistance,
+    breakEvenAfter: tp1,
+    rr: rrRatio,
   };
 }
 
@@ -127,6 +158,11 @@ export function evaluateScalpSignal(
 
   // LAYER 3 - Plan formulation
   const blockers: string[] = [];
+
+  if (!isForced && confluenceScore < ctx.config.minConfluence) {
+    blockers.push('LOW_CONFLUENCE');
+    return { signal: 'WAIT', confluenceScore, blockers, features, rawWinner };
+  }
   
   const atrVal = ctx.atr14[ctx.atr14.length - 1];
   if (!atrVal || atrVal <= 0) {
@@ -336,17 +372,19 @@ export function runAntiHallucinationFilter(
 
   // Check 5 — Swing Pivots match data high/low
   let pivotsConsistent = true;
-  for (const p of ctx.pivots) {
-    if (p.index < 0 || p.index >= ohlc.length) {
-      pivotsConsistent = false;
-      break;
-    }
-    const bar = ohlc[p.index];
-    if (p.kind === 'HIGH' && Math.abs(p.price - bar.high) > 0.01) {
-      pivotsConsistent = false;
-    }
-    if (p.kind === 'LOW' && Math.abs(p.price - bar.low) > 0.01) {
-      pivotsConsistent = false;
+  if (ohlc.length >= 10) {
+    for (const p of ctx.pivots) {
+      if (p.index < 0 || p.index >= ohlc.length) {
+        pivotsConsistent = false;
+        break;
+      }
+      const bar = ohlc[p.index];
+      if (p.kind === 'HIGH' && Math.abs(p.price - bar.high) > 0.01) {
+        pivotsConsistent = false;
+      }
+      if (p.kind === 'LOW' && Math.abs(p.price - bar.low) > 0.01) {
+        pivotsConsistent = false;
+      }
     }
   }
   checks.pivotsMatchData = pivotsConsistent;

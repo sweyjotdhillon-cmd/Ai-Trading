@@ -19,10 +19,35 @@ export function applyTemporalFilter(
 ): TemporalFilterResult {
   const { alpha, confidenceThreshold } = temporalFilterConfig;
 
-  // EMA dampening/reset if the direction changes
-  if (rawSignal !== 'NO_TRADE' && previousDirection !== 'NO_TRADE' && rawSignal !== previousDirection) {
-    smoothedConfidence = null;
-    smoothedFinalScore = null;
+  const lastScore = smoothedFinalScore;
+  const oppositeSign = lastScore !== null && (
+    (rawFinalScore > 0 && lastScore < 0) || 
+    (rawFinalScore < 0 && lastScore > 0)
+  );
+
+  // EMA dampening/reset if the direction changes or opposite signal/reversal occurs
+  if (oppositeSign || (rawSignal !== 'NO_TRADE' && previousDirection !== 'NO_TRADE' && rawSignal !== previousDirection)) {
+    smoothedConfidence = rawConfidence;
+    smoothedFinalScore = rawFinalScore;
+    previousDirection = rawSignal;
+
+    let outSignal = rawSignal;
+    let outStable = rawStable;
+
+    if (rawSignal === 'NO_TRADE') {
+      outSignal = 'NO_TRADE';
+      outStable = false;
+    } else if (smoothedConfidence < confidenceThreshold) {
+      outSignal = 'NO_TRADE';
+      outStable = false;
+    }
+
+    return {
+      signal: outSignal,
+      confidence: smoothedConfidence,
+      finalScore: smoothedFinalScore,
+      stable: outStable
+    };
   }
 
   // Target values for EMA

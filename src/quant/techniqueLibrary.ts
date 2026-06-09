@@ -177,6 +177,239 @@ function applyContextAndConfirmationGates(
 
 export const TECHNIQUE_LIBRARY: Record<string, TechniqueLibraryFunction> = {};
 
+TECHNIQUE_LIBRARY.rsioversold = (ohlc, cache, context) => {
+  ensureIndicators(ohlc, cache);
+  const rsiVals = cache.rsiVals!;
+  const lastVal = rsiVals[rsiVals.length - 1];
+  const vote = lastVal < 30 ? 'BULL' : 'NEUTRAL';
+  const score = vote === 'BULL' ? Math.min(1.0, (30 - lastVal) / 10 + 0.5) : 0;
+  return applyContextAndConfirmationGates({
+    vote,
+    score,
+    bullPoints: vote === 'BULL' ? score : 0,
+    bearPoints: 0,
+    reason: `RSI = ${lastVal?.toFixed(1) ?? 'NaN'} is oversold (< 30)`
+  }, ohlc, context, 'BULL', 'SINGLE');
+};
+
+TECHNIQUE_LIBRARY.rsioverbought = (ohlc, cache, context) => {
+  ensureIndicators(ohlc, cache);
+  const rsiVals = cache.rsiVals!;
+  const lastVal = rsiVals[rsiVals.length - 1];
+  const vote = lastVal > 70 ? 'BEAR' : 'NEUTRAL';
+  const score = vote === 'BEAR' ? Math.min(1.0, (lastVal - 70) / 10 + 0.5) : 0;
+  return applyContextAndConfirmationGates({
+    vote,
+    score,
+    bullPoints: 0,
+    bearPoints: vote === 'BEAR' ? score : 0,
+    reason: `RSI = ${lastVal?.toFixed(1) ?? 'NaN'} is overbought (> 70)`
+  }, ohlc, context, 'BEAR', 'SINGLE');
+};
+
+TECHNIQUE_LIBRARY.hammer = (ohlc, cache, context) => {
+  const check = isHammer(ohlc);
+  const vote = check.match ? 'BULL' : 'NEUTRAL';
+  return applyContextAndConfirmationGates({
+    vote,
+    score: check.score,
+    bullPoints: vote === 'BULL' ? check.score : 0,
+    bearPoints: 0,
+    reason: `Hammer pattern detected (score: ${check.score.toFixed(2)})`
+  }, ohlc, context, 'BULL', 'SINGLE');
+};
+
+TECHNIQUE_LIBRARY.hangingman = (ohlc, cache, context) => {
+  const check = isHammer(ohlc);
+  const vote = check.match ? 'BEAR' : 'NEUTRAL';
+  return applyContextAndConfirmationGates({
+    vote,
+    score: check.score,
+    bullPoints: 0,
+    bearPoints: vote === 'BEAR' ? check.score : 0,
+    reason: `Hanging Man pattern detected (score: ${check.score.toFixed(2)})`
+  }, ohlc, context, 'BEAR', 'SINGLE');
+};
+
+TECHNIQUE_LIBRARY.shootingstar = (ohlc, cache, context) => {
+  const check = isShootingStar(ohlc);
+  const vote = check.match ? 'BEAR' : 'NEUTRAL';
+  return applyContextAndConfirmationGates({
+    vote,
+    score: check.score,
+    bullPoints: 0,
+    bearPoints: vote === 'BEAR' ? check.score : 0,
+    reason: `Shooting Star pattern detected (score: ${check.score.toFixed(2)})`
+  }, ohlc, context, 'BEAR', 'SINGLE');
+};
+
+TECHNIQUE_LIBRARY.invertedhammer = (ohlc, cache, context) => {
+  const check = isShootingStar(ohlc);
+  const vote = check.match ? 'BULL' : 'NEUTRAL';
+  return applyContextAndConfirmationGates({
+    vote,
+    score: check.score,
+    bullPoints: vote === 'BULL' ? check.score : 0,
+    bearPoints: 0,
+    reason: `Inverted Hammer pattern detected (score: ${check.score.toFixed(2)})`
+  }, ohlc, context, 'BULL', 'SINGLE');
+};
+
+TECHNIQUE_LIBRARY.doji = (ohlc, cache, context) => {
+  const check = isDoji(ohlc);
+  const vote = check.match ? 'NEUTRAL' : 'NEUTRAL';
+  return applyContextAndConfirmationGates({
+    vote,
+    score: check.score,
+    bullPoints: 0,
+    bearPoints: 0,
+    reason: `Doji detected`
+  }, ohlc, context, 'BULL', 'SINGLE');
+};
+
+TECHNIQUE_LIBRARY.dragonflydoji = (ohlc, cache, context) => {
+  const check = isDoji(ohlc);
+  const c = ohlc[ohlc.length-1];
+  const isDragonfly = check.match && c && ((Math.min(c.open, c.close) - c.low) > 2 * (c.high - Math.max(c.open, c.close)));
+  const vote = isDragonfly ? 'BULL' : 'NEUTRAL';
+  return applyContextAndConfirmationGates({
+    vote,
+    score: check.score,
+    bullPoints: vote === 'BULL' ? check.score : 0,
+    bearPoints: 0,
+    reason: `Dragonfly Doji detected`
+  }, ohlc, context, 'BULL', 'SINGLE');
+};
+
+TECHNIQUE_LIBRARY.gravestonedoji = (ohlc, cache, context) => {
+  const check = isDoji(ohlc);
+  const c = ohlc[ohlc.length-1];
+  const isGravestone = check.match && c && ((c.high - Math.max(c.open, c.close)) > 2 * (Math.min(c.open, c.close) - c.low));
+  const vote = isGravestone ? 'BEAR' : 'NEUTRAL';
+  return applyContextAndConfirmationGates({
+    vote,
+    score: check.score,
+    bullPoints: 0,
+    bearPoints: vote === 'BEAR' ? check.score : 0,
+    reason: `Gravestone Doji detected`
+  }, ohlc, context, 'BEAR', 'SINGLE');
+};
+
+TECHNIQUE_LIBRARY.engulfing = (ohlc, cache, context) => {
+  const check = isEngulfing(ohlc);
+  const vote = check.bullish ? 'BULL' : (check.bearish ? 'BEAR' : 'NEUTRAL');
+  const dir = check.bullish ? 'BULL' : 'BEAR';
+  return applyContextAndConfirmationGates({
+    vote,
+    score: check.score,
+    bullPoints: vote === 'BULL' ? check.score : 0,
+    bearPoints: vote === 'BEAR' ? check.score : 0,
+    reason: `Engulfing pattern detected (score: ${check.score.toFixed(2)})`
+  }, ohlc, context, dir, 'TWO_CANDLE');
+};
+
+TECHNIQUE_LIBRARY.morningstar = (ohlc, cache, context) => {
+  const check = isMorningStar(ohlc);
+  const vote = check.match ? 'BULL' : 'NEUTRAL';
+  return applyContextAndConfirmationGates({
+    vote,
+    score: check.score,
+    bullPoints: vote === 'BULL' ? check.score : 0,
+    bearPoints: 0,
+    reason: `Morning Star detected`
+  }, ohlc, context, 'BULL', 'THREE_CANDLE');
+};
+
+TECHNIQUE_LIBRARY.eveningstar = (ohlc, cache, context) => {
+  const check = isEveningStar(ohlc);
+  const vote = check.match ? 'BEAR' : 'NEUTRAL';
+  return applyContextAndConfirmationGates({
+    vote,
+    score: check.score,
+    bullPoints: 0,
+    bearPoints: vote === 'BEAR' ? check.score : 0,
+    reason: `Evening Star detected`
+  }, ohlc, context, 'BEAR', 'THREE_CANDLE');
+};
+
+TECHNIQUE_LIBRARY.threewhitesoldiers = (ohlc, cache, context) => {
+  const check = isThreeWhiteSoldiers(ohlc);
+  const vote = check.match ? 'BULL' : 'NEUTRAL';
+  return applyContextAndConfirmationGates({
+    vote,
+    score: check.score,
+    bullPoints: vote === 'BULL' ? check.score : 0,
+    bearPoints: 0,
+    reason: `Three White Soldiers detected`
+  }, ohlc, context, 'BULL', 'THREE_CANDLE');
+};
+
+TECHNIQUE_LIBRARY.threeblackcrows = (ohlc, cache, context) => {
+  const check = isThreeBlackCrows(ohlc);
+  const vote = check.match ? 'BEAR' : 'NEUTRAL';
+  return applyContextAndConfirmationGates({
+    vote,
+    score: check.score,
+    bullPoints: 0,
+    bearPoints: vote === 'BEAR' ? check.score : 0,
+    reason: `Three Black Crows detected`
+  }, ohlc, context, 'BEAR', 'THREE_CANDLE');
+};
+
+TECHNIQUE_LIBRARY.harami = (ohlc, cache, context) => {
+  const check = isHarami(ohlc);
+  const vote = check.bullish ? 'BULL' : (check.bearish ? 'BEAR' : 'NEUTRAL');
+  const dir = check.bullish ? 'BULL' : 'BEAR';
+  return applyContextAndConfirmationGates({
+    vote,
+    score: check.score,
+    bullPoints: vote === 'BULL' ? check.score : 0,
+    bearPoints: vote === 'BEAR' ? check.score : 0,
+    reason: `Harami detected`
+  }, ohlc, context, dir, 'TWO_CANDLE');
+};
+
+TECHNIQUE_LIBRARY.tweezertop = (ohlc, cache, context) => {
+  const check = isTweezerTop(ohlc);
+  const vote = check.match ? 'BEAR' : 'NEUTRAL';
+  return applyContextAndConfirmationGates({
+    vote,
+    score: check.score,
+    bullPoints: 0,
+    bearPoints: vote === 'BEAR' ? check.score : 0,
+    reason: `Tweezer Top detected`
+  }, ohlc, context, 'BEAR', 'TWO_CANDLE');
+};
+
+TECHNIQUE_LIBRARY.tweezerbottom = (ohlc, cache, context) => {
+  const check = isTweezerBottom(ohlc);
+  const vote = check.match ? 'BULL' : 'NEUTRAL';
+  return applyContextAndConfirmationGates({
+    vote,
+    score: check.score,
+    bullPoints: vote === 'BULL' ? check.score : 0,
+    bearPoints: 0,
+    reason: `Tweezer Bottom detected`
+  }, ohlc, context, 'BULL', 'TWO_CANDLE');
+};
+
+TECHNIQUE_LIBRARY.macdbullcross = (ohlc, cache, context) => {
+  ensureIndicators(ohlc, cache);
+  const macdVal = cache.macdVals!;
+  const hist = macdVal.hist;
+  const lastIdx = hist.length - 1;
+  const isCross = hist[lastIdx] > 0 && hist[lastIdx - 1] <= 0;
+  const vote = isCross ? 'BULL' : 'NEUTRAL';
+  const score = isCross ? 0.8 : 0;
+  return applyContextAndConfirmationGates({
+    vote,
+    score,
+    bullPoints: vote === 'BULL' ? score : 0,
+    bearPoints: 0,
+    reason: `MACD bullish crossover`
+  }, ohlc, context, 'BULL', 'SINGLE');
+};
+
 // ─── ALIAS TABLE ───────────────────────────────────────────────────────────
 // Many users (and AI vibe-coding tools) spell patterns differently. This
 // table maps normalized variants to the canonical library key.

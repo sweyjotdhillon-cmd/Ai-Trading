@@ -194,6 +194,17 @@ export function evaluateSignal(
   let hardBlockReason: string | null = null;
   if (anomaliesRatio > 0.05) {
     hardBlockReason = `Standard market structure violation. ${((anomaliesRatio) * 100).toFixed(1)}% anomalies exceeded 5% integrity tolerance.`;
+  } else {
+    const volsCandles = ohlcSeries.map((c, i) => ({
+      high: c.high,
+      low: c.low,
+      close: c.close,
+      prevClose: i > 0 ? ohlcSeries[i - 1].close : c.open,
+    }));
+    const volReg = calculateVolatilityRegime(volsCandles);
+    if (volReg.status === 'EXPLOSIVE_SKIP') {
+      hardBlockReason = `Volatility anomaly detected: ${volReg.status} (Z-score = ${volReg.zScore.toFixed(2)}).`;
+    }
   }
 
   // --- Standardize activeList to guarantee 10+ techniques rule ---
@@ -924,8 +935,16 @@ export function evaluateSignal(
   skepticMultiplier *= tfMultiplier;
 
   if (isNoTech) {
-    skepticMultiplier = 1.0;
-    skepticReasons.length = 0;
+    const extremeZ = Math.abs(zScoreData.zScore) > 2.5;
+    const extremeATR = !isNaN(currentAtr) && atrMean > 0 && currentAtr > 1.8 * atrMean;
+    if (extremeZ || extremeATR) {
+      const filtered = skepticReasons.filter(r => r.includes('Explosive') || r.includes('spike'));
+      skepticReasons.length = 0;
+      skepticReasons.push(...filtered);
+    } else {
+      skepticMultiplier = 1.0;
+      skepticReasons.length = 0;
+    }
   } else {
     skepticMultiplier = Math.max(0.30, Math.min(1.00, skepticMultiplier));
   }
@@ -1234,7 +1253,7 @@ ${rulingStr}
     signal: finalSignal,
     decision: decisionLabel,
     cases,
-    winner: finalSignal === 'NO_TRADE' ? 'NO_TRADE' : rawWinner,
+    winner: (hardBlockReason || (finalSignal === 'NO_TRADE' && rawWinner !== 'BEAR')) ? 'NO_TRADE' : (margin < minMarginThreshold ? 'NO_TRADE' : rawWinner),
     margin,
     skepticMultiplier,
     skepticPenalty,

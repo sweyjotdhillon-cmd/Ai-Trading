@@ -6,7 +6,7 @@ describe('PatternStabilityManager', () => {
     let manager: PatternStabilityManager;
 
     beforeEach(() => {
-        manager = new PatternStabilityManager(3);
+        manager = new PatternStabilityManager(3, 'streaming');
     });
 
     it('requires 3 consecutive frames to confirm a pattern', () => {

@@ -508,12 +508,6 @@ export function useBotLoop(
     }
   }, [symbol, feed.currentPrice, feed.ohlcvBuffer, activeConfig, virtualBalance]);
 
-  const reEvaluate = useCallback(async () => {
-    lastAnalyzedCandleTimeRef.current = null;
-    setLastBlockReason('RE-EVALUATING: Forcing fresh scan of current market price and patterns...');
-    await runAnalysisCycle(true);
-  }, [runAnalysisCycle]);
-
   const runAnalysisCycle = useCallback(async (isForced: boolean = false) => {
     if (!symbol) return;
     if (isInTradeRef.current) {
@@ -795,6 +789,12 @@ export function useBotLoop(
       setIsAnalyzing(false);
     }
   }, [symbol, timeframeMinutes, minConfidence, activeConfig, feed, techniquesList, virtualBalance]);
+
+  const reEvaluate = useCallback(async () => {
+    lastAnalyzedCandleTimeRef.current = null;
+    setLastBlockReason('RE-EVALUATING: Forcing fresh scan of current market price and patterns...');
+    await runAnalysisCycle(true);
+  }, [runAnalysisCycle]);
 
   useEffect(() => {
     // Guard: only run if a new candle actually arrived

@@ -124,6 +124,17 @@ export function extractChartJSON(ohlcSeries: NumericOHLC[], chartTimeframe: stri
         bodyRatio: bodySize / range,
         upperWickRatio: upperWick / range,
         lowerWickRatio: lowerWick / range,
+        // FIX 5: Calculate closeDelta to check for consecutive directional candle closes
+        closeDelta: i > 0 ? c.close - ohlcSeries[i - 1].close : 0,
+        // FIX 6: Add body-to-body comparison gap detection from candle 2 positions back
+        gapDownFromPrev2: i >= 2
+          ? Math.max(c.open, c.close) <
+            Math.min(ohlcSeries[i - 2].open, ohlcSeries[i - 2].close)
+          : false,
+        gapUpFromPrev2: i >= 2
+          ? Math.min(c.open, c.close) >
+            Math.max(ohlcSeries[i - 2].open, ohlcSeries[i - 2].close)
+          : false,
         patternHint
       },
       yContext: {
@@ -152,6 +163,15 @@ export function extractChartJSON(ohlcSeries: NumericOHLC[], chartTimeframe: stri
         bollingerMiddle: bbVals.middle[i] !== undefined ? bbVals.middle[i] : null,
         bollingerWidth: bbVals.width[i] !== undefined ? bbVals.width[i] : null,
         atr: atrVals[i] !== undefined ? atrVals[i] : null,
+        // FIX 7: Compute bbPct for Bollinger Bands percentage calculation (0 = lower band, 1 = upper band)
+        bbPct: (
+          bbVals.upper[i] != null &&
+          bbVals.lower[i] != null &&
+          bbVals.upper[i] !== bbVals.lower[i]
+        )
+          ? (c.close - bbVals.lower[i]) /
+            (bbVals.upper[i] - bbVals.lower[i])
+          : null,
         bollingerPosition: getBollingerPosition(c.close, bbVals),
         bandWidth: (bbVals.width && bbVals.width[i] !== null && bbVals.width[i] < 0.02) ? "NARROW" : ((bbVals.width && bbVals.width[i] !== null && bbVals.width[i] > 0.1) ? "WIDE" : "NORMAL"),
         atrEstimate: (atrVals && atrVals[i] !== null && atrVals[i] > c.close * 0.02) ? "HIGH" : "NORMAL"
