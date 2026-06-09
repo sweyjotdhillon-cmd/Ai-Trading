@@ -1,7 +1,10 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { ScalpConfig, RiskConfig, ScalpInstrument, SLMode, TPMode } from '../types';
 import { getDefaultScalpConfig } from '../quant/scalpingEngine';
 import { searchNSEStocks as searchSymbols } from '../services/stockPriceFeed';
+import { initVirtualBalance } from '../services/virtualBalanceService';
+import { auth } from '../services/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
 
 interface StockSearchResult {
   symbol:   string;   // e.g. 'RELIANCE.NS'
@@ -127,6 +130,16 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
   const [isSearching,    setIsSearching]    = useState(false);
   const [searchError,    setSearchError]    = useState<string | null>(null);
 
+  const [virtualBalance, setVirtualBalance] = useState<number>(() => {
+    try {
+      const stored = localStorage.getItem('user_virtual_balance');
+      return stored ? parseFloat(stored) : 100000;
+    } catch {
+      return 100000;
+    }
+  });
+  const [loadingBalance, setLoadingBalance] = useState<boolean>(false);
+
   const [capital,           setCapital]           = useState(100000);
   const [timeframe,         setTimeframe]         = useState(3);
   const [preset,            setPreset]            = useState<RiskPreset>('BALANCED');
@@ -143,9 +156,47 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
   const [errors, setErrors] = useState<string[]>([]);
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const [techniquesList, setTechniquesList] = useState<any[]>([]);
-  const [techFileName,   setTechFileName]   = useState<string | null>(null);
+  const [techniquesList, setTechniquesList] = useState<any[]>(() => {
+    try {
+      const stored = localStorage.getItem('user_techniques_list');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [techFileName,   setTechFileName]   = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('user_techniques_filename') || null;
+    } catch {
+      return null;
+    }
+  });
   const [techError,      setTechError]      = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const unsub = onAuthStateChanged(auth, async (user) => {
+      if (user && active) {
+        try {
+          const bal = await initVirtualBalance(user.uid);
+          if (active) {
+            setVirtualBalance(bal);
+            setCapitalInput(String(Math.floor(bal)));
+            setInvestmentPerTrade(prev => Math.max(500, Math.min(prev, Math.floor(bal))));
+          }
+        } catch (e) {
+          console.error('[BotSetupScreen] Failed to init balance:', e);
+        }
+      }
+      if (active) {
+        setLoadingBalance(false);
+      }
+    });
+    return () => {
+      active = false;
+      unsub();
+    };
+  }, []);
 
   const handleTechFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -168,6 +219,12 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
         setTechniquesList(parsed);
         setTechFileName(file.name);
         setTechError(null);
+        try {
+          localStorage.setItem('user_techniques_list', JSON.stringify(parsed));
+          localStorage.setItem('user_techniques_filename', file.name);
+        } catch (err) {
+          console.error('Failed to store techniques in localStorage:', err);
+        }
       } catch {
         setTechError('Invalid JSON — could not parse the technique file.');
       }
@@ -181,6 +238,12 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
     setTechniquesList([]);
     setTechFileName(null);
     setTechError(null);
+    try {
+      localStorage.removeItem('user_techniques_list');
+      localStorage.removeItem('user_techniques_filename');
+    } catch (err) {
+      console.error('Failed to clear techniques from localStorage:', err);
+    }
   };
 
   useEffect(() => {
@@ -224,13 +287,11 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
 
   const handleStart = useCallback(() => {
     const errs: string[] = [];
-    const parsedCapital = Number(capitalInput.replace(/,/g, ''));
+    const parsedCapital = virtualBalance;
 
     if (!selectedStock) errs.push('Select a stock to trade');
-    if (!isFinite(parsedCapital) || parsedCapital < 5000)
-      errs.push('Capital must be at least ₹5,000');
-    if (parsedCapital > 10_000_000)
-      errs.push('Capital cannot exceed ₹1,00,00,000');
+    if (!isFinite(parsedCapital) || parsedCapital < 500)
+      errs.push('Virtual balance is too low — at least ₹500 is needed');
 
     setErrors(errs);
     if (errs.length > 0) return;
@@ -254,16 +315,20 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
       useConfidenceThreshold,
       maxConcurrentTrades,
     } as any);
-  }, [selectedStock, capitalInput, preset, instrument, timeframe, minConfidence, techniquesList, techFileName, marketHoursGate, investmentPerTrade, rrRatioChoice, useConfidenceThreshold, maxConcurrentTrades, onStart]);
+  }, [selectedStock, virtualBalance, preset, instrument, timeframe, minConfidence, techniquesList, techFileName, marketHoursGate, investmentPerTrade, rrRatioChoice, useConfidenceThreshold, maxConcurrentTrades, onStart]);
 
-  const previewConfig = buildConfigFromPreset(preset, Number(capitalInput) || 100000, instrument, timeframe, marketHoursGate);
+  const previewConfig = buildConfigFromPreset(preset, virtualBalance || 100000, instrument, timeframe, marketHoursGate);
   previewConfig.investmentPerTrade = investmentPerTrade;
   previewConfig.rrRatioChoice = rrRatioChoice;
   previewConfig.useConfidenceThreshold = useConfidenceThreshold;
   previewConfig.maxConcurrentTrades = maxConcurrentTrades;
 
   return (
-    <div className="flex flex-col gap-6 p-6 bg-gray-900 h-full overflow-y-auto text-white max-w-lg mx-auto pb-24">
+    <div 
+      className="flex flex-col gap-6 p-6 bg-[#0E1014] text-white max-w-lg mx-auto pb-32 w-full"
+      style={{ height: 'calc(100vh - 128px)', overflowY: 'auto' }}
+      id="bot-setup-screen-scroll"
+    >
       <div className="bg-gray-800 p-6 rounded-lg border border-gray-700">
         <h1 className="text-2xl font-bold mb-2">🤖 BOT SETUP</h1>
         <p className="text-sm text-gray-400">Configure before starting automated mode</p>
@@ -377,19 +442,18 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
         )}
       </div>
 
-      <div className="bg-gray-800 p-4 rounded-lg flex flex-col gap-2">
-        <h2 className="font-bold text-gray-300">CAPITAL</h2>
-        <div className="flex items-center gap-2">
-          <span className="text-gray-400">₹</span>
-          <input 
-            value={capitalInput}
-            onChange={(e) => setCapitalInput(e.target.value)}
-            className="flex-1 bg-gray-700 text-white border border-gray-600 rounded p-2 focus:outline-none focus:border-blue-500"
-            type="text"
-          />
+      <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-xl flex flex-col gap-2">
+        <h2 className="font-bold text-zinc-300 text-sm tracking-wider font-sans uppercase">Virtual Account Balance</h2>
+        <div className="flex items-center justify-between py-2 bg-black/40 px-3.5 rounded-lg border border-[#D9B382]/20">
+          <span className="text-[#D9B382] font-black text-lg font-mono">
+            {loadingBalance ? 'Loading...' : `₹${virtualBalance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+          </span>
+          <span className="text-[10px] font-black px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-sans tracking-wide">
+            LEDGER SYNCED ✓
+          </span>
         </div>
-        <div className="text-xs text-gray-400 mt-1">
-          Daily loss cap: ₹{previewConfig.risk.dailyLossCapRupees.toFixed(0)} (auto)
+        <div className="text-[11px] text-zinc-400 font-sans mt-1">
+          Daily max loss cap: <span className="font-mono font-bold text-zinc-300">₹{previewConfig.risk.dailyLossCapRupees.toFixed(0)}</span> (scaled automatically)
         </div>
       </div>
 

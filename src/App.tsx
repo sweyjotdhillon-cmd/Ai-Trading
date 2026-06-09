@@ -35,7 +35,7 @@ class TerminalErrorBoundary extends React.Component<{ children: React.ReactNode 
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    console.error('[TerminalErrorBoundary] LiveAnalysis crashed:', error, errorInfo);
+    console.error('[TerminalErrorBoundary] Application crashed:', error, errorInfo);
     if (typeof window !== 'undefined') {
       (window as any).__liveAnalysisLastError = {
         message: error?.message ?? 'Unknown error',
@@ -369,7 +369,7 @@ function App() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: prefersReducedMotion ? 0 : -12 }}
                 transition={transitionProps}
-                style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, flexGrow: 1 }}
+                style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, flexGrow: 1, overflow: 'hidden' }}
               >
                 <TerminalErrorBoundary>
                   {activeTab === 'bot' ? (

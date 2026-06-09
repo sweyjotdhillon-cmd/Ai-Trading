@@ -216,7 +216,11 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
   );
 
   return (
-    <div className="w-full h-full flex flex-col gap-3 bg-[#0A0B0E] p-4 overflow-y-auto pb-24">
+    <div 
+      className="w-full flex flex-col gap-3 bg-[#0A0B0E] p-4 pb-32"
+      style={{ height: 'calc(100vh - 128px)', overflowY: 'auto' }}
+      id="bot-run-dashboard-scroll"
+    >
 
       {/* Toast notifications */}
       <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">

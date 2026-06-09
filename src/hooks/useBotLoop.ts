@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useStockFeed }               from './useStockFeed';
 import { useWakeLock }                from './useWakeLock';
 import { ohlcvToDataUrl }             from '../utils/chartRenderer';
@@ -154,7 +154,14 @@ export function useBotLoop(
   const [phase,           setPhase]           = useState<BotPhase>('IDLE');
   const [activePlans,     setActivePlans]     = useState<ScalpingPlan[]>([]);
   const [activeTrades,    setActiveTrades]    = useState<BotTradeRecord[]>([]);
-  const [virtualBalance,  setVirtualBalance]  = useState(100000);
+  const [virtualBalance,  setVirtualBalance]  = useState<number>(() => {
+    try {
+      const stored = localStorage.getItem('user_virtual_balance');
+      return stored ? parseFloat(stored) : 100000;
+    } catch {
+      return 100000;
+    }
+  });
   const [tradeHistory,    setTradeHistory]    = useState<BotTradeRecord[]>([]);
   const [sessionStats,    setSessionStats]    = useState<BotSessionStats>(emptyStats());
   const [stabilityCount,  setStabilityCount]  = useState(0);
@@ -210,6 +217,25 @@ export function useBotLoop(
     botActive && phase !== 'IDLE'
   );
 
+  // Automatically clear transient visual analysis, signal state, and bull/bear points when switching stocks
+  useEffect(() => {
+    setLastAnalysisResult(null);
+    setLastSignal(null);
+    setLastConfidence(0);
+    setLastBlockReason(null);
+  }, [symbol]);
+
+  const activeConfig = useMemo(() => {
+    return {
+      ...config,
+      capitalRupees: virtualBalance,
+      risk: {
+        ...config.risk,
+        dailyLossCapRupees: virtualBalance * (config.riskPerTradePct * 0.01 || 0.01),
+      }
+    };
+  }, [config, virtualBalance]);
+
   const activeTradesRef = useRef<BotTradeRecord[]>([]);
   useEffect(() => {
     activeTradesRef.current = activeTrades;
@@ -228,84 +254,30 @@ export function useBotLoop(
     const trade = activeTradesRef.current.find(t => t.id === tradeId);
     if (!trade) return;
 
-    // 1. Mark trade as closed in React local state immediately
-    const tempClosedTrade = {
-      ...trade,
-      exitPrice,
-      outcome,
-    };
-
-    // 2. Compute finalized stats in Firebase (handles broker charges & capital calc)
-    let finalized = { realizedPnL: 0, realizedPnLPct: 0, rMultiple: 0, brokerCharges: 0 };
-    if (uidRef.current) {
-      try {
-        finalized = await writeTrade_Close(uidRef.current, tempClosedTrade, exitPrice, capital);
-        const newBalance = await updateVirtualBalance(uidRef.current, finalized.realizedPnL);
-        if (newBalance > 0) {
-          setVirtualBalance(newBalance);
-        } else {
-          setVirtualBalance(prev => parseFloat((prev + finalized.realizedPnL).toFixed(2)));
-        }
-      } catch (err) {
-        console.error('[BotLoop] writeTrade_Close fail, calculating locally...', err);
-        // Fallback local calc
-        const posSize      = trade.plan.positionSize ?? 1;
-        const grossPnL     = (exitPrice - trade.entryPrice) * posSize;
-        const estCharges   = trade.plan.brokerCharges ?? 0;
-        finalized.realizedPnL = parseFloat((grossPnL - estCharges).toFixed(2));
-        finalized.realizedPnLPct = capital > 0 ? (finalized.realizedPnL / capital) * 100 : 0;
-        finalized.rMultiple = trade.plan.riskRupees > 0 ? finalized.realizedPnL / trade.plan.riskRupees : 0;
-        setVirtualBalance(prev => parseFloat((prev + finalized.realizedPnL).toFixed(2)));
-      }
-    } else {
-      // Offline fallback
-      const posSize      = trade.plan.positionSize ?? 1;
-      const grossPnL     = (exitPrice - trade.entryPrice) * posSize;
-      const estCharges   = trade.plan.brokerCharges ?? 0;
-      finalized.realizedPnL = parseFloat((grossPnL - estCharges).toFixed(2));
-      finalized.realizedPnLPct = capital > 0 ? (finalized.realizedPnL / capital) * 100 : 0;
-      finalized.rMultiple = trade.plan.riskRupees > 0 ? finalized.realizedPnL / trade.plan.riskRupees : 0;
-      setVirtualBalance(prev => parseFloat((prev + finalized.realizedPnL).toFixed(2)));
-    }
+    // 1. Calculate trade results locally and immediately (no network block)
+    const posSize      = trade.plan.positionSize ?? 1;
+    const grossPnL     = (exitPrice - trade.entryPrice) * posSize;
+    const estCharges   = trade.plan.brokerCharges ?? 0;
+    const realizedPnL  = parseFloat((grossPnL - estCharges).toFixed(2));
+    const invested     = trade.plan.investmentRupees ?? (posSize * trade.entryPrice);
+    const realizedPnLPct = invested > 0 ? (realizedPnL / invested) * 100 : 0;
+    const rMultiple = trade.plan.riskRupees > 0 ? realizedPnL / trade.plan.riskRupees : 0;
 
     const closed: BotTradeRecord = {
       ...trade,
       exitPrice,
       outcome,
-      realizedPnL:     finalized.realizedPnL,
-      realizedPnLPct:  finalized.realizedPnLPct,
-      rMultiple:       finalized.rMultiple,
+      realizedPnL,
+      realizedPnLPct,
+      rMultiple,
       closedAt:        Date.now(),
       durationMinutes: Math.round((Date.now() - trade.openedAt) / 60_000),
     };
 
+    // 2. Perform optimistic local UI state updates instantly
+    // The initial investment (cash entry cost) is returned plus the realized profit/loss
+    setVirtualBalance(prev => parseFloat((prev + invested + realizedPnL).toFixed(2)));
     setTradeHistory(h => [closed, ...h]);
-
-    // 3. Update session stats & write to Firestore
-    setSessionStats(prev => {
-      const next = updateStats(prev, closed);
-      if (uidRef.current) {
-        // Today's daily P&L (for tracking daily cap limits)
-        const todayPnL = [closed, ...tradeHistoryRef.current]
-          .filter(t => {
-            const tDate = new Date(t.openedAt + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
-            const today = new Date(Date.now()  + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
-            return tDate === today;
-          })
-          .reduce((sum, t) => sum + (t.realizedPnL ?? 0), 0);
-
-        writeStats_Update(uidRef.current, next, todayPnL).catch(e =>
-          console.error('[BotLoop] writeStats_Update fail:', e)
-        );
-      }
-      return next;
-    });
-
-    // 4. Update risk guard state
-    riskStateRef.current = loadRiskState();
-    const nextRisk = onTradeClosed(riskStateRef.current, finalized.realizedPnL, config.risk);
-    riskStateRef.current = nextRisk;
-    saveRiskState(nextRisk);
 
     setActiveTrades(prev => {
       const filtered = prev.filter(t => t.id !== tradeId);
@@ -325,7 +297,48 @@ export function useBotLoop(
       return prev;
     });
 
-  }, [capital, config]);
+    // 3. Update session stats locally first (and write stats async)
+    setSessionStats(prev => {
+      const next = updateStats(prev, closed);
+      if (uidRef.current) {
+        const todayPnL = [closed, ...tradeHistoryRef.current]
+          .filter(t => {
+            const tDate = new Date(t.openedAt + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
+            const today = new Date(Date.now()  + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
+            return tDate === today;
+          })
+          .reduce((sum, t) => sum + (t.realizedPnL ?? 0), 0);
+
+        writeStats_Update(uidRef.current, next, todayPnL).catch(e =>
+          console.error('[BotLoop] writeStats_Update fail:', e)
+        );
+      }
+      return next;
+    });
+
+    // 4. Update risk guard state
+    riskStateRef.current = loadRiskState();
+    const nextRisk = onTradeClosed(riskStateRef.current, realizedPnL, activeConfig.risk);
+    riskStateRef.current = nextRisk;
+    saveRiskState(nextRisk);
+
+    // 5. Save trade details & synch balance to Firestore in the background
+    if (uidRef.current) {
+      writeTrade_Close(uidRef.current, closed, exitPrice, invested)
+        .then(async (finalized) => {
+          // Add back the invested amount + the net PnL from the trade
+          const delta = invested + finalized.realizedPnL;
+          const newBalance = await updateVirtualBalance(uidRef.current!, delta);
+          if (newBalance > 0) {
+            setVirtualBalance(newBalance);
+          }
+        })
+        .catch(err => {
+          console.error('[BotLoop] Background writeTrade_Close fail:', err);
+        });
+    }
+
+  }, [activeConfig]);
 
   const startBot = useCallback(() => {
     if (!symbol) return;
@@ -372,16 +385,22 @@ export function useBotLoop(
   }, []);
 
   const forceExit = useCallback(() => {
-    if (activeTrades.length === 0 || !feed.currentPrice) return;
-    activeTrades.forEach(t => {
-      closeTradeById(t.id, feed.currentPrice!, 'MANUAL_EXIT');
+    const currentPrice = feed.currentPrice;
+    const trades = activeTradesRef.current;
+    if (trades.length === 0 || !currentPrice) {
+      console.warn('[BotLoop] cannot forceExit: trades count =', trades.length, 'price =', currentPrice);
+      return;
+    }
+    const listToClose = [...trades];
+    listToClose.forEach(t => {
+      closeTradeById(t.id, currentPrice, 'MANUAL_EXIT');
     });
-  }, [activeTrades, feed.currentPrice, closeTradeById]);
+  }, [feed.currentPrice, closeTradeById]);
 
   const manualBuy = useCallback(async () => {
     if (!symbol || !feed.currentPrice) return;
-    if (activeTrades.length >= (config.maxConcurrentTrades ?? 1)) return;
-    if (virtualBalance < (config.investmentPerTrade ?? 10000)) return;
+    if (activeTradesRef.current.length >= (activeConfig.maxConcurrentTrades ?? 1)) return;
+    if (virtualBalance < (activeConfig.investmentPerTrade ?? 10000)) return;
     if (feed.ohlcvBuffer.length < 15) return;
 
     const entryPrice = feed.currentPrice;
@@ -399,7 +418,7 @@ export function useBotLoop(
     const mm = ist.getUTCHours() * 60 + ist.getUTCMinutes();
 
     const ctx = {
-      config,
+      config: activeConfig,
       riskState: riskStateRef.current,
       pivots: pivotArr,
       atr14: atr14Arr,
@@ -436,16 +455,25 @@ export function useBotLoop(
       plan,
     };
 
+    const reqBal = plan.investmentRupees ?? (activeConfig.investmentPerTrade ?? 10000);
+
     setActiveTrades(prev => [...prev, trade]);
     setActivePlans(prev => [...prev, plan]);
     setPhase('IN_TRADE');
+
+    // Deduct reqBal from local virtualBalance state instantly!
+    setVirtualBalance(prev => parseFloat((prev - reqBal).toFixed(2)));
 
     if (uidRef.current) {
       writeTrade_Open(uidRef.current, trade).catch(err =>
         console.warn('[BotLoop] manualBuy writeTrade_Open failed:', err)
       );
+      // Decrease virtual balance in Firestore!
+      updateVirtualBalance(uidRef.current, -reqBal).catch(err =>
+        console.error('[BotLoop] Failed to decrease virtual balance on manual open:', err)
+      );
     }
-  }, [symbol, feed.currentPrice, feed.ohlcvBuffer, config, activeTrades, virtualBalance]);
+  }, [symbol, feed.currentPrice, feed.ohlcvBuffer, activeConfig, virtualBalance]);
 
   const runAnalysisCycle = useCallback(async () => {
     if (!symbol) return;
@@ -484,7 +512,7 @@ export function useBotLoop(
         stock:            symbol,
         graphTimeframe:   `${timeframeMinutes}m`,
         holdingMinutes:   `${timeframeMinutes}m`,
-        investmentAmount: String(capital),
+        investmentAmount: String(activeConfig.investmentPerTrade ?? 10000),
         techniquesList,
         signal:           abortRef.current.signal,
       });
@@ -501,26 +529,20 @@ export function useBotLoop(
       setLastConfidence(confidence);
       setLastAnalysisResult(result.analysis);
 
-      // Step 3 — Stability filter (manual tracking since we own the loop)
-      if (direction === 'LONG') {
-        stabilityRef.current = Math.min(stabilityRef.current + 1, 3);
-      } else {
-        stabilityRef.current = 0; // reset on any non-LONG signal
-      }
-      setStabilityCount(stabilityRef.current);
-
-      if (stabilityRef.current < 3) {
-        setPhase(stabilityRef.current === 0 ? 'SCANNING' : 'SIGNAL_FORMING');
-        setLastBlockReason(
-          stabilityRef.current === 0
-            ? 'NO_TRADE: bear/neutral signal — scanning for next setup'
-            : `STABILITY: ${stabilityRef.current}/3 consecutive LONG signals`
-        );
+      // Step 3 — Stability filter (REMOVED - enter immediately on first LONG signal)
+      if (direction !== 'LONG') {
+        stabilityRef.current = 0;
+        setStabilityCount(0);
+        setPhase('SCANNING');
+        setLastBlockReason('NO_TRADE: bear/neutral signal — scanning for next setup');
         return;
       }
 
+      stabilityRef.current = 1;
+      setStabilityCount(1);
+
       // Step 4 — Confidence gate
-      if (config.useConfidenceThreshold !== false) {
+      if (activeConfig.useConfidenceThreshold !== false) {
         if (confidence < minConfidence) {
           stabilityRef.current = 0;
           setStabilityCount(0);
@@ -532,7 +554,7 @@ export function useBotLoop(
 
       // Step 5 — Risk guard gate
       riskStateRef.current = loadRiskState();
-      const capCheck = checkRiskCaps(riskStateRef.current, config.risk);
+      const capCheck = checkRiskCaps(riskStateRef.current, activeConfig.risk);
       if (!capCheck.allow) {
         stabilityRef.current = 0;
         setStabilityCount(0);
@@ -542,14 +564,14 @@ export function useBotLoop(
       }
 
       // Step 6 — Market hours gate
-      if (config.enableMarketHoursGate && !feed.marketOpen) {
+      if (activeConfig.enableMarketHoursGate && !feed.marketOpen) {
         setLastBlockReason('MARKET_CLOSED: outside 09:15–15:30 IST');
         setPhase('SCANNING');
         return;
       }
 
       // Pre-close gate — no new entries in last 15 minutes of session
-      if (config.enableMarketHoursGate && isPreClose(Date.now())) {
+      if (activeConfig.enableMarketHoursGate && isPreClose(Date.now())) {
         setLastBlockReason('PRE_CLOSE: No new entries after 15:15 IST. Monitoring active trades only.');
         setPhase('SCANNING');
         return;
@@ -598,7 +620,7 @@ export function useBotLoop(
       }
 
       const ctx = {
-        config,
+        config:                     activeConfig,
         riskState:                  riskStateRef.current,
         pivots:                     pivotArr,
         atr14:                      atr14Arr,
@@ -620,14 +642,14 @@ export function useBotLoop(
 
       // Sanity check — SL must be below entry, TP1 and TP2 must be above entry
       const planValid =
-        plan.stopLoss   < plan.entry        &&
-        plan.takeProfit1 > plan.entry       &&
-        plan.takeProfit2 >= plan.takeProfit1 &&
-        plan.rrRatio     >= (config.minRR ?? 1.5) &&
-        plan.riskRupees  > 0                &&
-        isFinite(plan.stopLoss)             &&
-        isFinite(plan.takeProfit1)          &&
-        isFinite(plan.takeProfit2);
+         plan.stopLoss   < plan.entry        &&
+         plan.takeProfit1 > plan.entry       &&
+         plan.takeProfit2 >= plan.takeProfit1 &&
+         plan.rrRatio     >= (activeConfig.minRR ?? 1.5) &&
+         plan.riskRupees  > 0                &&
+         isFinite(plan.stopLoss)             &&
+         isFinite(plan.takeProfit1)          &&
+         isFinite(plan.takeProfit2);
 
       if (!planValid) {
         setLastBlockReason(
@@ -643,7 +665,7 @@ export function useBotLoop(
       }
 
       // CHANGE 7 — Insufficient balance gate
-      const reqBal = config.investmentPerTrade ?? 10000;
+      const reqBal = activeConfig.investmentPerTrade ?? 10000;
       if (virtualBalance < reqBal) {
         setLastBlockReason(
           `INSUFFICIENT_BALANCE: ₹${virtualBalance.toFixed(0)} available, ` +
@@ -679,10 +701,17 @@ export function useBotLoop(
       setActivePlans(prev => [...prev, plan]);
       setPhase('IN_TRADE');
 
+      // Deduct reqBal from local virtualBalance state instantly!
+      setVirtualBalance(prev => parseFloat((prev - reqBal).toFixed(2)));
+
       // Write OPEN trade to Firestore
       if (uidRef.current) {
         writeTrade_Open(uidRef.current, trade).catch(err =>
           console.warn('[BotLoop] writeTrade_Open failed:', err)
+        );
+        // Decrease virtual balance in Firestore!
+        updateVirtualBalance(uidRef.current, -reqBal).catch(err =>
+          console.error('[BotLoop] Failed to decrease virtual balance on auto open:', err)
         );
       }
 
@@ -707,7 +736,7 @@ export function useBotLoop(
       analyzingRef.current = false;
       setIsAnalyzing(false);
     }
-  }, [symbol, timeframeMinutes, capital, minConfidence, config, feed, techniquesList, virtualBalance]);
+  }, [symbol, timeframeMinutes, minConfidence, activeConfig, feed, techniquesList, virtualBalance]);
 
   useEffect(() => {
     // Guard: only run if a new candle actually arrived
@@ -717,7 +746,7 @@ export function useBotLoop(
     // Guard: do not run if bot is off, already analyzing, or in trade
     if (!botEnabledRef.current) return;
     if (analyzingRef.current) return;
-    if (activeTrades.length >= (config.maxConcurrentTrades ?? 1)) return;
+    if (activeTrades.length >= (activeConfig.maxConcurrentTrades ?? 1)) return;
     if (phase === 'IDLE') return;
     // Need at least 15 candles: 14 for ATR14 + 1 current
     if (feed.ohlcvBuffer.length < 15) {
@@ -732,14 +761,14 @@ export function useBotLoop(
     }
 
     runAnalysisCycle();
-  }, [feed.candleCount, feed.isStale, phase, activeTrades.length, config.maxConcurrentTrades, feed.ohlcvBuffer.length, runAnalysisCycle]);
+  }, [feed.candleCount, feed.isStale, phase, activeTrades.length, activeConfig.maxConcurrentTrades, feed.ohlcvBuffer.length, runAnalysisCycle]);
 
   // Trigger analysis once immediately when the initial candle buffer first loads
   // (covers market-closed scenario where no new candles will ever close)
   useEffect(() => {
     if (!botEnabledRef.current) return;
     if (phase === 'IDLE') return;
-    if (activeTrades.length >= (config.maxConcurrentTrades ?? 1)) return;
+    if (activeTrades.length >= (activeConfig.maxConcurrentTrades ?? 1)) return;
     if (analyzingRef.current) return;
     if (feed.ohlcvBuffer.length < 15) return;
     if (initialAnalysisFiredRef.current) return;
@@ -747,22 +776,22 @@ export function useBotLoop(
     // Fire once when buffer first reaches 15+ candles
     initialAnalysisFiredRef.current = true;
     runAnalysisCycle();
-  }, [feed.ohlcvBuffer.length, phase, activeTrades.length, config.maxConcurrentTrades, runAnalysisCycle]);
+  }, [feed.ohlcvBuffer.length, phase, activeTrades.length, activeConfig.maxConcurrentTrades, runAnalysisCycle]);
 
   // Re-run analysis every 30 seconds even if no new candle closes (market-closed sim mode)
   useEffect(() => {
-    if (phase === 'IDLE' || activeTrades.length >= (config.maxConcurrentTrades ?? 1) || phase === 'HALTED') return;
+    if (phase === 'IDLE' || activeTrades.length >= (activeConfig.maxConcurrentTrades ?? 1) || phase === 'HALTED') return;
     if (feed.ohlcvBuffer.length < 15) return;
 
     const intervalId = setInterval(() => {
       if (!botEnabledRef.current) return;
       if (analyzingRef.current) return;
-      if (activeTrades.length >= (config.maxConcurrentTrades ?? 1) || phase === 'IDLE') return;
+      if (activeTrades.length >= (activeConfig.maxConcurrentTrades ?? 1) || phase === 'IDLE') return;
       runAnalysisCycle();
     }, 30 * 1000); // every 30 seconds
 
     return () => clearInterval(intervalId);
-  }, [phase, activeTrades.length, config.maxConcurrentTrades, feed.ohlcvBuffer.length, runAnalysisCycle]);
+  }, [phase, activeTrades.length, activeConfig.maxConcurrentTrades, feed.ohlcvBuffer.length, runAnalysisCycle]);
 
   const closeTradeByIdRef = useRef(closeTradeById);
   useEffect(() => {

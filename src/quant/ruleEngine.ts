@@ -483,8 +483,11 @@ export function evaluateSignal(
   }
   const bullJ1Raw = bullJ1Intrinsic + techBullJ1;   // intrinsic + user techniques
   const bearJ1Raw = bearJ1Intrinsic + techBearJ1;
-  const bullJ1 = Math.min(4.0, bullJ1Raw);
-  const bearJ1 = Math.min(4.0, bearJ1Raw);
+
+  // Make J1 (Pattern Detection / Momentum Consensus) contradictory so Bull and Bear cancel each other out.
+  // This prevents high-volume technique portfolios from flooding both sides with spurious coincident pattern points.
+  const bullJ1 = Math.max(0, Math.min(4.0, bullJ1Raw - bearJ1Raw));
+  const bearJ1 = Math.max(0, Math.min(4.0, bearJ1Raw - bullJ1Raw));
 
   // ═════════════════════════════════════════════════════════════
   // J2 VEHICLE — OSCILLATOR CONSENSUS (max 4.0 per side)
@@ -1012,7 +1015,7 @@ export function evaluateSignal(
   const margin = Number(Math.abs(adjustedBull - adjustedBear).toFixed(2));
   const winningTotal = rawWinner === 'BULL' ? adjustedBull : (rawWinner === 'BEAR' ? adjustedBear : 0);
 
-  let minMarginThreshold = 3.0 * scaleThresholdFactor * testModeFactor;
+  let minMarginThreshold = 2.0 * scaleThresholdFactor * testModeFactor;
   let minStrengthThreshold = 4.0 * scaleThresholdFactor * testModeFactor;
   if (reversalDominant) {
     minMarginThreshold *= 0.85;

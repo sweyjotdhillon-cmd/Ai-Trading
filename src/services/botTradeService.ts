@@ -71,6 +71,102 @@ function todayIST(): string {
   return ist.toISOString().slice(0, 10);
 }
 
+interface CompressedTrade {
+  i: string;   // id
+  s: string;   // symbol
+  e: number;   // entry Price
+  x: number | null; // exit Price
+  p: number | null; // realized PnL
+  o: number;   // opened At (seconds)
+  c: number | null; // closed At (seconds)
+  t: string | null; // outcome
+  z: number;   // position size
+}
+
+function decompressTrade(c: CompressedTrade): BotTradeRecord {
+  const entry = c.e;
+  const stopLoss = entry * 0.99;
+  const takeProfit1 = entry + (entry - stopLoss);
+  const takeProfit2 = c.x && c.x > entry ? c.x : entry * 1.01;
+  const posSize = c.z ?? 1;
+
+  return {
+    id:              c.i,
+    symbol:          c.s,
+    entryPrice:      entry,
+    exitPrice:       c.x,
+    outcome:         c.t as any,
+    realizedPnL:     c.p,
+    realizedPnLPct:  null,
+    rMultiple:       null,
+    openedAt:        c.o * 1000,
+    closedAt:        c.c ? c.c * 1000 : null,
+    durationMinutes: c.c && c.o ? Math.round((c.c - c.o) / 60) : null,
+    plan: {
+      entry,
+      stopLoss,
+      takeProfit1,
+      takeProfit2,
+      trailingActivate:   takeProfit1,
+      trailingDistance:   Math.abs(entry - stopLoss) * 0.5,
+      breakEvenAfter:     takeProfit1,
+      positionSize:       posSize,
+      riskRupees:         Math.abs(entry - stopLoss) * posSize,
+      potentialRewardRupees: Math.abs(takeProfit2 - entry) * posSize,
+      rrRatio:            Math.abs(takeProfit2 - entry) / Math.max(0.1, Math.abs(entry - stopLoss)),
+      maxHoldingMinutes:  15,
+      confluenceScore:    7,
+      brokerCharges:      0,
+      netExpectedPnL:     0,
+      slMode:             'FIXED_SL',
+      tpMode:             'FIXED_TP',
+      instrument:         'EQUITY_INTRADAY',
+      noteReasons:        [],
+      investmentRupees:   posSize * entry,
+    } as any,
+  };
+}
+
+async function saveTradeToCompressedArchive(uid: string, trade: BotTradeRecord): Promise<void> {
+  try {
+    const docRef = doc(db, 'tradeBot', uid, 'st', 'g');
+    const snap = await getDoc(docRef);
+    let archive: CompressedTrade[] = [];
+    if (snap.exists()) {
+      const data = snap.data();
+      if (data.ha && typeof data.ha === 'string') {
+        try {
+          archive = JSON.parse(data.ha);
+        } catch {
+          archive = [];
+        }
+      }
+    }
+
+    archive = archive.filter(t => t.i !== trade.id);
+
+    archive.unshift({
+      i: trade.id,
+      s: trade.symbol,
+      e: trade.entryPrice,
+      x: trade.exitPrice,
+      p: trade.realizedPnL,
+      o: Math.floor(trade.openedAt / 1000),
+      c: trade.closedAt ? Math.floor(trade.closedAt / 1000) : null,
+      t: trade.outcome,
+      z: trade.plan?.positionSize ?? 1,
+    });
+
+    if (archive.length > 200) {
+      archive = archive.slice(0, 200);
+    }
+
+    await setDoc(docRef, { ha: JSON.stringify(archive) }, { merge: true });
+  } catch (err) {
+    console.warn('[Compressed Archive] Failed to save/update trade in archive:', err);
+  }
+}
+
 export async function writeTrade_Open(
   uid:    string,
   trade:  BotTradeRecord
@@ -90,6 +186,7 @@ export async function writeTrade_Open(
     };
 
     await setDoc(doc(db, 'tradeBot', uid, 'tr', trade.id), payload);
+    await saveTradeToCompressedArchive(uid, trade);
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
@@ -119,7 +216,8 @@ export async function writeTrade_Close(
 
   const grossPnL      = (exitPrice - trade.entryPrice) * posSize;
   const realizedPnL   = grossPnL - charges.total;
-  const realizedPnLPct = capital > 0 ? (realizedPnL / capital) * 100 : 0;
+  const invested      = trade.plan.investmentRupees ?? (posSize * trade.entryPrice);
+  const realizedPnLPct = invested > 0 ? (realizedPnL / invested) * 100 : 0;
   const rMultiple     = trade.plan.riskRupees > 0
     ? realizedPnL / trade.plan.riskRupees
     : 0;
@@ -129,6 +227,14 @@ export async function writeTrade_Close(
 
   try {
     const update = {
+      s:   trade.symbol,
+      e:   trade.entryPrice,
+      sl:  trade.plan.stopLoss,
+      tp:  trade.plan.takeProfit2,
+      sz:  trade.plan.positionSize,
+      iv:  trade.plan.investmentRupees ?? (trade.plan.positionSize * trade.entryPrice),
+      ot:  Math.floor(trade.openedAt / 1000),
+      sd:  todayIST(),
       x:   exitPrice,
       pnl: parseFloat(realizedPnL.toFixed(2)),
       r:   parseFloat(rMultiple.toFixed(3)),
@@ -139,7 +245,18 @@ export async function writeTrade_Close(
       dm:  durationMinutes,
     };
 
-    await updateDoc(doc(db, 'tradeBot', uid, 'tr', trade.id), update);
+    // Use robust setDoc with merge: true to avoid crashes when document does not yet exist
+    await setDoc(doc(db, 'tradeBot', uid, 'tr', trade.id), update, { merge: true });
+
+    // Update compressed historical representation
+    const updatedTrade: BotTradeRecord = {
+      ...trade,
+      exitPrice,
+      realizedPnL,
+      closedAt: Date.now(),
+    };
+    await saveTradeToCompressedArchive(uid, updatedTrade);
+
     await updateVirtualBalance(uid, realizedPnL);
 
     return {
@@ -218,6 +335,25 @@ export async function loadStats(
 export async function loadOpenTrades(
   uid: string
 ): Promise<BotTradeRecord[]> {
+  try {
+    const statsDocRef = doc(db, 'tradeBot', uid, 'st', 'g');
+    const statsSnap = await getDoc(statsDocRef);
+    if (statsSnap.exists()) {
+      const data = statsSnap.data();
+      if (data.ha && typeof data.ha === 'string') {
+        const archive: CompressedTrade[] = JSON.parse(data.ha);
+        const opens = archive
+          .map(decompressTrade)
+          .filter(t => t.exitPrice === null);
+        if (opens.length > 0) {
+          return opens;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[Compressed Archive] loadOpenTrades fallback to direct:', err);
+  }
+
   const path = `tradeBot/${uid}/tr`;
   try {
     const q = query(
@@ -289,6 +425,29 @@ export async function loadOpenTrade(
 export async function loadTodayTrades(
   uid: string
 ): Promise<BotTradeRecord[]> {
+  try {
+    const statsDocRef = doc(db, 'tradeBot', uid, 'st', 'g');
+    const statsSnap = await getDoc(statsDocRef);
+    if (statsSnap.exists()) {
+      const data = statsSnap.data();
+      if (data.ha && typeof data.ha === 'string') {
+        const archive: CompressedTrade[] = JSON.parse(data.ha);
+        const todayStr = todayIST();
+        const todayDecoded = archive
+          .map(decompressTrade)
+          .filter(t => {
+            const tDate = new Date(t.openedAt + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
+            return tDate === todayStr;
+          });
+        if (todayDecoded.length > 0) {
+          return todayDecoded;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[Compressed Archive] loadTodayTrades fallback to direct:', err);
+  }
+
   const path = `tradeBot/${uid}/tr`;
   try {
     const q = query(

@@ -175,6 +175,21 @@ export interface ScalpingPlan {
   instrument: ScalpInstrument;
   noteReasons: string[];        // human-readable confluence/blocker reasons
   investmentRupees?: number;
+  antiHallucination?: AntiHallucinationCheck;
+}
+
+export interface AntiHallucinationCheck {
+  passed: boolean;
+  verityScore: number; // 0 to 100
+  checks: {
+    priceOrdering: boolean;
+    candleConsistency: boolean;
+    entryMatching: boolean;
+    nonZeroIndicators: boolean;
+    pivotsMatchData: boolean;
+    mathCongruence: boolean;
+  };
+  reasons: string[];
 }
 
 export interface PathEvent {

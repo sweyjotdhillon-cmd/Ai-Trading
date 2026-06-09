@@ -1,6 +1,6 @@
 import { 
   ScalpSignal, ScalpingPlan, SLMode, TPMode, ScalpInstrument, 
-  ScalpFeatures, RiskState, ScalpConfig, TradeAnalysis 
+  ScalpFeatures, RiskState, ScalpConfig, TradeAnalysis, AntiHallucinationCheck
 } from '../types';
 import { NumericOHLC } from '../vision/pipeline';
 import { SwingPivot } from './marketStructure';
@@ -213,6 +213,22 @@ export function evaluateScalpSignal(
     investmentRupees: sizeShares * entry,
   };
 
+  const antiHallc = runAntiHallucinationFilter(ohlc, plan, ctx);
+  plan.antiHallucination = antiHallc;
+
+  if (!antiHallc.passed) {
+    blockers.push('HALLUCINATION_DETECTED');
+    antiHallc.reasons.forEach(r => blockers.push(`HALLUC_CHECK: ${r}`));
+    return {
+      signal: 'WAIT',
+      confluenceScore,
+      plan,
+      blockers,
+      features,
+      rawWinner
+    };
+  }
+
   return {
     signal: 'BUY',
     confluenceScore,
@@ -269,5 +285,88 @@ export function loadScalpConfig(): ScalpConfig {
   } catch {
     return getDefaultScalpConfig();
   }
+}
+
+export function runAntiHallucinationFilter(
+  ohlc: NumericOHLC[],
+  plan: ScalpingPlan,
+  ctx: ScalpContext
+): AntiHallucinationCheck {
+  const checks = {
+    priceOrdering: false,
+    candleConsistency: false,
+    entryMatching: false,
+    nonZeroIndicators: false,
+    pivotsMatchData: false,
+    mathCongruence: false,
+  };
+  const reasons: string[] = [];
+
+  // Check 1 — Price Ordering: TP2 > TP1 > Entry > SL (strict long check)
+  const orderCorrect = plan.takeProfit2 > plan.takeProfit1 && plan.takeProfit1 > plan.entry && plan.entry > plan.stopLoss;
+  const valuesPositive = plan.entry > 0 && plan.stopLoss > 0 && plan.takeProfit1 > 0 && plan.takeProfit2 > 0;
+  checks.priceOrdering = orderCorrect && valuesPositive;
+  if (!orderCorrect) reasons.push('Invalid price boundary structure: TP2 > TP1 > Entry > SL violated.');
+  if (!valuesPositive) reasons.push('Zero or negative trade plan boundaries detected.');
+
+  // Check 2 — Candle Consistency: high >= low, high >= open, high >= close, open, high, low, close > 0
+  let candleError = false;
+  for (let i = 0; i < ohlc.length; i++) {
+    const c = ohlc[i];
+    if (c.high < c.low || c.high < c.open || c.high < c.close || c.low > c.open || c.low > c.close || c.open <= 0 || c.high <= 0 || c.low <= 0 || c.close <= 0) {
+      candleError = true;
+      break;
+    }
+  }
+  checks.candleConsistency = !candleError;
+  if (candleError) reasons.push('Detected inconsistent or glitched OHLCV values in historical buffer.');
+
+  // Check 3 — Entry Matching: entry matches lastBar.close perfectly
+  const lastBar = ohlc[ohlc.length - 1];
+  const entryMatch = lastBar ? Math.abs(plan.entry - lastBar.close) < 0.001 : false;
+  checks.entryMatching = entryMatch;
+  if (!entryMatch) reasons.push('Trade entry price does not align with the most recent closing price.');
+
+  // Check 4 — Non-zero indicators
+  const currentAtr = ctx.atr14[ctx.atr14.length - 1];
+  const indicatorsValid = currentAtr != null && currentAtr > 0;
+  checks.nonZeroIndicators = indicatorsValid;
+  if (!indicatorsValid) reasons.push('Technical indicator ATR14 is zero, invalid or missing.');
+
+  // Check 5 — Swing Pivots match data high/low
+  let pivotsConsistent = true;
+  for (const p of ctx.pivots) {
+    if (p.index < 0 || p.index >= ohlc.length) {
+      pivotsConsistent = false;
+      break;
+    }
+    const bar = ohlc[p.index];
+    if (p.kind === 'HIGH' && Math.abs(p.price - bar.high) > 0.01) {
+      pivotsConsistent = false;
+    }
+    if (p.kind === 'LOW' && Math.abs(p.price - bar.low) > 0.01) {
+      pivotsConsistent = false;
+    }
+  }
+  checks.pivotsMatchData = pivotsConsistent;
+  if (!pivotsConsistent) reasons.push('Identified divergent swing pivots that do not align mathematically with candle highs/lows.');
+
+  // Check 6 — Math Congruence: reward calculation consistency
+  const rewardMatch = Math.abs(plan.potentialRewardRupees - (plan.takeProfit2 - plan.entry) * plan.positionSize) < 0.01;
+  const riskMatch = Math.abs(plan.riskRupees - (plan.entry - plan.stopLoss) * plan.positionSize) < 0.01;
+  checks.mathCongruence = rewardMatch && riskMatch;
+  if (!rewardMatch || !riskMatch) reasons.push('Internal mathematical discrepancy found in risk-reward calculations.');
+
+  // Calculate verityScore
+  const checksPassed = Object.values(checks).filter(Boolean).length;
+  const verityScore = Math.round((checksPassed / 6) * 100);
+  const passed = checksPassed === 6;
+
+  return {
+    passed,
+    verityScore,
+    checks,
+    reasons,
+  };
 }
 

@@ -748,7 +748,7 @@ export async function runSingleAnalysis(params: {
           } else if (finalDecision.winner === "BULL") {
             outcome = actualDirection === "UP" ? "WIN" : "LOSS";
           } else if (finalDecision.winner === "BEAR") {
-            outcome = actualDirection === "DOWN" ? "WIN" : "LOSS";
+            outcome = "NEUTRAL";
           }
         }
       }
@@ -791,9 +791,7 @@ export async function runSingleAnalysis(params: {
   const mappedDirection =
     finalDecision.winner === "BULL"
       ? "LONG"
-      : finalDecision.winner === "BEAR"
-        ? "SHORT"
-        : "NO_TRADE";
+      : "NO_TRADE";
 
   const cases = finalDecision.cases || {
     bull: { j1: 0, j2: 0, j3: 0, total: 0 },

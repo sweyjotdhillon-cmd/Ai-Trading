@@ -7,13 +7,30 @@ export async function initVirtualBalance(uid: string): Promise<number> {
   try {
     const snap = await getDoc(docRef);
     if (snap.exists()) {
-      return snap.data().balance ?? 100000;
+      const bal = snap.data().balance ?? 100000;
+      try {
+        localStorage.setItem('user_virtual_balance', String(bal));
+      } catch (err) {
+        // LocalStorage is unavailable or full
+      }
+      return bal;
     } else {
       await setDoc(docRef, { balance: 100000, upd: Math.floor(Date.now() / 1000) });
+      try {
+        localStorage.setItem('user_virtual_balance', '100000');
+      } catch (err) {
+        // LocalStorage is unavailable or full
+      }
       return 100000;
     }
   } catch (e: any) {
-    console.warn('[VirtualBalance] initVirtualBalance failed (using fallback balance ₹1,00,000):', e?.message || e);
+    console.warn('[VirtualBalance] initVirtualBalance failed (falling back):', e?.message || e);
+    try {
+      const cached = localStorage.getItem('user_virtual_balance');
+      if (cached) return parseFloat(cached);
+    } catch (err) {
+      // LocalStorage is unavailable
+    }
     return 100000;
   }
 }
@@ -29,9 +46,24 @@ export async function updateVirtualBalance(
     const current = snap.exists() ? (snap.data().balance ?? 100000) : 100000;
     const next = parseFloat((current + realizedPnL).toFixed(2));
     await setDoc(docRef, { balance: next, upd: Math.floor(Date.now() / 1000) }, { merge: true });
+    try {
+      localStorage.setItem('user_virtual_balance', String(next));
+    } catch (err) {
+      // LocalStorage is unavailable or full
+    }
     return next;
   } catch (e: any) {
     console.error('[VB] updateVirtualBalance failed:', e?.message || e);
+    try {
+      const cached = localStorage.getItem('user_virtual_balance');
+      if (cached) {
+        const next = parseFloat((parseFloat(cached) + realizedPnL).toFixed(2));
+        localStorage.setItem('user_virtual_balance', String(next));
+        return next;
+      }
+    } catch (err) {
+      // LocalStorage is unavailable
+    }
     return 0;   // 0 means caller should use local fallback
   }
 }
