@@ -67,6 +67,7 @@ export interface DecisionResult extends JudgeVerdict {
   repoPatternsDetected?: string;
   techniquesEvaluation?: any;
   repoPatternCount?: number;
+  noTechniquesUploaded?: boolean;
 }
 
 export function evaluateSignal(
@@ -83,6 +84,7 @@ export function evaluateSignal(
   }
 ): DecisionResult {
   const tStart = performance.now();
+  const isNoTech = !techniquesList || !Array.isArray(techniquesList) || techniquesList.length === 0;
 
   const judgeContribs: Array<{
     judge: 'J1'|'J2'|'J3';
@@ -106,7 +108,7 @@ export function evaluateSignal(
     return {
       agent: 'JUDGE',
       cases: defaultCases,
-      skepticMultiplier: 0.30,
+      skepticMultiplier: isNoTech ? 1.0 : 0.30,
       winner: 'NO_TRADE',
       margin: 0,
       finalConfidence: 0,
@@ -126,13 +128,14 @@ export function evaluateSignal(
       j1Score: 0,
       j2Score: 0,
       j3Score: 0,
-      j4Score: 70, // skepticPenalty = (1 - 0.3) * 100 = 70%
+      j4Score: isNoTech ? 0 : 70, // skepticPenalty = (1 - 0.3) * 100 = 70%
+      noTechniquesUploaded: isNoTech,
 
       // Legacy fields
       confidence: 0,
       bullScore: 0,
       bearScore: 0,
-      skepticPenalty: 70,
+      skepticPenalty: isNoTech ? 0 : 70,
       boundaryBias: 0,
       finalScore: 0,
       evidence: {}
@@ -197,16 +200,6 @@ export function evaluateSignal(
   let activeList: any[] = [];
   if (techniquesList && Array.isArray(techniquesList) && techniquesList.length > 0) {
     activeList = [...techniquesList];
-  } else {
-    // Populate with 12 mathematical standard rules to exceed 10+ techniques and satisfy protocols deterministically
-    activeList = [
-      'rsioversold', 'rsioverbought',
-      'stochoversold', 'stochoverbought',
-      'macdbullcross', 'macdbearcross',
-      'bollingerlowerbreak', 'bollingerupperbreak',
-      'emagoldencross', 'emadeathcross',
-      'hammer', 'shootingstar'
-    ];
   }
 
   const isBypass = activeList.some(t => {
@@ -219,7 +212,7 @@ export function evaluateSignal(
     if (activeList.length < 1 && !isBypass) {
       hardBlockReason = `No custom techniques provided. Include at least 1 technique in your upload.`;
     }
-  } else {
+  } else if (!isNoTech) {
     if (activeList.length < 10 && !isBypass) {
       hardBlockReason = `Insufficient tech consensus. Found ${activeList.length} but need minimum 10 techniques.`;
     }
@@ -390,7 +383,7 @@ export function evaluateSignal(
     }
   });
 
-  if (processedCount < 10 && !isCustomList) {
+  if (processedCount < 10 && !isNoTech && !isCustomList) {
     return getEmptyNoTradeResult('INSUFFICIENT_TECHNIQUES');
   }
 
@@ -927,11 +920,18 @@ export function evaluateSignal(
   }
   skepticMultiplier *= tfMultiplier;
 
-  skepticMultiplier = Math.max(0.30, Math.min(1.00, skepticMultiplier));
+  if (isNoTech) {
+    skepticMultiplier = 1.0;
+    skepticReasons.length = 0;
+  } else {
+    skepticMultiplier = Math.max(0.30, Math.min(1.00, skepticMultiplier));
+  }
 
   let skepticVerdict: 'ACCEPT' | 'CAUTION' | 'WEAK' = 'ACCEPT';
-  if (skepticMultiplier < 0.60) skepticVerdict = 'WEAK';
-  else if (skepticMultiplier < 0.85) skepticVerdict = 'CAUTION';
+  if (!isNoTech) {
+    if (skepticMultiplier < 0.60) skepticVerdict = 'WEAK';
+    else if (skepticMultiplier < 0.85) skepticVerdict = 'CAUTION';
+  }
 
   // --- Step 4: Margin and Decision Resolution (with NEL Integration) ---
   const bullTotal = Number(cases.bull.total.toFixed(2));
@@ -1256,6 +1256,7 @@ ${rulingStr}
     j4Score: skepticPenalty,
     techniquesEvaluation,
     auditTrail,
+    noTechniquesUploaded: isNoTech,
 
     // Legacy fields
     confidence: finalConfidence,

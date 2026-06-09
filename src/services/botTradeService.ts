@@ -252,6 +252,55 @@ export async function loadStats(
   }
 }
 
+export async function loadOpenTrades(
+  uid: string
+): Promise<BotTradeRecord[]> {
+  const path = `tradeBot/${uid}/trades`;
+  try {
+    const q = query(
+      tradesCol(uid),
+      where('status', '==', 'OPEN'),
+      orderBy('openedAt', 'desc')
+    );
+    const snap = await getDocs(q);
+    return snap.docs.map(docSnap => {
+      const d = docSnap.data();
+      return {
+        id:              d.id,
+        symbol:          d.symbol,
+        entryPrice:      d.entryPrice,
+        exitPrice:       null,
+        outcome:         null,
+        realizedPnL:     null,
+        realizedPnLPct:  null,
+        rMultiple:       null,
+        openedAt:        d.openedAt,
+        closedAt:        null,
+        durationMinutes: null,
+        plan: {
+          entry:              d.plan_entry,
+          stopLoss:           d.plan_stopLoss,
+          takeProfit1:        d.plan_takeProfit1,
+          takeProfit2:        d.plan_takeProfit2,
+          rrRatio:            d.plan_rrRatio,
+          riskRupees:         d.plan_riskRupees,
+          positionSize:       d.plan_positionSize,
+          instrument:         d.plan_instrument,
+          slMode:             d.plan_slMode,
+          tpMode:             d.plan_tpMode,
+          maxHoldingMinutes:  d.plan_maxHoldingMinutes,
+        } as any,
+      };
+    });
+  } catch (error) {
+    try {
+      handleFirestoreError(error, OperationType.LIST, path);
+    } catch {
+      return [];
+    }
+  }
+}
+
 export async function loadOpenTrade(
   uid: string
 ): Promise<BotTradeRecord | null> {

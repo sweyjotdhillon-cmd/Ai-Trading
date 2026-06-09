@@ -154,13 +154,15 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
     }, 4000);
   };
 
+  const primaryPlan = bot.activePlans[0];
+
   // Fire toasts on key state changes
   useEffect(() => {
     const phaseValue = bot.phase;
 
     // Trade opened
     if (phaseValue === 'IN_TRADE' && prevPhaseRef.current !== 'IN_TRADE') {
-      addToast(`LONG entered at ₹${bot.activePlan?.entry?.toFixed(2) ?? '—'}`, 'info');
+      addToast(`LONG entered at ₹${primaryPlan?.entry?.toFixed(2) ?? '—'}`, 'info');
     }
 
     // Trade closed outcomes
@@ -189,7 +191,7 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
     }
 
     prevPhaseRef.current = phaseValue;
-  }, [bot.phase, bot.tradeHistory, bot.tp1Hit, bot.activePlan, bot.lastBlockReason]);
+  }, [bot.phase, bot.tradeHistory, bot.tp1Hit, primaryPlan, bot.lastBlockReason]);
 
   const phase  = PHASE_CONFIG[bot.phase];
   const pnlPos = (bot.sessionStats.totalPnL ?? 0) >= 0;
@@ -259,8 +261,8 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
           )}
 
           {/* Entry / SL / TP overlays on chart — horizontal price lines */}
-          {bot.phase === 'IN_TRADE' && bot.activePlan && bot.currentPrice && (() => {
-            const plan     = bot.activePlan;
+          {bot.phase === 'IN_TRADE' && bot.activePlans[0] && bot.currentPrice && (() => {
+            const plan     = bot.activePlans[0];
             const priceMin = Math.min(plan.stopLoss, bot.currentPrice ?? plan.entry) * 0.998;
             const priceMax = Math.max(plan.takeProfit2, bot.currentPrice ?? plan.entry) * 1.002;
             const range    = priceMax - priceMin;
@@ -477,6 +479,33 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
         </div>
       )}
 
+      {/* Virtual Balance Card */}
+      {(() => {
+        const balance = bot.virtualBalance ?? 100000;
+        const delta = balance - 100000;
+        const deltaPct = (delta / 100000) * 100;
+        return (
+          <div className="bg-zinc-900/40 border border-zinc-800/40 rounded-xl p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+            <div>
+              <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest">Virtual Balance</span>
+              <div className="mt-1 font-mono text-2xl font-black text-zinc-100">
+                ₹{balance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+            </div>
+            <div className="text-left sm:text-right font-mono text-xs">
+              <span className={`font-bold ${
+                delta > 0 ? 'text-emerald-400' : delta < 0 ? 'text-rose-400' : 'text-zinc-500'
+              }`}>
+                {delta > 0 ? '+' : ''}₹{delta.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({delta > 0 ? '+' : ''}{deltaPct.toFixed(2)}%)
+              </span>
+              <div className="text-[9px] text-zinc-500 mt-0.5">
+                from initial ₹1,00,000
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* ── SECTION 2: Live Price + Last Signal ──────────────────────── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="bg-zinc-900/40 border border-zinc-800/40 rounded-xl p-3.5">
@@ -680,107 +709,184 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
         );
       })()}
 
-      {/* ── SECTION 3: Active Position (IN_TRADE only) ───────────────── */}
-      {bot.phase === 'IN_TRADE' && bot.activePlan && (
-        <div className="bg-zinc-900/40 border border-emerald-500/20 rounded-xl p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="font-black text-xs text-zinc-300 uppercase tracking-widest flex items-center gap-1.5">
-              <Target size={12} className="text-emerald-400" /> Active Position
-            </h3>
-            {/* Unrealized P&L */}
-            <span className={`font-mono text-sm font-black ${
-              (bot.unrealizedPnL ?? 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'
-            }`}>
-              {bot.unrealizedPnL != null
-                ? `${bot.unrealizedPnL >= 0 ? '+' : ''}₹${bot.unrealizedPnL.toFixed(2)}`
-                : '—'}
-              {bot.unrealizedPnLPct != null && (
-                <span className="text-[10px] ml-1 font-mono opacity-70">
-                  ({bot.unrealizedPnLPct >= 0 ? '+' : ''}{bot.unrealizedPnLPct.toFixed(2)}%)
-                </span>
-              )}
-            </span>
+      {/* ── SECTION 3: Active Positions (Multi-Trade View) ───────────── */}
+      <div className="bg-zinc-900/40 border border-zinc-800/40 rounded-xl p-4 flex flex-col gap-3">
+        <h3 className="font-black text-xs text-zinc-300 uppercase tracking-widest flex items-center gap-1.5 border-b border-zinc-800/60 pb-2">
+          <Target size={12} className="text-emerald-400" /> Active Positions
+        </h3>
+
+        {bot.activeTrades && bot.activeTrades.length > 0 ? (
+          <div className="flex flex-col gap-4">
+            {/* Multi-Trade Rows */}
+            <div className="flex flex-col gap-3">
+              {bot.activeTrades.map(trade => {
+                if (!trade.plan) return null;
+                const entry = trade.plan.entry;
+                const tp = trade.plan.takeProfit2;
+                const sl = trade.plan.stopLoss;
+                const currentPrice = bot.currentPrice ?? entry;
+                
+                // Progress bar: (currentPrice - entry) / (tp - entry) clamped 0–100
+                const progressPct = (tp - entry) !== 0
+                  ? Math.max(0, Math.min(100, ((currentPrice - entry) / (tp - entry)) * 100))
+                  : 0;
+                
+                const isProgressPos = currentPrice >= entry;
+                const progressColor = isProgressPos ? 'text-emerald-400' : 'text-rose-400';
+                const barColor = isProgressPos ? 'bg-emerald-500' : 'bg-rose-500';
+
+                // Unrealized P&L
+                const unrealizedPnL = (currentPrice - entry) * (trade.plan.positionSize ?? 1);
+                const isPnLPos = unrealizedPnL >= 0;
+
+                return (
+                  <div key={trade.id} className="bg-zinc-950/65 border border-zinc-800/80 rounded-xl p-3 flex flex-col gap-2 font-mono">
+                    <div className="flex items-center justify-between">
+                      <div className="flex flex-wrap items-center gap-1.5 text-xs text-zinc-300">
+                        <span className="font-extrabold text-[#D9B382] uppercase bg-[#D9B382]/10 px-1.5 py-0.5 rounded tracking-wide">{trade.symbol}</span>
+                        <span>Entry {fmt(entry)}</span>
+                        <span className="text-zinc-500">·</span>
+                        <span className="text-rose-400 font-bold">SL {fmt(sl)}</span>
+                        <span className="text-zinc-500">·</span>
+                        <span className="text-emerald-400 font-bold">TP {fmt(tp)}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-between items-center text-xs">
+                      <div className="text-zinc-400">
+                        Current <span className="font-bold text-zinc-200">{fmt(currentPrice)}</span>
+                      </div>
+                      <div className={`font-bold ${isPnLPos ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        Unrealized {isPnLPos ? '+' : ''}₹{unrealizedPnL.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </div>
+                    </div>
+
+                    {/* Progress bar info & visuals */}
+                    <div>
+                      <div className="flex justify-between items-center text-[9px] text-zinc-500 mb-1">
+                        <span>Progress to Take Profit</span>
+                        <span className={`font-bold ${progressColor}`}>{progressPct.toFixed(1)}%</span>
+                      </div>
+                      <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all duration-300 ${barColor}`}
+                          style={{ width: `${progressPct}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Detailed Stats Panel & Controls for primary active trade */}
+            {bot.activeTrades[0] && bot.activePlans[0] && (
+              <div className="border-t border-zinc-800 pt-4 flex flex-col gap-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] text-emerald-400 font-bold tracking-wider font-mono">
+                    PRIMARY ACTIVE POSITION FOCUS ({bot.activeTrades[0].symbol})
+                  </span>
+                  {/* Unrealized P&L */}
+                  <span className={`font-mono text-sm font-black ${
+                    (bot.unrealizedPnL ?? 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                  }`}>
+                    {bot.unrealizedPnL != null
+                      ? `${bot.unrealizedPnL >= 0 ? '+' : ''}₹${bot.unrealizedPnL.toFixed(2)}`
+                      : '—'}
+                    {bot.unrealizedPnLPct != null && (
+                      <span className="text-[10px] ml-1 font-mono opacity-70">
+                        ({bot.unrealizedPnLPct >= 0 ? '+' : ''}{bot.unrealizedPnLPct.toFixed(2)}%)
+                      </span>
+                    )}
+                  </span>
+                </div>
+
+                {/* THE CORE — Entry / SL / TP1 / TP2 */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {/* Entry */}
+                  <div className="bg-zinc-800/40 rounded-lg p-2.5 border border-zinc-700/40">
+                    <span className="block text-[9px] font-mono text-[#D9B382]/80 uppercase tracking-wider mb-1">
+                      ENTRY
+                    </span>
+                    <span className="font-mono text-xs font-black text-zinc-200">
+                      {fmt(bot.activePlans[0].entry)}
+                    </span>
+                  </div>
+
+                  {/* Stop Loss — shows trailing SL, red */}
+                  <div className="bg-rose-500/5 rounded-lg p-2.5 border border-rose-500/20">
+                    <span className="block text-[9px] font-mono text-rose-400/80 uppercase tracking-wider mb-1 flex items-center gap-1">
+                      SL
+                      {bot.tp1Hit && (
+                        <span className="text-[8px] text-sky-400 bg-sky-500/10 px-1 rounded">B/E</span>
+                      )}
+                    </span>
+                    <span className="font-mono text-xs font-black text-rose-400">
+                      {fmt(bot.trailSL || bot.activePlans[0].stopLoss)}
+                    </span>
+                    <span className="block text-[8px] font-mono text-zinc-600 mt-0.5">
+                      {bot.activePlans[0].slMode}
+                    </span>
+                  </div>
+
+                  {/* TP1 */}
+                  <div className={`rounded-lg p-2.5 border ${
+                    bot.tp1Hit
+                      ? 'bg-teal-500/10 border-teal-500/30'
+                      : 'bg-zinc-800/40 border-zinc-700/40'
+                  }`}>
+                    <span className="block text-[9px] font-mono text-teal-400/80 uppercase tracking-wider mb-1 flex items-center gap-1">
+                      TP1 {bot.tp1Hit && <CheckCircle size={9} className="text-teal-400" />}
+                    </span>
+                    <span className={`font-mono text-xs font-black ${bot.tp1Hit ? 'text-teal-400 line-through opacity-60' : 'text-teal-400'}`}>
+                      {fmt(bot.activePlans[0].takeProfit1)}
+                    </span>
+                    <span className="block text-[8px] font-mono text-zinc-600 mt-0.5">1.0R</span>
+                  </div>
+
+                  {/* TP2 */}
+                  <div className="bg-emerald-500/5 rounded-lg p-2.5 border border-emerald-500/20">
+                    <span className="block text-[9px] font-mono text-emerald-400/80 uppercase tracking-wider mb-1">
+                      TP2
+                    </span>
+                    <span className="font-mono text-xs font-black text-emerald-400">
+                      {fmt(bot.activePlans[0].takeProfit2)}
+                    </span>
+                    <span className="block text-[8px] font-mono text-zinc-600 mt-0.5">
+                      {bot.activePlans[0].rrRatio}R
+                    </span>
+                  </div>
+                </div>
+
+                {/* Trade meta */}
+                <div className="flex justify-between items-center mt-1 text-[10px] font-mono text-zinc-500">
+                  <span>Size: <strong className="text-zinc-300">{bot.activePlans[0].positionSize ?? 1} shares</strong></span>
+                  <span>Risk: <strong className="text-rose-400">₹{bot.activePlans[0].riskRupees?.toFixed(0) ?? '—'}</strong></span>
+                  <span>Reward: <strong className="text-emerald-400">₹{((bot.activePlans[0].riskRupees ?? 0) * bot.activePlans[0].rrRatio).toFixed(0)}</strong></span>
+                </div>
+
+                {/* Time remaining bar */}
+                <TimeBar
+                  timeRemainingMs={bot.timeRemainingMs}
+                  maxHoldingMinutes={bot.activePlans[0].maxHoldingMinutes || 15}
+                />
+
+                {/* Force exit button */}
+                <button
+                  onClick={bot.forceExit}
+                  className="mt-2 w-full py-2.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 text-xs font-black uppercase tracking-wider transition-colors"
+                >
+                  Force Exit Now
+                </button>
+              </div>
+            )}
           </div>
-
-          {/* THE CORE — Entry / SL / TP1 / TP2 */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {/* Entry */}
-            <div className="bg-zinc-800/40 rounded-lg p-2.5 border border-zinc-700/40">
-              <span className="block text-[9px] font-mono text-[#D9B382]/80 uppercase tracking-wider mb-1">
-                ENTRY
-              </span>
-              <span className="font-mono text-xs font-black text-zinc-200">
-                {fmt(bot.activePlan.entry)}
-              </span>
-            </div>
-
-            {/* Stop Loss — shows trailing SL, red */}
-            <div className="bg-rose-500/5 rounded-lg p-2.5 border border-rose-500/20">
-              <span className="block text-[9px] font-mono text-rose-400/80 uppercase tracking-wider mb-1 flex items-center gap-1">
-                SL
-                {bot.tp1Hit && (
-                  <span className="text-[8px] text-sky-400 bg-sky-500/10 px-1 rounded">B/E</span>
-                )}
-              </span>
-              <span className="font-mono text-xs font-black text-rose-400">
-                {fmt(bot.trailSL || bot.activePlan.stopLoss)}
-              </span>
-              <span className="block text-[8px] font-mono text-zinc-600 mt-0.5">
-                {bot.activePlan.slMode}
-              </span>
-            </div>
-
-            {/* TP1 */}
-            <div className={`rounded-lg p-2.5 border ${
-              bot.tp1Hit
-                ? 'bg-teal-500/10 border-teal-500/30'
-                : 'bg-zinc-800/40 border-zinc-700/40'
-            }`}>
-              <span className="block text-[9px] font-mono text-teal-400/80 uppercase tracking-wider mb-1 flex items-center gap-1">
-                TP1 {bot.tp1Hit && <CheckCircle size={9} className="text-teal-400" />}
-              </span>
-              <span className={`font-mono text-xs font-black ${bot.tp1Hit ? 'text-teal-400 line-through opacity-60' : 'text-teal-400'}`}>
-                {fmt(bot.activePlan.takeProfit1)}
-              </span>
-              <span className="block text-[8px] font-mono text-zinc-600 mt-0.5">1.0R</span>
-            </div>
-
-            {/* TP2 */}
-            <div className="bg-emerald-500/5 rounded-lg p-2.5 border border-emerald-500/20">
-              <span className="block text-[9px] font-mono text-emerald-400/80 uppercase tracking-wider mb-1">
-                TP2
-              </span>
-              <span className="font-mono text-xs font-black text-emerald-400">
-                {fmt(bot.activePlan.takeProfit2)}
-              </span>
-              <span className="block text-[8px] font-mono text-zinc-600 mt-0.5">
-                {bot.activePlan.rrRatio}R
-              </span>
-            </div>
+        ) : (
+          <div className="text-center py-6 text-zinc-500 text-xs font-mono">
+            No active positions
           </div>
-
-          {/* Trade meta */}
-          <div className="flex justify-between items-center mt-3 text-[10px] font-mono text-zinc-500">
-            <span>Size: <strong className="text-zinc-300">{bot.activePlan.positionSize ?? 1} shares</strong></span>
-            <span>Risk: <strong className="text-rose-400">₹{bot.activePlan.riskRupees?.toFixed(0) ?? '—'}</strong></span>
-            <span>Reward: <strong className="text-emerald-400">₹{((bot.activePlan.riskRupees ?? 0) * bot.activePlan.rrRatio).toFixed(0)}</strong></span>
-          </div>
-
-          {/* Time remaining bar */}
-          <TimeBar
-            timeRemainingMs={bot.timeRemainingMs}
-            maxHoldingMinutes={bot.activePlan.maxHoldingMinutes}
-          />
-
-          {/* Force exit button */}
-          <button
-            onClick={bot.forceExit}
-            className="mt-3 w-full py-2 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 text-xs font-black uppercase tracking-wider transition-colors"
-          >
-            Force Exit Now
-          </button>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* ── SECTION 4: Session Stats ──────────────────────────────────── */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">

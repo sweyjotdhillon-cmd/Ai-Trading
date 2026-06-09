@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useStockFeed }               from './useStockFeed';
-import { useScalpPositionWatcher }    from './useScalpPositionWatcher';
 import { useWakeLock }                from './useWakeLock';
 import { ohlcvToDataUrl }             from '../utils/chartRenderer';
 import { vwapProxy }                  from '../quant/vwapProxy';
@@ -16,9 +15,10 @@ import {
   writeTrade_Close,
   writeStats_Update,
   loadStats,
-  loadOpenTrade,
+  loadOpenTrades,
   loadTodayTrades,
 } from '../services/botTradeService';
+import { initVirtualBalance, updateVirtualBalance } from '../services/virtualBalanceService';
 import { auth } from '../services/firebase';
 import {
   OHLCV, ScalpingPlan, ScalpConfig, RiskState, TradeOutcome
@@ -68,6 +68,9 @@ export interface UseBotLoopResult {
   ohlcvBuffer:        OHLCV[];
   activePlan:         ScalpingPlan | null;
   activeTrade:        BotTradeRecord | null;
+  activePlans:        ScalpingPlan[];
+  activeTrades:       BotTradeRecord[];
+  virtualBalance:     number;
   tradeHistory:       BotTradeRecord[];
   sessionStats:       BotSessionStats;
   stabilityCount:     number;         // 0 | 1 | 2 | 3
@@ -148,8 +151,9 @@ export function useBotLoop(
 ): UseBotLoopResult {
   // State (drives UI re-renders)
   const [phase,           setPhase]           = useState<BotPhase>('IDLE');
-  const [activePlan,      setActivePlan]      = useState<ScalpingPlan | null>(null);
-  const [activeTrade,     setActiveTrade]     = useState<BotTradeRecord | null>(null);
+  const [activePlans,     setActivePlans]     = useState<ScalpingPlan[]>([]);
+  const [activeTrades,    setActiveTrades]    = useState<BotTradeRecord[]>([]);
+  const [virtualBalance,  setVirtualBalance]  = useState(100000);
   const [tradeHistory,    setTradeHistory]    = useState<BotTradeRecord[]>([]);
   const [sessionStats,    setSessionStats]    = useState<BotSessionStats>(emptyStats());
   const [stabilityCount,  setStabilityCount]  = useState(0);
@@ -205,21 +209,22 @@ export function useBotLoop(
     botActive && phase !== 'IDLE'
   );
 
-  const watcher = useScalpPositionWatcher(
-    phase === 'IN_TRADE' ? activePlan : null,
-    feed.currentPrice,
-    activeTrade?.openedAt ?? null   // passes trade open timestamp
-  );
+  const activeTradesRef = useRef<BotTradeRecord[]>([]);
+  useEffect(() => {
+    activeTradesRef.current = activeTrades;
+  }, [activeTrades]);
 
-  const closeActiveTrade = useCallback(async (
+  const closeTradeById = useCallback(async (
+    tradeId:   string,
     exitPrice: number,
     outcome:   TradeOutcome
   ) => {
-    if (!activeTrade) return;
+    const trade = activeTradesRef.current.find(t => t.id === tradeId);
+    if (!trade) return;
 
     // 1. Mark trade as closed in React local state immediately
     const tempClosedTrade = {
-      ...activeTrade,
+      ...trade,
       exitPrice,
       outcome,
     };
@@ -229,33 +234,36 @@ export function useBotLoop(
     if (uidRef.current) {
       try {
         finalized = await writeTrade_Close(uidRef.current, tempClosedTrade, exitPrice, capital);
+        await updateVirtualBalance(uidRef.current, finalized.realizedPnL);
       } catch (err) {
         console.error('[BotLoop] writeTrade_Close fail, calculating locally...', err);
         // Fallback local calc
-        const posSize      = activeTrade.plan.positionSize ?? 1;
-        const grossPnL     = (exitPrice - activeTrade.entryPrice) * posSize;
+        const posSize      = trade.plan.positionSize ?? 1;
+        const grossPnL     = (exitPrice - trade.entryPrice) * posSize;
         finalized.realizedPnL = grossPnL;
         finalized.realizedPnLPct = capital > 0 ? (grossPnL / capital) * 100 : 0;
-        finalized.rMultiple = activeTrade.plan.riskRupees > 0 ? grossPnL / activeTrade.plan.riskRupees : 0;
+        finalized.rMultiple = trade.plan.riskRupees > 0 ? grossPnL / trade.plan.riskRupees : 0;
       }
     } else {
       // Offline fallback
-      const posSize      = activeTrade.plan.positionSize ?? 1;
-      const grossPnL     = (exitPrice - activeTrade.entryPrice) * posSize;
+      const posSize      = trade.plan.positionSize ?? 1;
+      const grossPnL     = (exitPrice - trade.entryPrice) * posSize;
       finalized.realizedPnL = grossPnL;
       finalized.realizedPnLPct = capital > 0 ? (grossPnL / capital) * 100 : 0;
-      finalized.rMultiple = activeTrade.plan.riskRupees > 0 ? grossPnL / activeTrade.plan.riskRupees : 0;
+      finalized.rMultiple = trade.plan.riskRupees > 0 ? grossPnL / trade.plan.riskRupees : 0;
     }
 
+    setVirtualBalance(prev => parseFloat((prev + finalized.realizedPnL).toFixed(2)));
+
     const closed: BotTradeRecord = {
-      ...activeTrade,
+      ...trade,
       exitPrice,
       outcome,
       realizedPnL:     finalized.realizedPnL,
       realizedPnLPct:  finalized.realizedPnLPct,
       rMultiple:       finalized.rMultiple,
       closedAt:        Date.now(),
-      durationMinutes: Math.round((Date.now() - activeTrade.openedAt) / 60_000),
+      durationMinutes: Math.round((Date.now() - trade.openedAt) / 60_000),
     };
 
     setTradeHistory(h => [closed, ...h]);
@@ -286,11 +294,25 @@ export function useBotLoop(
     riskStateRef.current = nextRisk;
     saveRiskState(nextRisk);
 
-    setActiveTrade(null);
-    setActivePlan(null);
-    setPhase('SCANNING');
+    setActiveTrades(prev => {
+      const filtered = prev.filter(t => t.id !== tradeId);
+      if (filtered.length === 0) {
+        setPhase('SCANNING');
+      }
+      return filtered;
+    });
 
-  }, [activeTrade, tradeHistory, capital, config]);
+    setActivePlans(prev => {
+      const idx = activeTradesRef.current.findIndex(t => t.id === tradeId);
+      if (idx !== -1) {
+        const nextPlans = [...prev];
+        nextPlans.splice(idx, 1);
+        return nextPlans;
+      }
+      return prev;
+    });
+
+  }, [capital, config, tradeHistory]);
 
   const startBot = useCallback(() => {
     if (!symbol) return;
@@ -303,6 +325,10 @@ export function useBotLoop(
     setLastBlockReason(null);
     setPhase('SCANNING');
     requestLock(); // prevent screen sleep during bot operation
+
+    if (uidRef.current) {
+      initVirtualBalance(uidRef.current).then(bal => setVirtualBalance(bal));
+    }
   }, [symbol, requestLock]);
 
   const stopBot = useCallback(() => {
@@ -310,31 +336,34 @@ export function useBotLoop(
     setBotActive(false);
     abortRef.current?.abort();
 
-    // Force-close any active trade at last known price before stopping
-    if (phase === 'IN_TRADE' && activeTrade && feed.currentPrice) {
-      closeActiveTrade(feed.currentPrice, 'MANUAL_EXIT');
+    // Force-close all active trades at last known price before stopping
+    if (feed.currentPrice) {
+      activeTradesRef.current.forEach(t => {
+        closeTradeById(t.id, feed.currentPrice!, 'MANUAL_EXIT');
+      });
     }
 
     releaseLock();
     setPhase('IDLE');
-    setActivePlan(null);
+    setActivePlans([]);
+    setActiveTrades([]);
     stabilityRef.current = 0;
     setStabilityCount(0);
     analysisErrorCount.current = 0;
-  }, [phase, activeTrade, feed.currentPrice, closeActiveTrade, releaseLock]);
+  }, [feed.currentPrice, closeTradeById, releaseLock]);
 
   const pauseBot = useCallback(() => {
-    // Suspend analysis but keep position watcher alive
     botEnabledRef.current = false;
     setBotActive(false);
-    // Wake lock intentionally kept during pause — position watcher may still be active
-    if (phase !== 'IN_TRADE') setPhase('IDLE');
-  }, [phase]);
+    if (activeTradesRef.current.length === 0) setPhase('IDLE');
+  }, []);
 
   const forceExit = useCallback(() => {
-    if (phase !== 'IN_TRADE' || !activeTrade || !feed.currentPrice) return;
-    closeActiveTrade(feed.currentPrice, 'MANUAL_EXIT');
-  }, [phase, activeTrade, feed.currentPrice, closeActiveTrade]);
+    if (activeTrades.length === 0 || !feed.currentPrice) return;
+    activeTrades.forEach(t => {
+      closeTradeById(t.id, feed.currentPrice!, 'MANUAL_EXIT');
+    });
+  }, [activeTrades, feed.currentPrice, closeTradeById]);
 
   const runAnalysisCycle = useCallback(async () => {
     if (!symbol) return;
@@ -405,12 +434,14 @@ export function useBotLoop(
       }
 
       // Step 4 — Confidence gate
-      if (confidence < minConfidence) {
-        stabilityRef.current = 0;
-        setStabilityCount(0);
-        setLastBlockReason(`CONFIDENCE: ${confidence.toFixed(1)}% < threshold ${minConfidence}%`);
-        setPhase('SCANNING');
-        return;
+      if (config.useConfidenceThreshold !== false) {
+        if (confidence < minConfidence) {
+          stabilityRef.current = 0;
+          setStabilityCount(0);
+          setLastBlockReason(`CONFIDENCE: ${confidence.toFixed(1)}% < threshold ${minConfidence}%`);
+          setPhase('SCANNING');
+          return;
+        }
       }
 
       // Step 5 — Risk guard gate
@@ -505,7 +536,7 @@ export function useBotLoop(
       const planValid =
         plan.stopLoss   < plan.entry        &&
         plan.takeProfit1 > plan.entry       &&
-        plan.takeProfit2 > plan.takeProfit1 &&
+        plan.takeProfit2 >= plan.takeProfit1 &&
         plan.rrRatio     >= (config.minRR ?? 1.5) &&
         plan.riskRupees  > 0                &&
         isFinite(plan.stopLoss)             &&
@@ -525,8 +556,18 @@ export function useBotLoop(
         return;
       }
 
+      // CHANGE 7 — Insufficient balance gate
+      const reqBal = config.investmentPerTrade ?? 10000;
+      if (virtualBalance < reqBal) {
+        setLastBlockReason(
+          `INSUFFICIENT_BALANCE: ₹${virtualBalance.toFixed(0)} available, ` +
+          `₹${reqBal} required per trade`
+        );
+        setPhase('HALTED');
+        return;
+      }
+
       // Step 8 — ARM the trade
-      setActivePlan(plan);
       setPhase('ARMED');
       setLastBlockReason(null);
       stabilityRef.current = 0;
@@ -547,7 +588,9 @@ export function useBotLoop(
         durationMinutes: null,
         plan,
       };
-      setActiveTrade(trade);
+      
+      setActiveTrades(prev => [...prev, trade]);
+      setActivePlans(prev => [...prev, plan]);
       setPhase('IN_TRADE');
 
       // Write OPEN trade to Firestore
@@ -578,7 +621,7 @@ export function useBotLoop(
       analyzingRef.current = false;
       setIsAnalyzing(false);
     }
-  }, [symbol, timeframeMinutes, capital, minConfidence, config, feed, techniquesList]);
+  }, [symbol, timeframeMinutes, capital, minConfidence, config, feed, techniquesList, virtualBalance]);
 
   useEffect(() => {
     // Guard: only run if a new candle actually arrived
@@ -588,7 +631,7 @@ export function useBotLoop(
     // Guard: do not run if bot is off, already analyzing, or in trade
     if (!botEnabledRef.current) return;
     if (analyzingRef.current) return;
-    if (phase === 'IN_TRADE') return;
+    if (activeTrades.length >= (config.maxConcurrentTrades ?? 1)) return;
     if (phase === 'IDLE') return;
     // Need at least 15 candles: 14 for ATR14 + 1 current
     if (feed.ohlcvBuffer.length < 15) {
@@ -603,14 +646,14 @@ export function useBotLoop(
     }
 
     runAnalysisCycle();
-  }, [feed.candleCount, feed.isStale, phase, feed.ohlcvBuffer.length, runAnalysisCycle]);
+  }, [feed.candleCount, feed.isStale, phase, activeTrades.length, config.maxConcurrentTrades, feed.ohlcvBuffer.length, runAnalysisCycle]);
 
   // Trigger analysis once immediately when the initial candle buffer first loads
   // (covers market-closed scenario where no new candles will ever close)
   useEffect(() => {
     if (!botEnabledRef.current) return;
     if (phase === 'IDLE') return;
-    if (phase === 'IN_TRADE') return;
+    if (activeTrades.length >= (config.maxConcurrentTrades ?? 1)) return;
     if (analyzingRef.current) return;
     if (feed.ohlcvBuffer.length < 15) return;
     if (initialAnalysisFiredRef.current) return;
@@ -618,39 +661,60 @@ export function useBotLoop(
     // Fire once when buffer first reaches 15+ candles
     initialAnalysisFiredRef.current = true;
     runAnalysisCycle();
-  }, [feed.ohlcvBuffer.length, phase, runAnalysisCycle]);
+  }, [feed.ohlcvBuffer.length, phase, activeTrades.length, config.maxConcurrentTrades, runAnalysisCycle]);
 
   // Re-run analysis every 2 minutes even if no new candle closes (market-closed sim mode)
   useEffect(() => {
-    if (phase === 'IDLE' || phase === 'IN_TRADE' || phase === 'HALTED') return;
+    if (phase === 'IDLE' || activeTrades.length >= (config.maxConcurrentTrades ?? 1) || phase === 'HALTED') return;
     if (feed.ohlcvBuffer.length < 15) return;
 
     const intervalId = setInterval(() => {
       if (!botEnabledRef.current) return;
       if (analyzingRef.current) return;
-      if (phase === 'IN_TRADE' || phase === 'IDLE') return;
+      if (activeTrades.length >= (config.maxConcurrentTrades ?? 1) || phase === 'IDLE') return;
       runAnalysisCycle();
     }, 2 * 60 * 1000); // every 2 minutes
 
     return () => clearInterval(intervalId);
-  }, [phase, feed.ohlcvBuffer.length, runAnalysisCycle]);
+  }, [phase, activeTrades.length, config.maxConcurrentTrades, feed.ohlcvBuffer.length, runAnalysisCycle]);
 
   useEffect(() => {
-    if (phase !== 'IN_TRADE') return;
-    if (!watcher.outcome) return;
+    if (activeTrades.length === 0 || !feed.currentPrice) return;
+    const price = feed.currentPrice;
 
-    const exitAt = feed.currentPrice ?? activeTrade?.plan.entry ?? activePlan?.entry ?? 0;
-    closeActiveTrade(exitAt, watcher.outcome);
-  }, [watcher.outcome, phase, feed.currentPrice, closeActiveTrade, activeTrade, activePlan]);
+    activeTrades.forEach(trade => {
+      if (!trade.plan) return;
+
+      // SL check
+      if (price <= trade.plan.stopLoss) {
+        closeTradeById(trade.id, price, 'SL_HIT');
+        return;
+      }
+
+      // TP check (TP1 and TP2 are equal per Change 2, so a single win exit is enforced)
+      if (price >= trade.plan.takeProfit2) {
+        closeTradeById(trade.id, price, 'TP2_HIT');
+        return;
+      }
+
+      // Optional time expiration based check
+      const elapsedMin = (Date.now() - trade.openedAt) / 60_000;
+      const maxHold = trade.plan.maxHoldingMinutes ?? 15;
+      if (elapsedMin >= maxHold) {
+        closeTradeById(trade.id, price, 'TIME_EXPIRED');
+        return;
+      }
+    });
+  }, [feed.currentPrice, activeTrades, closeTradeById]);
 
   // Auto-halt if feed goes dead
   useEffect(() => {
     if (!botEnabledRef.current) return;
-    if (feed.consecutiveFailures >= 3 && phase !== 'IN_TRADE') {
+    if (feed.consecutiveFailures >= 3 && activeTrades.length === 0) {
       setPhase('HALTED');
       setLastBlockReason(`FEED_DEAD: ${feed.consecutiveFailures} consecutive API failures`);
     }
-  }, [feed.consecutiveFailures, phase]);
+  }, [feed.consecutiveFailures, activeTrades.length]);
 
   // Auto-halt if market closes mid-session
   useEffect(() => {
@@ -695,27 +759,31 @@ export function useBotLoop(
     if (!userId) {
       setSessionStats(emptyStats());
       setTradeHistory([]);
-      setActiveTrade(null);
-      setActivePlan(null);
+      setActivePlans([]);
+      setActiveTrades([]);
       return;
     }
     const uid = userId;
 
     async function recoverSession() {
       try {
-        const [stats, trades, openTrade] = await Promise.all([
+        const [stats, trades, openTrades] = await Promise.all([
           loadStats(uid),
           loadTodayTrades(uid),
-          loadOpenTrade(uid)
+          loadOpenTrades(uid)
         ]);
 
         if (stats)     setSessionStats(stats);
         if (trades)    setTradeHistory(trades);
-        if (openTrade) {
-          setActiveTrade(openTrade);
-          setActivePlan(openTrade.plan);
+        if (openTrades && openTrades.length > 0) {
+          setActiveTrades(openTrades);
+          setActivePlans(openTrades.map(t => t.plan));
           setPhase('IN_TRADE');
         }
+
+        // Initialize virtual balance
+        const bal = await initVirtualBalance(uid);
+        setVirtualBalance(bal);
       } catch (err) {
         console.error('[BotLoop] Session recovery failed:', err);
       }
@@ -724,6 +792,23 @@ export function useBotLoop(
     recoverSession();
   }, [isIdle, userId]); // runs when bot is toggled or user changes
 
+  // Computed fields for backward compatibility and reactive UI elements
+  const activePlan = activePlans[0] ?? null;
+  const activeTrade = activeTrades[0] ?? null;
+
+  const firstTrade = activeTrades[0];
+  const unrealizedPnL = firstTrade && feed.currentPrice
+    ? parseFloat(((feed.currentPrice - firstTrade.entryPrice) * firstTrade.plan.positionSize).toFixed(2))
+    : null;
+  const unrealizedPnLPct = firstTrade && unrealizedPnL
+    ? parseFloat(((unrealizedPnL / (firstTrade.entryPrice * firstTrade.plan.positionSize)) * 100).toFixed(2))
+    : null;
+  const trailSL = firstTrade ? firstTrade.plan.stopLoss : 0;
+  const tp1Hit = firstTrade ? false : false;
+  const timeRemainingMs = firstTrade
+    ? Math.max(0, (firstTrade.openedAt + (firstTrade.plan.maxHoldingMinutes ?? 15) * 60_000) - Date.now())
+    : null;
+
   return {
     symbol,
     phase,
@@ -731,6 +816,9 @@ export function useBotLoop(
     ohlcvBuffer:     feed.ohlcvBuffer,
     activePlan,
     activeTrade,
+    activePlans,
+    activeTrades,
+    virtualBalance,
     tradeHistory,
     sessionStats,
     stabilityCount,
@@ -747,11 +835,11 @@ export function useBotLoop(
     forceExit,
 
     // Position watcher live data — null when not in trade
-    trailSL:          watcher.trailSL,
-    tp1Hit:           watcher.tp1Hit,
-    unrealizedPnL:    watcher.unrealizedPnL,
-    unrealizedPnLPct: watcher.unrealizedPnLPct,
-    timeRemainingMs:  watcher.timeRemainingMs,
+    trailSL,
+    tp1Hit,
+    unrealizedPnL,
+    unrealizedPnLPct,
+    timeRemainingMs,
     lastChartUrl,
     lastAnalyzedAt,
     isAnalyzing,

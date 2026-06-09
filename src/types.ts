@@ -174,6 +174,7 @@ export interface ScalpingPlan {
   tpMode: TPMode;
   instrument: ScalpInstrument;
   noteReasons: string[];        // human-readable confluence/blocker reasons
+  investmentRupees?: number;
 }
 
 export interface PathEvent {
@@ -240,6 +241,10 @@ export interface ScalpConfig {
   leverage: number;             // default 1
   instrument: ScalpInstrument;  // default EQUITY_INTRADAY
   lotSize: number;              // default 1 (auto from symbol if INDEX_FUT)
+  investmentPerTrade?: number;
+  rrRatioChoice?: number;
+  maxConcurrentTrades?: number;
+  useConfidenceThreshold?: boolean;
   // SL / TP
   slMode: SLMode;               // default 'AUTO'
   atrMultiplierSL: number;      // default 1.2

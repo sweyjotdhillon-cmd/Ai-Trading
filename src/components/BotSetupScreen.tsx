@@ -135,6 +135,11 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
   const [capitalInput,      setCapitalInput]      = useState('100000');
   const [marketHoursGate,   setMarketHoursGate]   = useState(false);
 
+  const [investmentPerTrade, setInvestmentPerTrade] = useState(10000);
+  const [rrRatioChoice,      setRrRatioChoice]      = useState<1.5 | 2 | 2.5 | 3 | 4>(2);
+  const [useConfidenceThreshold, setUseConfidenceThreshold] = useState(true);
+  const [maxConcurrentTrades, setMaxConcurrentTrades] = useState(3);
+
   const [errors, setErrors] = useState<string[]>([]);
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -231,6 +236,10 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
     if (errs.length > 0) return;
 
     const config = buildConfigFromPreset(preset, parsedCapital, instrument, timeframe, marketHoursGate);
+    config.investmentPerTrade = investmentPerTrade;
+    config.rrRatioChoice = rrRatioChoice;
+    config.useConfidenceThreshold = useConfidenceThreshold;
+    config.maxConcurrentTrades = maxConcurrentTrades;
 
     onStart({
       symbol:           selectedStock!.symbol,
@@ -240,10 +249,18 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
       minConfidence,
       techniquesList,
       techFileName,
-    });
-  }, [selectedStock, capitalInput, preset, instrument, timeframe, minConfidence, techniquesList, techFileName, marketHoursGate, onStart]);
+      investmentPerTrade,
+      rrRatioChoice,
+      useConfidenceThreshold,
+      maxConcurrentTrades,
+    } as any);
+  }, [selectedStock, capitalInput, preset, instrument, timeframe, minConfidence, techniquesList, techFileName, marketHoursGate, investmentPerTrade, rrRatioChoice, useConfidenceThreshold, maxConcurrentTrades, onStart]);
 
   const previewConfig = buildConfigFromPreset(preset, Number(capitalInput) || 100000, instrument, timeframe, marketHoursGate);
+  previewConfig.investmentPerTrade = investmentPerTrade;
+  previewConfig.rrRatioChoice = rrRatioChoice;
+  previewConfig.useConfidenceThreshold = useConfidenceThreshold;
+  previewConfig.maxConcurrentTrades = maxConcurrentTrades;
 
   return (
     <div className="flex flex-col gap-6 p-6 bg-gray-900 h-full overflow-y-auto text-white max-w-lg mx-auto pb-24">
@@ -424,21 +441,114 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
         </div>
       </div>
 
+      {/* Control 1 — Investment per trade (₹) */}
       <div className="bg-gray-800 p-4 rounded-lg flex flex-col gap-2">
-        <h2 className="font-bold text-gray-300 flex justify-between">
-          <span>MIN CONFIDENCE THRESHOLD</span>
-          <span className="text-blue-400">{minConfidence}%</span>
-        </h2>
-        <input 
-          type="range"
-          min="50" max="90" step="5"
-          value={minConfidence}
-          onChange={(e) => setMinConfidence(Number(e.target.value))}
-          className="w-full mt-2"
-        />
-        <div className="text-xs text-gray-400 mt-1">
-          Bot will only trade signals above {minConfidence}%
+        <h2 className="font-bold text-gray-300 text-sm md:text-base">INVESTMENT PER TRADE (₹)</h2>
+        <div className="flex items-center gap-2 mt-1">
+          <span className="text-zinc-400 font-mono">₹</span>
+          <input 
+            type="number"
+            min="500"
+            max={Number(capitalInput) || 100000}
+            value={investmentPerTrade}
+            onChange={(e) => {
+              const val = Math.max(500, Number(e.target.value));
+              setInvestmentPerTrade(val);
+            }}
+            className="flex-1 bg-gray-700 text-white border border-gray-600 rounded p-2 focus:outline-none focus:border-blue-500 font-mono"
+          />
         </div>
+        <p className="text-[10px] text-zinc-400 leading-normal mt-0.5">
+          Virtual rupees allocated per concurrent stock position. Minimum ₹500.
+        </p>
+      </div>
+
+      {/* Control 2 — R:R Ratio selector */}
+      <div className="bg-gray-800 p-4 rounded-lg flex flex-col gap-2">
+        <h2 className="font-bold text-zinc-300 text-sm md:text-base">RISK:REWARD RATIO</h2>
+        <div className="flex divide-zinc-700 border border-zinc-700 bg-zinc-800/40 rounded-xl overflow-hidden mt-1 text-center">
+          {([1.5, 2, 2.5, 3, 4] as const).map(ratio => (
+            <button
+              key={ratio}
+              type="button"
+              onClick={() => setRrRatioChoice(ratio)}
+              className={`flex-1 py-1.5 text-xs font-mono font-bold transition-all ${
+                rrRatioChoice === ratio
+                  ? 'bg-blue-600 text-white shadow-inner font-extrabold'
+                  : 'bg-gray-700 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/80'
+              }`}
+            >
+              {ratio.toFixed(1)}x
+            </button>
+          ))}
+        </div>
+        <p className="text-[10px] text-zinc-400 leading-normal mt-1">
+          Target profit at <span className="text-blue-400 font-bold">{rrRatioChoice}×</span> your risk distance (single full take-profit exit, no partials).
+        </p>
+      </div>
+
+      {/* Control 3 — Confidence gate */}
+      <div className="bg-gray-800 p-4 rounded-lg flex flex-col gap-2">
+        <div className="flex justify-between items-center">
+          <label className="font-bold text-gray-300 text-sm md:text-base">CONFIDENCE GATE</label>
+          <button
+            onClick={() => setUseConfidenceThreshold(!useConfidenceThreshold)}
+            className={`px-3 py-1 bg-gray-700 rounded text-xs font-bold font-mono transition-colors border ${
+              useConfidenceThreshold 
+                ? 'bg-blue-600 border-blue-500 text-white' 
+                : 'bg-zinc-700/40 border-zinc-600/50 text-zinc-400 hover:bg-zinc-700/60'
+            }`}
+          >
+            {useConfidenceThreshold ? 'ENABLED' : 'DISABLED'}
+          </button>
+        </div>
+
+        {useConfidenceThreshold ? (
+          <div className="mt-2 flex flex-col gap-2">
+            <h3 className="font-bold text-zinc-300 flex justify-between text-xs">
+              <span>MIN CONFIDENCE THRESHOLD</span>
+              <span className="text-blue-400 font-mono font-bold">{minConfidence}%</span>
+            </h3>
+            <input 
+              type="range"
+              min="50" max="95" step="5"
+              value={minConfidence}
+              onChange={(e) => setMinConfidence(Number(e.target.value))}
+              className="w-full mt-1"
+            />
+            <div className="text-[10px] text-gray-400 leading-normal mt-0.5">
+              Bot will only execute trade signals that score at or above {minConfidence}% from judges.
+            </div>
+          </div>
+        ) : (
+          <div className="text-[11px] text-amber-400 font-mono leading-normal bg-amber-500/5 p-2 rounded-lg border border-amber-500/10 mt-1">
+            ⚠ Confidence threshold bypassed. The bot will automatically execute trade setups on any valid Bull win signal, regardless of confidence scores or technique weights.
+          </div>
+        )}
+      </div>
+
+      {/* Control 4 — Max concurrent trades selector */}
+      <div className="bg-gray-800 p-4 rounded-lg flex flex-col gap-2">
+        <h2 className="font-bold text-zinc-300 text-sm md:text-base">MAX CONCURRENT TRADES</h2>
+        <div className="flex divide-zinc-700 border border-zinc-700 bg-zinc-800/40 rounded-xl overflow-hidden mt-1 text-center">
+          {([1, 2, 3, 5, 10] as const).map(num => (
+            <button
+              key={num}
+              type="button"
+              onClick={() => setMaxConcurrentTrades(num)}
+              className={`flex-1 py-1.5 text-xs font-mono font-bold transition-all ${
+                maxConcurrentTrades === num
+                  ? 'bg-blue-600 text-white shadow-inner font-extrabold'
+                  : 'bg-gray-700 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/80'
+              }`}
+            >
+              {num}
+            </button>
+          ))}
+        </div>
+        <p className="text-[10px] text-zinc-400 leading-normal mt-1">
+          Max active stock positions the bot will open simultaneously. Limit: <span className="text-blue-400 font-bold">{maxConcurrentTrades} trades</span>.
+        </p>
       </div>
 
       <div className="bg-gray-800 p-4 rounded-lg flex flex-col gap-2" id="market-hours-gate-container">

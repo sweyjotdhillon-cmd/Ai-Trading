@@ -7,7 +7,6 @@ import { SwingPivot } from './marketStructure';
 import { checkRiskCaps } from './riskGuard';
 import { computeRoundTripCharges } from './brokerCharges';
 import { buildScalpFeatures } from './scalpFeatures';
-import { scalpOverTradingPenalty } from './neutralityGuard';
 
 export interface ScalpContext {
   config: ScalpConfig;
@@ -41,42 +40,35 @@ export function findRecentSwingLow(pivots: SwingPivot[], currentBarIndex: number
 }
 
 export function calculateStopLoss(entry: number, mode: SLMode, ctx: ScalpContext): number {
-  const atr14 = ctx.atr14[ctx.atr14.length - 1] || entry * 0.01;
+  const TICK = 0.05;
   const swing = findRecentSwingLow(ctx.pivots, ctx.currentBarIndex);
-  const structural = (swing ?? entry) - atr14 * 0.3;
+  const atr14 = ctx.atr14[ctx.atr14.length - 1] || entry * 0.01;
 
-  switch (mode) {
-    case 'ATR':
-      return entry - atr14 * ctx.config.atrMultiplierSL;
-    case 'PERCENT':
-      return entry * (1 - ctx.config.slPercent / 100);
-    case 'STRUCTURE':
-      return structural;
-    case 'AUTO':
-    default: {
-      // Safest = tightest valid SL (highest number, but still below entry)
-      const candidates = [
-        entry - atr14 * ctx.config.atrMultiplierSL,
-        structural,
-      ].filter(v => v > 0 && v < entry);
-      return candidates.length ? Math.max(...candidates) : entry - atr14 * 1.5;
-    }
+  let sl: number;
+  if (swing !== undefined) {
+    sl = swing - (2 * TICK);
+  } else {
+    sl = entry - atr14 * 1.5;
   }
+
+  // Floor: sl must never be more than 1.5% below entry
+  sl = Math.max(sl, entry * 0.985);
+
+  return sl;
 }
 
 export function buildExitPlan(entry: number, sl: number, ctx: ScalpContext) {
   const risk = entry - sl;
   if (risk <= 0) throw new Error('Invalid SL');
-  const atr14 = ctx.atr14[ctx.atr14.length - 1] || entry * 0.01;
-  const tp1 = entry + risk * ctx.config.tp1RMultiple;       // default 1R
-  const tp2 = entry + risk * ctx.config.rrRatio;            // default 2R
+  const ratio = ctx.config.rrRatioChoice ?? 2.0;
+  const tp = entry + risk * ratio;
   return {
-    tp1,
-    tp2,
-    trailingActivate: tp1,
-    trailingDistance: atr14 * ctx.config.trailMultiplier,
-    breakEvenAfter: tp1,
-    rr: ctx.config.rrRatio,
+    tp1: tp,
+    tp2: tp,
+    trailingActivate: tp,
+    trailingDistance: risk * 0.3,
+    breakEvenAfter: tp,
+    rr: ratio,
   };
 }
 
@@ -132,13 +124,6 @@ export function evaluateScalpSignal(
     return { signal: 'NO_TRADE', confluenceScore, blockers: ['NO_EDGE'], features, rawWinner };
   }
 
-  const penalty = scalpOverTradingPenalty();
-  const effectiveMinConfluence = ctx.config.minConfluence + Math.round(penalty * 10);
-  
-  if (confluenceScore < effectiveMinConfluence) {
-    return { signal: 'WAIT', confluenceScore, blockers: [`LOW_CONFLUENCE: Need ${effectiveMinConfluence} (Got ${confluenceScore})`], features, rawWinner };
-  }
-
   // LAYER 3 - Plan formulation
   const blockers: string[] = [];
   
@@ -156,16 +141,10 @@ export function evaluateScalpSignal(
   }
 
   // Position Sizing
-  const totalCapitalAtRisk = ctx.config.capitalRupees * (ctx.config.riskPerTradePct / 100);
+  const investmentAmount = ctx.config.investmentPerTrade ?? 10000;
   const lotSize = ctx.config.lotSize ?? 1;
-  const baseSizeShares = totalCapitalAtRisk / riskPerShare;
-  
-  // Leverage relaxes the maxPositionAllowed cap (Section 13)
-  const maxPositionAllowedRupees = ctx.config.capitalRupees * (ctx.config.maxPositionPctCapital / 100) * ctx.config.leverage;
-  const maxSharesByPositionLimit = maxPositionAllowedRupees / entry;
-  
-  let sizeShares = Math.min(baseSizeShares, maxSharesByPositionLimit);
-  sizeShares = Math.floor(sizeShares / lotSize) * lotSize;
+  let sizeShares = Math.floor(investmentAmount / entry / lotSize) * lotSize;
+  if (sizeShares <= 0) sizeShares = 1;
 
   if (sizeShares <= 0) {
     blockers.push('POSITION_SIZE_ZERO');
@@ -231,6 +210,7 @@ export function evaluateScalpSignal(
     tpMode: ctx.config.tpMode,
     instrument: ctx.config.instrument,
     noteReasons: blockers,
+    investmentRupees: sizeShares * entry,
   };
 
   return {
@@ -253,6 +233,10 @@ export function getDefaultScalpConfig(): ScalpConfig {
     leverage: 1,
     instrument: 'EQUITY_INTRADAY',
     lotSize: 1,
+    investmentPerTrade: 10000,
+    rrRatioChoice: 2,
+    useConfidenceThreshold: true,
+    maxConcurrentTrades: 1,
     slMode: 'AUTO',
     atrMultiplierSL: 1.2,
     slPercent: 0.4,
