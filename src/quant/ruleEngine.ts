@@ -52,7 +52,8 @@ export interface DecisionResult extends JudgeVerdict {
   j1Score: number;
   j2Score: number;
   j3Score: number;
-  j4Score: number;
+  j4Score: number;       // DEPRECATED — kept for legacy callers only, equals j4PenaltyPct
+  j4PenaltyPct: number;  // Skeptic penalty as a percentage (0–100). NOT a judge score. "Skeptic stripped X% confidence."
 
   // Legacy fields
   confidence: number;
@@ -128,7 +129,8 @@ export function evaluateSignal(
       j1Score: 0,
       j2Score: 0,
       j3Score: 0,
-      j4Score: isNoTech ? 0 : 70, // skepticPenalty = (1 - 0.3) * 100 = 70%
+      j4Score: isNoTech ? 0 : 70,
+      j4PenaltyPct: isNoTech ? 0 : 70,
       noTechniquesUploaded: isNoTech,
 
       // Legacy fields
@@ -505,26 +507,56 @@ export function evaluateSignal(
   // ═════════════════════════════════════════════════════════════
   let bullJ2Intrinsic = 0;
   let bearJ2Intrinsic = 0;
+
+  // Bug #12 fix: check upfront whether user loaded any RSI or Stochastic techniques.
+  // If a technique already covers RSI/Stoch, the intrinsic layer must skip those indicators
+  // to prevent the same signal scoring twice from two owners.
+  const rsiTechLoaded = activeList.some(t => {
+    const n = (typeof t === 'object' ? (t.name || t.technique || '') : String(t)).toLowerCase().replace(/[\s_-]/g, '');
+    return n.includes('rsi');
+  });
+  const stochTechLoaded = activeList.some(t => {
+    const n = (typeof t === 'object' ? (t.name || t.technique || '') : String(t)).toLowerCase().replace(/[\s_-]/g, '');
+    return n.includes('stoch');
+  });
+  const macdTechLoaded = activeList.some(t => {
+    const n = (typeof t === 'object' ? (t.name || t.technique || '') : String(t)).toLowerCase().replace(/[\s_-]/g, '');
+    return n.includes('macd');
+  });
+
   {
     // RSI extremes
     const rVal = techCache.rsiVals?.[last] ?? 50;
     if (rVal < 30) {
-      const pts = rVal < 20 ? 2.0 : 1.25;
-      bullJ2Intrinsic += pts;
-      auditPush('J2', 'BULL', 'intrinsic.rsi_oversold',
-        pts, `RSI(14)=${rVal.toFixed(2)} < 30 oversold`);
+      if (rsiTechLoaded) {
+        auditPush('J2', 'BULL', 'intrinsic.rsi_oversold_skipped', 0,
+          `RSI(14)=${rVal.toFixed(2)} oversold SKIPPED — RSI technique already owns this indicator`);
+      } else {
+        const pts = rVal < 20 ? 2.0 : 1.25;
+        bullJ2Intrinsic += pts;
+        auditPush('J2', 'BULL', 'intrinsic.rsi_oversold',
+          pts, `RSI(14)=${rVal.toFixed(2)} < 30 oversold`);
+      }
     }
     if (rVal > 70) {
-      const pts = rVal > 80 ? 2.0 : 1.25;
-      bearJ2Intrinsic += pts;
-      auditPush('J2', 'BEAR', 'intrinsic.rsi_overbought',
-        pts, `RSI(14)=${rVal.toFixed(2)} > 70 overbought`);
+      // Bug #4 fix: RSI overbought only scores BEAR when J1 has NOT confirmed
+      // a strong bull trend. In a confirmed uptrend RSI=99 is momentum, not reversal.
+      const strongBullTrend = bullJ1Raw >= 3.0;
+      if (!strongBullTrend) {
+        const pts = rVal > 80 ? 2.0 : 1.25;
+        bearJ2Intrinsic += pts;
+        auditPush('J2', 'BEAR', 'intrinsic.rsi_overbought',
+          pts, `RSI(14)=${rVal.toFixed(2)} > 70 overbought (J1 bull=${bullJ1Raw.toFixed(2)} < 3.0, gate passed)`);
+      } else {
+        auditPush('J2', 'BEAR', 'intrinsic.rsi_overbought_suppressed',
+          0, `RSI(14)=${rVal.toFixed(2)} overbought SUPPRESSED — strong bull trend confirmed (J1 bull=${bullJ1Raw.toFixed(2)} >= 3.0)`);
+      }
     }
 
     // Stochastic
     const kVal = techCache.stochVals?.k?.[last];
     const dVal = techCache.stochVals?.d?.[last];
-    if (kVal != null && dVal != null && !isNaN(kVal) && !isNaN(dVal)) {
+    if (!stochTechLoaded && kVal != null && dVal != null && !isNaN(kVal) && !isNaN(dVal)) {
       if (kVal < 20 && dVal < 20) {
         bullJ2Intrinsic += 1.0;
         auditPush('J2', 'BULL', 'intrinsic.stoch_oversold',
@@ -550,6 +582,9 @@ export function evaluateSignal(
             0.75, `Stoch K/D bear cross at K=${kVal.toFixed(1)}`);
         }
       }
+    } else if (stochTechLoaded && kVal != null) {
+      auditPush('J2', 'BULL', 'intrinsic.stoch_skipped', 0,
+        `Stoch K=${kVal.toFixed(1)} SKIPPED — Stochastic technique already owns this indicator`);
     }
 
     // RSI divergence (uses enhanced detectRSIDivergence - BUG #5)
@@ -570,8 +605,12 @@ export function evaluateSignal(
       // Bypassed if insufficient rsi data length
     }
 
-    // MACD divergence (uses new detectMACDDivergence - BUG #6)
+    // MACD divergence — skip if a MACD technique is loaded (Bug #12)
     try {
+      if (macdTechLoaded) {
+        auditPush('J2', 'BULL', 'intrinsic.macd_divergence_skipped', 0,
+          `MACD divergence intrinsic SKIPPED — MACD technique already owns this indicator`);
+      } else {
       const mDiv = detectMACDDivergence(Array.from(closes), techCache.macdVals);
       if (mDiv.type === 'BULLISH') {
         bullJ2Intrinsic += 1.50;
@@ -592,6 +631,7 @@ export function evaluateSignal(
         auditPush('J3', 'BEAR', 'intrinsic.macd_divergence_bounce',
           1.00, `MACD Bearish divergence contributes to J3 peak strength`);
       }
+      } // end macdTechLoaded else
     } catch {
       // Bypassed if insufficient macd data length
     }
@@ -693,30 +733,52 @@ export function evaluateSignal(
       }
     }
 
-    // Wick rejection on last candle (BUG #4)
+    // Wick rejection on last candle
+    // Bug #8 fix: gate intrinsic wick scoring if a technique already claimed this geometry.
+    // Hammer/hangingman techniques own the lower wick; shootingstar/invertedhammer own the upper wick.
     const lc = ohlcSeries[last];
     if (lc) {
       const body = Math.abs(lc.close - lc.open);
       const uW   = lc.high - Math.max(lc.open, lc.close);
       const lW   = Math.min(lc.open, lc.close) - lc.low;
+
+      // Check if any loaded technique already matched lower-wick geometry on this candle
+      const hammerTechMatched = evaluationVotes.some(v =>
+        (v.name === 'hammer' || v.name === 'hangingman') && (v.vote === 'BULL' || v.vote === 'BEAR')
+      );
+      // Check if any loaded technique already matched upper-wick geometry on this candle
+      const shootingStarTechMatched = evaluationVotes.some(v =>
+        (v.name === 'shootingstar' || v.name === 'invertedhammer') && (v.vote === 'BULL' || v.vote === 'BEAR')
+      );
+
       if (lW > body * 1.8 && lW > 0) {
-        const ratio = lW / Math.max(1e-9, body);
-        const pts = parseFloat((0.55 + Math.log(1 + ratio - 1.8)).toFixed(3));
-        bullJ3Intrinsic += pts;
-        auditPush('J3', 'BULL', 'intrinsic.lower_wick_rejection',
-          pts, `Lower wick rejection (ratio=${ratio.toFixed(2)}, floor=0.55 + log topper)`);
-        if (ratio > 4.5) {
-          bullBlowOffSurplus = parseFloat(Math.min(1.0, 0.15 * (ratio - 4.5)).toFixed(3));
+        if (hammerTechMatched) {
+          auditPush('J3', 'BULL', 'intrinsic.lower_wick_rejection_skipped',
+            0, `Lower wick skipped — hammer/hangingman technique already owns this geometry`);
+        } else {
+          const ratio = lW / Math.max(1e-9, body);
+          const pts = parseFloat((0.55 + Math.log(1 + ratio - 1.8)).toFixed(3));
+          bullJ3Intrinsic += pts;
+          auditPush('J3', 'BULL', 'intrinsic.lower_wick_rejection',
+            pts, `Lower wick rejection (ratio=${ratio.toFixed(2)}, floor=0.55 + log topper)`);
+          if (ratio > 4.5) {
+            bullBlowOffSurplus = parseFloat(Math.min(1.0, 0.15 * (ratio - 4.5)).toFixed(3));
+          }
         }
       }
       if (uW > body * 1.8 && uW > 0) {
-        const ratio = uW / Math.max(1e-9, body);
-        const pts = parseFloat((0.55 + Math.log(1 + ratio - 1.8)).toFixed(3));
-        bearJ3Intrinsic += pts;
-        auditPush('J3', 'BEAR', 'intrinsic.upper_wick_rejection',
-          pts, `Upper wick rejection (ratio=${ratio.toFixed(2)}, floor=0.55 + log topper)`);
-        if (ratio > 4.5) {
-          bearBlowOffSurplus = parseFloat(Math.min(1.0, 0.15 * (ratio - 4.5)).toFixed(3));
+        if (shootingStarTechMatched) {
+          auditPush('J3', 'BEAR', 'intrinsic.upper_wick_rejection_skipped',
+            0, `Upper wick skipped — shootingstar/invertedhammer technique already owns this geometry`);
+        } else {
+          const ratio = uW / Math.max(1e-9, body);
+          const pts = parseFloat((0.55 + Math.log(1 + ratio - 1.8)).toFixed(3));
+          bearJ3Intrinsic += pts;
+          auditPush('J3', 'BEAR', 'intrinsic.upper_wick_rejection',
+            pts, `Upper wick rejection (ratio=${ratio.toFixed(2)}, floor=0.55 + log topper)`);
+          if (ratio > 4.5) {
+            bearBlowOffSurplus = parseFloat(Math.min(1.0, 0.15 * (ratio - 4.5)).toFixed(3));
+          }
         }
       }
     }
@@ -1014,7 +1076,17 @@ export function evaluateSignal(
       }
     );
     finalSignal = nelResult.signal;
-    finalConfidence = nelResult.adjustedConfidence;
+    // Bug #10 fix: always recompute confidence from the single canonical formula after
+    // NEL may have adjusted bull/bear totals. Never use the pre-NEL initialConfidence as final.
+    const nelWinnerTotal = nelResult.adjustedBull > nelResult.adjustedBear
+      ? nelResult.adjustedBull
+      : nelResult.adjustedBear;
+    finalConfidence = Math.round((nelWinnerTotal * skepticMultiplier / confidenceDenominator) * 100);
+    // Apply soft-band damping from NEL if it was triggered (ratio from NEL)
+    if (nelResult.adjustedConfidence < initialConfidence && initialConfidence > 0) {
+      const dampRatio = nelResult.adjustedConfidence / initialConfidence;
+      finalConfidence = Math.round(finalConfidence * dampRatio);
+    }
     adjustedBull = nelResult.adjustedBull;
     adjustedBear = nelResult.adjustedBear;
     nelMessages = nelResult.neutralityActions;
@@ -1053,13 +1125,13 @@ export function evaluateSignal(
     noTradeReason = `TIE: Bull and Bear scored identically (${adjustedBull.toFixed(2)} vs ${adjustedBear.toFixed(2)}). No directional edge.`;
   } else if (margin < minMarginThreshold) {
     finalSignal = 'NO_TRADE';
-    noTradeReason = `Margin of ${margin.toFixed(1)} is below minimum threshold of ${minMarginThreshold.toFixed(1)}. Scores (${adjustedBull.toFixed(2)} vs ${adjustedBear.toFixed(2)}) are too close (minimum difference of ${minMarginThreshold.toFixed(1)} required).`;
+    noTradeReason = `Margin of ${margin.toFixed(2)} is below minimum threshold of ${minMarginThreshold.toFixed(2)}. Scores (${adjustedBull.toFixed(2)} vs ${adjustedBear.toFixed(2)}) are too close (minimum difference of ${minMarginThreshold.toFixed(2)} required).`;
   } else if (winningTotal < minStrengthThreshold) {
     finalSignal = 'NO_TRADE';
     noTradeReason = `Winning total of ${winningTotal.toFixed(1)} is below minimum strength threshold of ${minStrengthThreshold.toFixed(1)}/12. Evidence too weak to trade.`;
   } else if (skepticVerdict === 'WEAK' && margin < minSkepticMarginThreshold) {
     finalSignal = 'NO_TRADE';
-    noTradeReason = `Skeptic issued WEAK verdict with insufficient margin. High risk environment requires minimum margin of ${minSkepticMarginThreshold.toFixed(1)} (found ${margin.toFixed(1)}).`;
+    noTradeReason = `Skeptic issued WEAK verdict with insufficient margin. High risk environment requires minimum margin of ${minSkepticMarginThreshold.toFixed(2)} (found ${margin.toFixed(2)}).`;
   } else if (finalConfidence < minConfidenceThreshold) {
     finalSignal = 'NO_TRADE';
     noTradeReason = `Final confidence of ${finalConfidence}% falls below minimum actionable threshold of ${minConfidenceThreshold.toFixed(0)}%.`;
@@ -1082,7 +1154,7 @@ export function evaluateSignal(
     ruling = `NO_TRADE — ${noTradeReason} A clearer trend or score divergence is required to safely execute scalp trades.`;
   } else {
     const skepticNote = skepticMultiplier < 0.85 ? ` Skeptic flagged concerns; multiplied score by ${skepticMultiplier.toFixed(2)}.` : '';
-    ruling = `${finalSignal} ENTRY — ${primaryEvidence}. Margin ${margin.toFixed(1)}, Confidence ${finalConfidence}%.${skepticNote}`;
+    ruling = `${finalSignal} ENTRY — ${primaryEvidence}. Margin ${margin.toFixed(2)}, Confidence ${finalConfidence}%.${skepticNote}`;
   }
 
   // --- Step 5: Formatted Report Layout ---
@@ -1125,7 +1197,7 @@ export function evaluateSignal(
 │  Total:        ${cases.bear.total.toFixed(1).padEnd(5)}/ 12.0        │
 ├─────────────────────────────────────┤
 │  SKEPTIC VETO:  ${skepticMultiplier.toFixed(2)} (${skepticVerdict.padEnd(7)}) │
-│  Margin:        ${margin.toFixed(1).padEnd(19)} │
+│  Margin:        ${margin.toFixed(2).padEnd(19)} │
 │  Final Score:   ${finalScore.toFixed(1).padEnd(19)} │
 ├─────────────────────────────────────┤
 │  RULING:                            │
@@ -1178,26 +1250,44 @@ ${rulingStr}
     })),
     judges: {
       J1: {
-        rawBull: techBullJ1,
-        rawBear: techBearJ1,
+        techOnlyBull: techBullJ1,
+        techOnlyBear: techBearJ1,
+        intrinsicBull: Number(bullJ1Intrinsic.toFixed(3)),
+        intrinsicBear: Number(bearJ1Intrinsic.toFixed(3)),
+        preCapBull: Number(bullJ1Raw.toFixed(3)),
+        preCapBear: Number(bearJ1Raw.toFixed(3)),
         cappedBull: bullJ1,
         cappedBear: bearJ1,
+        hurstTransformBull: bullJ1 > 0 ? Number((cases.bull.j1 / bullJ1).toFixed(4)) : 1,
+        hurstTransformBear: bearJ1 > 0 ? Number((cases.bear.j1 / bearJ1).toFixed(4)) : 1,
         finalBull: cases.bull.j1,
         finalBear: cases.bear.j1
       },
       J2: {
-        rawBull: techBullJ2,
-        rawBear: techBearJ2,
+        techOnlyBull: techBullJ2,
+        techOnlyBear: techBearJ2,
+        intrinsicBull: Number(bullJ2Intrinsic.toFixed(3)),
+        intrinsicBear: Number(bearJ2Intrinsic.toFixed(3)),
+        preCapBull: Number(bullJ2Raw.toFixed(3)),
+        preCapBear: Number(bearJ2Raw.toFixed(3)),
         cappedBull: bullJ2,
         cappedBear: bearJ2,
+        hurstTransformBull: bullJ2 > 0 ? Number((cases.bull.j2 / bullJ2).toFixed(4)) : 1,
+        hurstTransformBear: bearJ2 > 0 ? Number((cases.bear.j2 / bearJ2).toFixed(4)) : 1,
         finalBull: cases.bull.j2,
         finalBear: cases.bear.j2
       },
       J3: {
-        rawBull: bullJ3Raw,
-        rawBear: bearJ3Raw,
+        techOnlyBull: techBullJ3,
+        techOnlyBear: techBearJ3,
+        intrinsicBull: Number(bullJ3Intrinsic.toFixed(3)),
+        intrinsicBear: Number(bearJ3Intrinsic.toFixed(3)),
+        preCapBull: Number(bullJ3Raw.toFixed(3)),
+        preCapBear: Number(bearJ3Raw.toFixed(3)),
         cappedBull: bullJ3,
         cappedBear: bearJ3,
+        hurstTransformBull: bullJ3 > 0 ? Number((cases.bull.j3 / bullJ3).toFixed(4)) : 1,
+        hurstTransformBear: bearJ3 > 0 ? Number((cases.bear.j3 / bearJ3).toFixed(4)) : 1,
         finalBull: cases.bull.j3,
         finalBear: cases.bear.j3,
         components: {
@@ -1277,7 +1367,8 @@ ${rulingStr}
     j1Score: cases.bull.j1 + cases.bear.j1,
     j2Score: cases.bull.j2 + cases.bear.j2,
     j3Score: cases.bull.j3 + cases.bear.j3,
-    j4Score: skepticPenalty,
+    j4Score: skepticPenalty,       // legacy
+    j4PenaltyPct: skepticPenalty,  // Skeptic stripped X% confidence — not a judge score
     techniquesEvaluation,
     auditTrail,
     noTechniquesUploaded: isNoTech,

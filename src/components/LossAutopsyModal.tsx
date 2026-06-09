@@ -163,16 +163,21 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, p
         newRootCauses.push('SKEPTIC_WARNING_IGNORED');
       }
 
-      // 4. CROWD_CONFUSION
+           // 4. CROWD_CONFUSION
+      // Bug #13 fix: skepticTotal must use j4PenaltyPct (0–100 scale) not j3 (0–3 scale).
+      // Threshold adjusted to 20 points on the 0–100 pct scale to mean "all three signals close".
       const casesData = judge.cases || { bull: { total: 0 }, bear: { total: 0 } };
       const bullTotal = casesData.bull.total || 0;
       const bearTotal = casesData.bear.total || 0;
-      const skepticTotal = j3; // j3 is the skeptic penalty
+      // Normalise bull/bear totals (0–12 max) to 0–100 scale so all three are comparable
+      const bullPct = (bullTotal / 12) * 100;
+      const bearPct = (bearTotal / 12) * 100;
+      const skepticTotal = judge.j4PenaltyPct ?? judge.j4Score ?? 0; // penalty % 0–100
 
-      const scoresArr = [bullTotal, bearTotal, skepticTotal];
+      const scoresArr = [bullPct, bearPct, skepticTotal];
       const maxScore = Math.max(...scoresArr);
       const minScore = Math.min(...scoresArr);
-      if (maxScore - minScore <= 15) {
+      if (maxScore - minScore <= 20) {
          categories['CROWD_CONFUSION'] = {
            severity: 2,
            label: 'Crowd Confusion',
@@ -214,7 +219,7 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, p
            j2: bearCases.j2,
            j3: bearCases.j3,
            smokingGun: { label: gunLabel, score: maxBear }
-        };
+         };
       } else {
         // Fallback BULL opponent
         const bullCases = cases.bull || { j1: 0, j2: 0, j3: 0 };
@@ -230,7 +235,7 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, p
            j2: bullCases.j2,
            j3: bullCases.j3,
            smokingGun: { label: gunLabel, score: maxBull }
-        };
+         };
       }
       
       const J1_Bull = cases.bull.j1 || 0;
@@ -260,7 +265,9 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, p
 
       const stepsJ2 = [
         { name: 'Oscillator Oversold/Overbought', bull: rsiVal < 30 ? 2.5 : 0, bear: rsiVal > 70 ? 2.5 : 0, info: 'RSI trigger bonus weight' },
-        { name: 'Opening Breakout Gaps', bull: tradeSignal === 'LONG' && J2_Bull > 2.5 ? 1.5 : 0, bear: (tradeSignal === 'NO_TRADE') && J2_Bear > 2.5 ? 1.5 : 0, info: 'Adds weight when standard gaps support the signal' }
+        // Bug #14 fix: removed tradeSignal === 'NO_TRADE' gate — a LONG loss always has tradeSignal='LONG'
+        // so the bear gap contribution was hardcoded to 0 on every real loss. Gate removed entirely.
+        { name: 'Opening Breakout Gaps', bull: J2_Bull > 2.5 ? 1.5 : 0, bear: J2_Bear > 2.5 ? 1.5 : 0, info: 'Adds weight when standard gaps support the signal' }
       ];
 
       const stepsJ3 = [
@@ -268,10 +275,17 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, p
         { name: 'Upper Wick Rejection (Bearish)', bull: 0, bear: J3_Bear, info: 'Points awarded for long upper shadows' }
       ];
 
+      // Bug #15 fix: stepsJ4 must read from actual j4Skeptic.penalties in the auditTrail,
+      // not from emaSlope. emaSlope is trend gradient — it has nothing to do with Z-score volatility.
+      const j4Penalties: string[] = judge.auditTrail?.j4Skeptic?.penalties || [];
+      const hasExplosiveCandle = j4Penalties.some((p: string) => p.toLowerCase().includes('explosive') || p.toLowerCase().includes('z-score'));
+      const hasAtrSpike = j4Penalties.some((p: string) => p.toLowerCase().includes('atr') && p.toLowerCase().includes('spike'));
+      const hasFlatSlope = j4Penalties.some((p: string) => p.toLowerCase().includes('flat') || p.toLowerCase().includes('stagnation'));
+
       const stepsJ4 = [
-        { name: 'Z-Score Volatility Extreme', penalty: Math.abs(emaSlope) > 1.5 ? -15 : 0, info: 'Severe price deviance risk penalty' },
-        { name: 'ATR Outburst Threshold', penalty: J4_Val > 30 ? -25 : 0, info: 'Extreme market stretch penalty applied by Skeptic' },
-        { name: 'Trend Invariance Penalty', penalty: emaSlope < 0.15 ? -15 : 0, info: 'Low slope quality penalty' }
+        { name: 'Z-Score Volatility Extreme', penalty: hasExplosiveCandle ? -15 : 0, info: 'Severe price deviance risk penalty' },
+        { name: 'ATR Outburst Threshold', penalty: hasAtrSpike ? -25 : 0, info: 'Extreme market stretch penalty applied by Skeptic' },
+        { name: 'Trend Invariance Penalty', penalty: hasFlatSlope ? -15 : 0, info: 'Low slope quality penalty' }
       ];
 
       // 2. Dynamic support and resistance comparisons (What supports WERE there vs are there now)
@@ -284,31 +298,49 @@ export function LossAutopsyModal({ isOpen, onClose, analysisData, tradeSignal, p
           closeToSupport: lSupport > 0 && eClose > 0 ? `${(((eClose - lSupport) / lSupport) * 100).toFixed(2)}% above support` : 'N/A'
         },
         areThere: {
-          title: 'Supports & Resistances ARE there now (Current post-trade)',
-          supportLord: lSupport > 0 ? `$${(lSupport * 0.995).toFixed(2)}` : 'N/A', // post-crash adjusted
-          bollLower: bLower > 0 ? `$${(bLower * 0.994).toFixed(2)}` : 'N/A',
-          bMiddle: bUpper > 0 && bLower > 0 ? `$${(((bUpper + bLower) * 0.995) / 2).toFixed(2)}` : 'N/A',
-          closeToSupport: 'BROKEN DOWN (Breached by -0.52% threshold)'
+          // Bug #16 fix: removed fabricated lSupport*0.995 and hardcoded "BROKEN DOWN" string.
+          // Post-trade support state is only knowable from actual exitClose vs support levels.
+          title: 'Supports & Resistances: Exit Price vs Entry Levels',
+          supportLord: lSupport > 0 ? `$${lSupport.toFixed(2)} (entry-time)` : 'N/A',
+          bollLower: bLower > 0 ? `$${bLower.toFixed(2)} (entry-time)` : 'N/A',
+          bMiddle: bUpper > 0 && bLower > 0 ? `$${((bUpper + bLower) / 2).toFixed(2)} (entry-time)` : 'N/A',
+          closeToSupport: exClose > 0 && lSupport > 0
+            ? exClose < lSupport
+              ? `BREACHED — Exit $${exClose.toFixed(2)} fell below support $${lSupport.toFixed(2)}`
+              : `HELD — Exit $${exClose.toFixed(2)} stayed above support $${lSupport.toFixed(2)}`
+            : 'Exit price unavailable'
         }
       };
 
-      // 3. Comparisons with another scenario (Failed Trade vs Model Confluence Success Case)
+      // 3. This trade vs its own judge data — no invented benchmark
+      // Bug #17 fix: removed hardcoded "7.5 points", "5/5 perfect", "No. 4022-L" fiction.
+      // The "success case" is now derived from the actual judge scores of this trade so the
+      // comparison shows what would have been needed to pass, not a made-up number.
+      const neededMargin = 4.0; // minimum strong-signal margin threshold
+      const neededConfidence = 60; // minimum acceptable confidence
+      const marginGap = Math.max(0, neededMargin - margin).toFixed(2);
+      const confidenceGap = Math.max(0, neededConfidence - finalConfidence);
+
       const comparativeCase = {
         failedCase: {
-          title: 'This Failed Case (No. 4022-L)',
-          outcome: 'LOSS (Target Level Rejection)',
-          directionMargin: `${margin.toFixed(1)} points`,
+          title: 'This Trade',
+          outcome: 'LOSS',
+          directionMargin: `${margin.toFixed(2)} points`,
           skepticGatePenalty: `${J4_Val.toFixed(1)}%`,
-          structuralBreach: 'Entered right under dynamic Resistance without breaking out',
-          pointAlignment: `${techCount}/5 matched indicators`
+          structuralBreach: margin < neededMargin
+            ? `Margin ${margin.toFixed(2)} was ${marginGap} points below the strong-signal threshold of ${neededMargin}`
+            : 'Margin was sufficient — loss driven by other factors',
+          pointAlignment: `${techCount} technique(s) matched`
         },
         successCase: {
-          title: 'Model Standard Win Case (Benchmark)',
-          outcome: 'PROFIT (Clean Breakout Confirmation)',
-          directionMargin: '7.5 points (Dominant)',
-          skepticGatePenalty: '0.0% (Cleared)',
-          structuralBreach: 'Entered 1.2% above support with high-volume candle confirmation',
-          pointAlignment: '5/5 perfect technical alignment'
+          title: 'What a Strong-Signal Trade Looks Like',
+          outcome: 'PASS threshold',
+          directionMargin: `≥ ${neededMargin} points margin`,
+          skepticGatePenalty: '< 15% (ACCEPT verdict)',
+          structuralBreach: 'Entry with margin above threshold and skeptic in ACCEPT range',
+          pointAlignment: confidenceGap > 0
+            ? `Confidence needed ${confidenceGap}% more (was ${finalConfidence}%, needs ${neededConfidence}%)`
+            : `Confidence was ${finalConfidence}% — met the ${neededConfidence}% threshold`
         }
       };
 

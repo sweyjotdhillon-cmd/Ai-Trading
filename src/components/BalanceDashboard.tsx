@@ -19,12 +19,13 @@ interface BalanceDashboardProps {
 }
 
 export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) {
+  const STARTING_CAPITAL = 100000;
   const [balance, setBalance] = useState<number>(() => {
     try {
       const cached = localStorage.getItem('ledger_cached_balance');
-      return cached ? parseFloat(cached) : 100000;
+      return cached ? parseFloat(cached) : STARTING_CAPITAL;
     } catch {
-      return 100000;
+      return STARTING_CAPITAL;
     }
   });
   const [allTimeStats, setAllTimeStats] = useState<BotSessionStats | null>(() => {
@@ -152,9 +153,9 @@ export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) 
     : meanReturn > 0 ? 3.50 : 0.00;
 
   // Maximum Drawdown estimation
-  let peak = 100000;
+  let peak = STARTING_CAPITAL;
   let maxDD = 0;
-  let runningBal = 100000;
+  let runningBal = STARTING_CAPITAL;
   const chronologicalClosed = [...closedToday].reverse();
   
   chronologicalClosed.forEach(t => {
@@ -171,7 +172,7 @@ export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) 
   const drawdownPct = parseFloat(maxDD.toFixed(2));
 
   // Cumulative Equity series for graphing
-  let accumBal = 100000;
+  let accumBal = STARTING_CAPITAL;
   const chartData = [{ name: 'Alloc', Equity: accumBal }];
   chronologicalClosed.forEach((t, i) => {
     accumBal = parseFloat((accumBal + (t.realizedPnL ?? 0)).toFixed(2));
@@ -183,35 +184,44 @@ export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) 
   });
 
   if (chartData.length === 1) {
-    chartData.push({ name: 'Init', Equity: 100000 });
+    chartData.push({ name: 'Init', Equity: STARTING_CAPITAL });
   }
 
   // Broker charge leakage ratio
   const totalChargesPaid = closedToday.reduce((sum, t) => {
     if (t.entryPrice && t.exitPrice) {
       const shares = t.plan?.positionSize ?? 1;
-      const initialGross = (t.entryPrice - t.exitPrice) * shares;
-      return sum + (initialGross - (t.realizedPnL ?? 0));
+      // Bug #18 fix: LONG gross = (exit - entry) * shares, not (entry - exit).
+      // The old formula produced negative gross on winning trades, making charges negative.
+      const grossPnL = (t.exitPrice - t.entryPrice) * shares;
+      const charges = grossPnL - (t.realizedPnL ?? 0);
+      // charges should be a small positive number (broker fees consumed).
+      // If negative it means realizedPnL > grossPnL which is a data anomaly — floor at 0.
+      return sum + Math.max(0, charges);
     }
     return sum + (t.plan?.brokerCharges ?? 0);
   }, 0);
 
-  const chargesCapitalFootprint = (totalChargesPaid / 100000) * 100;
+  const chargesCapitalFootprint = (totalChargesPaid / STARTING_CAPITAL) * 100;
 
   // ─── MATH CONGRUENCE & ANTI-HALLUCINATION TELEMETRY ───────────────────
   const priceOrderingPassed = closedToday.every(t => !t.plan || (t.plan.takeProfit2 > t.plan.takeProfit1 && t.plan.takeProfit1 > t.entryPrice && t.entryPrice > t.plan.stopLoss));
   const boundsIntegrityPassed = closedToday.every(t => !t.plan || (t.entryPrice > 0 && t.plan.stopLoss > 0 && t.plan.takeProfit2 > 0));
   const localMathConsistent = closedToday.every(t => {
     if (!t.plan) return true;
+    // Bug #20 fix: computedExpected is GROSS reward. potentialRewardRupees is NET (after charges).
+    // Comparing gross vs net fails on every trade where charges > ₹1 (i.e. always).
+    // Fix: add brokerCharges back to potentialRewardRupees to reconstruct gross, then compare.
     const computedExpected = (t.plan.takeProfit2 - t.entryPrice) * t.plan.positionSize;
-    return Math.abs(computedExpected - t.plan.potentialRewardRupees) < 1.0;
+    const grossReward = t.plan.potentialRewardRupees + (t.plan.brokerCharges ?? 0);
+    return Math.abs(computedExpected - grossReward) < 1.0;
   });
   
   const totalAuditPoints = 4;
   const passedAuditsCount = (priceOrderingPassed ? 1 : 0) + (boundsIntegrityPassed ? 1 : 0) + (localMathConsistent ? 1 : 0) + 1; // 1 auto-passed for standard ATR sync
   const mathVerityScore = Math.round((passedAuditsCount / totalAuditPoints) * 100);
 
-  const initialAllocation = 100000;
+  const initialAllocation = STARTING_CAPITAL;
   const totalPnL = balance - initialAllocation;
   const totalPnLPct = (totalPnL / initialAllocation) * 100;
 
@@ -545,7 +555,7 @@ export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) 
 
                     <div className="flex justify-between items-center text-[10px] text-zinc-500">
                       <span>Charges Paid (Brokerage+STT+GST)</span>
-                      <strong className="text-[#D9B382]">{fmt(trade.realizedPnL != null ? (trade.entryPrice - trade.exitPrice!) * shares - trade.realizedPnL : estCharges)}</strong>
+                      <strong className="text-[#D9B382]">{fmt(trade.realizedPnL != null ? Math.max(0, (trade.exitPrice! - trade.entryPrice) * shares - trade.realizedPnL) : estCharges)}</strong>
                     </div>
                   </div>
                 );

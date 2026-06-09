@@ -336,32 +336,42 @@ export function calculateZScoreSignificance(
     };
   }
 
-  // Negative z-score (smaller-than-average candle) = mild penalty
+  // Negative z-score (smaller-than-average candle) = mild penalty to both sides
   const negativeScore = zScore <= 0 ? Math.max(-1.5, zScore * 0.5) : 0;
 
   // ── 6. DIRECTIONAL POINT ASSIGNMENT ────────────────────────────────────
-  // Winner direction gets the positive score.
-  // Loser direction gets a mild negative (the significant move went against them).
+  // Bug #5 fix: one event, one side. A BULL_PINBAR awards bull only.
+  //             The loser gets a counter-signal penalty (negative), never a positive.
+  // Bug #6 fix: Z=0 means nothing statistically happened — award is exactly 0, not 0.10.
   let bullPoints: number;
   let bearPoints: number;
 
-  if (zScore <= 0) {
+  if (zScore === 0) {
+    // Z=0: no statistical significance — zero contribution to both sides
+    bullPoints = 0;
+    bearPoints = 0;
+  } else if (zScore < 0) {
+    // Below-average candle: mild symmetric penalty
     bullPoints = parseFloat(Math.max(negativeScore, -0.5).toFixed(2));
     bearPoints = parseFloat(Math.max(negativeScore, -0.5).toFixed(2));
   } else if (direction === 'BULL') {
-    bullPoints = parseFloat(Math.max(0.10, Math.min(4.0, baseScore)).toFixed(2));
-    bearPoints = parseFloat(Math.max(-1.5, -(baseScore * 0.4)).toFixed(2)); // counter-signal penalty
+    // Bug #5: BULL event → bull gets positive, bear gets counter-penalty only (never positive)
+    bullPoints = parseFloat(Math.min(4.0, baseScore).toFixed(2));
+    bearPoints = parseFloat(Math.max(-1.5, -(baseScore * 0.4)).toFixed(2));
   } else if (direction === 'BEAR') {
-    bearPoints = parseFloat(Math.max(0.10, Math.min(4.0, baseScore)).toFixed(2));
+    // Bug #5: BEAR event → bear gets positive, bull gets counter-penalty only (never positive)
+    bearPoints = parseFloat(Math.min(4.0, baseScore).toFixed(2));
     bullPoints = parseFloat(Math.max(-1.5, -(baseScore * 0.4)).toFixed(2));
   } else {
+    // NEUTRAL/MIXED direction with positive Z: mild symmetric award
     bullPoints = parseFloat(Math.max(negativeScore, -0.5).toFixed(2));
     bearPoints = parseFloat(Math.max(negativeScore, -0.5).toFixed(2));
   }
 
-  // Final guard against exactly 0.00 (replace with moderate value 0.10)
-  if (bullPoints === 0) bullPoints = 0.10;
-  if (bearPoints === 0) bearPoints = 0.10;
+  // Bug #6 fix: removed the "if 0 then force 0.10" guard — zero must stay zero.
+  // Only apply the floor for genuinely directional non-zero scores.
+  if (zScore > 0 && direction === 'BULL' && bullPoints < 0.10) bullPoints = 0.10;
+  if (zScore > 0 && direction === 'BEAR' && bearPoints < 0.10) bearPoints = 0.10;
 
   return {
     zScore: parseFloat(zScore.toFixed(3)),
@@ -481,7 +491,18 @@ export function calculateBoundaryReversal(
   bullPoints = Math.min(bullPoints * momentumMultiplier * wickMultiplier, 3.0);
   bearPoints = Math.min(bearPoints * momentumMultiplier * wickMultiplier, 3.0);
 
-  if (stateDesc) {
+  // Bug #7 fix: after multipliers are applied, label must reflect what the numbers actually say.
+  // wickMultiplier=0 (clean continuation close) overrides the danger/oversold label because
+  // the math has fully neutralised the reversal signal.
+  if (wickMultiplier === 0) {
+    if (effectiveY >= 85) {
+      label = "EXTREME HIGH (Continuation — Reversal Blocked)";
+    } else if (effectiveY <= 15) {
+      label = "EXTREME LOW (Continuation — Reversal Blocked)";
+    } else if (stateDesc) {
+      label += stateDesc;
+    }
+  } else if (stateDesc) {
     label += stateDesc;
   }
 
