@@ -1,6 +1,10 @@
 import { NumericOHLC } from '../vision/pipeline';
 import * as candlestick from 'candlestick';
 
+// Named constants for default pattern confidence levels (Fix 6)
+const CONFIDENCE_ENGULFING = 0.80; // FIXED: default confidence for Engulfing pattern
+const CONFIDENCE_DOJI = 0.70;      // FIXED: default confidence for Doji pattern
+
 export interface PatternEvidence {
   pattern: string;
   confidence: number;
@@ -25,7 +29,7 @@ export function extractCandlestickPatterns(series: NumericOHLC[]): PatternEviden
           if (candlestick.isBullishEngulfing(p, c)) {
               evidence.push({
                   pattern: 'Bullish Engulfing',
-                  confidence: 1.0,
+                  confidence: CONFIDENCE_ENGULFING, // FIXED: use default confidence constant
                   direction: 'BULL',
                   index: lastIndex,
                   source: 'candlestick'
@@ -37,7 +41,7 @@ export function extractCandlestickPatterns(series: NumericOHLC[]): PatternEviden
           if (candlestick.isBearishEngulfing(p, c)) {
               evidence.push({
                   pattern: 'Bearish Engulfing',
-                  confidence: 1.0,
+                  confidence: CONFIDENCE_ENGULFING, // FIXED: use default confidence constant
                   direction: 'BEAR',
                   index: lastIndex,
                   source: 'candlestick'
@@ -52,7 +56,7 @@ export function extractCandlestickPatterns(series: NumericOHLC[]): PatternEviden
           if (candlestick.isDoji(c)) {
               evidence.push({
                   pattern: 'Doji',
-                  confidence: 1.0,
+                  confidence: CONFIDENCE_DOJI, // FIXED: use default confidence constant
                   direction: 'NEUTRAL',
                   index: lastIndex,
                   source: 'candlestick'

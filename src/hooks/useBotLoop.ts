@@ -93,7 +93,7 @@ export interface UseBotLoopResult {
   stopBot:    () => void;
   pauseBot:   () => void;
   forceExit:  () => void;             // manual exit current trade
-  manualBuy:  () => Promise<void>;
+  manualBuy:  (isForced?: boolean) => Promise<void>;
   reEvaluate: () => Promise<void>;   // manual force re-analyze current candle
 
   // Position watcher live data — null when not in trade
@@ -405,15 +405,25 @@ export function useBotLoop(
     });
   }, [feed.currentPrice, closeTradeById]);
 
-  const manualBuy = useCallback(async () => {
+  const manualBuy = useCallback(async (isForcedInput?: boolean | any) => {
+    const isForced = isForcedInput === true;
     if (!symbol || !feed.currentPrice) return;
     if (isInTradeRef.current) {
       setLastBlockReason('IN_TRADE: cannot perform manual buy while already in trade');
       return;
     }
-    if (activeTradesRef.current.length >= (activeConfig.maxConcurrentTrades ?? 1)) return;
-    if (virtualBalance < (activeConfig.investmentPerTrade ?? 10000)) return;
-    if (feed.ohlcvBuffer.length < 15) return;
+    if (!isForced && activeTradesRef.current.length >= (activeConfig.maxConcurrentTrades ?? 1)) {
+      setLastBlockReason('MAX_TRADES: reached maximum concurrent trades limit');
+      return;
+    }
+    if (!isForced && virtualBalance < (activeConfig.investmentPerTrade ?? 10000)) {
+      setLastBlockReason(`INSUFFICIENT_BALANCE: ₹${virtualBalance.toFixed(0)} available, ₹${(activeConfig.investmentPerTrade ?? 10000).toFixed(0)} required`);
+      return;
+    }
+    if (feed.ohlcvBuffer.length < 15) {
+      setLastBlockReason('WARMUP: need at least 15 candles to evaluate entry bounds');
+      return;
+    }
 
     const entryPrice = feed.currentPrice;
     const highs  = feed.ohlcvBuffer.map(c => c.high);
@@ -443,7 +453,8 @@ export function useBotLoop(
     const decision = evaluateScalpSignal(
       ohlc,
       { winner: 'BULL' },   // force BULL for manual buy
-      ctx as any
+      ctx as any,
+      isForced
     );
 
     const plan = decision.plan;

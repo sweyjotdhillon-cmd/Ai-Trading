@@ -107,9 +107,10 @@ export function calculateConfluence(f: ScalpFeatures): number {
 export function evaluateScalpSignal(
   ohlc: NumericOHLC[],
   legacyDecision: { winner: 'BULL' | 'BEAR' | 'NO_TRADE' },
-  ctx: ScalpContext
+  ctx: ScalpContext,
+  isForced: boolean = false
 ): ScalpDecision {
-  const rawWinner = legacyDecision.winner;
+  const rawWinner = isForced ? 'BULL' : legacyDecision.winner;
   const lastBar = ohlc[ohlc.length - 1];
   const entry = lastBar ? lastBar.close : 0;
   
@@ -156,26 +157,26 @@ export function evaluateScalpSignal(
   const rrRatio = (exits.tp2 - entry) / riskPerShare;
 
   // Min R:R verification
-  if (rrRatio < ctx.config.minRR) {
+  if (!isForced && rrRatio < ctx.config.minRR) {
     blockers.push(`RR_TOO_LOW: Target R:R ${rrRatio.toFixed(2)} < Minimum ${ctx.config.minRR.toFixed(2)}`);
     return { signal: 'WAIT', confluenceScore, blockers, features, rawWinner };
   }
 
   // Predictability Gate
-  if (ctx.config.enablePredictabilityGate && !features.predictabilityPassed) {
+  if (!isForced && ctx.config.enablePredictabilityGate && !features.predictabilityPassed) {
     blockers.push('PREDICTABILITY_FAILED');
     return { signal: 'WAIT', confluenceScore, blockers, features, rawWinner };
   }
 
   // Market Hours Gate
-  if (ctx.config.enableMarketHoursGate && !features.withinMarketHours) {
+  if (!isForced && ctx.config.enableMarketHoursGate && !features.withinMarketHours) {
     blockers.push('OUTSIDE_MARKET_HOURS');
     return { signal: 'NO_TRADE', confluenceScore, blockers, features, rawWinner };
   }
 
   // Risk Caps Verification
   const riskCaps = checkRiskCaps(ctx.riskState, ctx.config.risk, ctx.nowMsEpoch);
-  if (!riskCaps.allow) {
+  if (!isForced && !riskCaps.allow) {
     blockers.push(riskCaps.reason || 'RISK_CAPS_EXCEEDED');
     return { signal: 'NO_TRADE', confluenceScore, blockers, features, rawWinner };
   }
@@ -185,7 +186,7 @@ export function evaluateScalpSignal(
   const potentialRewardRupees = (exits.tp2 - entry) * sizeShares;
   const netExpectedPnL = potentialRewardRupees - chargesBreakdown.total;
 
-  if (netExpectedPnL <= 0) {
+  if (!isForced && netExpectedPnL <= 0) {
     blockers.push('CHARGES_EAT_EDGE');
     return { signal: 'WAIT', confluenceScore, blockers, features, rawWinner };
   }
@@ -216,7 +217,7 @@ export function evaluateScalpSignal(
   const antiHallc = runAntiHallucinationFilter(ohlc, plan, ctx);
   plan.antiHallucination = antiHallc;
 
-  if (!antiHallc.passed) {
+  if (!isForced && !antiHallc.passed) {
     blockers.push('HALLUCINATION_DETECTED');
     antiHallc.reasons.forEach(r => blockers.push(`HALLUC_CHECK: ${r}`));
     return {

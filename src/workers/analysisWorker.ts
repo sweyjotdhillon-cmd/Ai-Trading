@@ -20,7 +20,7 @@ import { atr } from '../quant/indicators';
 import { vwapProxy } from '../quant/vwapProxy';
 
 
-const patternStabilityManager = new PatternStabilityManager();
+const patternStabilityManager = new PatternStabilityManager(3, 'bar');
 const gapStabilityManager = new GapStabilityManager();
 
 let engineFault = false;

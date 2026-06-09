@@ -731,15 +731,31 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
 
       {/* ── Buy Now button ────────────────────────────────────────── */}
       {bot.phase !== 'IDLE' && bot.phase !== 'IN_TRADE' && bot.phase !== 'HALTED' && bot.currentPrice != null && (
-        <button
-          onClick={bot.manualBuy}
-          id="btn-manual-buy"
-          className="w-full py-3 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25
-                     border border-emerald-500/40 text-emerald-400 text-sm font-black
-                     uppercase tracking-widest transition-all shadow-lg active:scale-[0.98]"
-        >
-          ⚡ Buy Now at ₹{bot.currentPrice.toFixed(2)}
-        </button>
+        <div className="flex flex-col gap-2 w-full">
+          <div className="flex gap-3">
+            <button
+              onClick={() => bot.manualBuy(false)}
+              id="btn-manual-buy"
+              className="flex-1 py-3 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25
+                         border border-emerald-500/40 text-emerald-400 text-xs font-black
+                         uppercase tracking-widest transition-all shadow-lg active:scale-[0.98]"
+            >
+              ⚡ Buy Now
+            </button>
+            <button
+              onClick={() => bot.manualBuy(true)}
+              id="btn-force-buy"
+              className="flex-1 py-3 rounded-xl bg-amber-500/15 hover:bg-amber-500/25
+                         border border-amber-500/40 text-amber-400 text-xs font-black
+                         uppercase tracking-widest transition-all shadow-lg active:scale-[0.98]"
+            >
+              🔥 Force Buy
+            </button>
+          </div>
+          <p className="text-[9px] text-zinc-500 font-mono text-center">
+            *Force Buy bypasses indicators, trend analysis, predictability, and risk gates.
+          </p>
+        </div>
       )}
 
       {/* ── SECTION 3: Active Positions (Broker Interface) ───────────── */}
