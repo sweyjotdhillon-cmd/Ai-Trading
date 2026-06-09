@@ -1,5 +1,6 @@
 import { buildPipelineResult } from '../../vision/pipeline';
 import { evaluateSignal } from '../ruleEngine';
+import { resetDecisionHistory } from '../neutralityGuard';
 
 export function runDeterminismGuard(): boolean {
   const w = 64;
@@ -17,6 +18,7 @@ export function runDeterminismGuard(): boolean {
 
   let firstRes = '';
   for (let i = 0; i < 10; i++) {
+    resetDecisionHistory();
     const pipe = buildPipelineResult(img);
     const decision = evaluateSignal(pipe.ohlcSeries, pipe.axis);
     

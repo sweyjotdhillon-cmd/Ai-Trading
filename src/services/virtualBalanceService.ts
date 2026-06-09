@@ -9,24 +9,29 @@ export async function initVirtualBalance(uid: string): Promise<number> {
     if (snap.exists()) {
       return snap.data().balance ?? 100000;
     } else {
-      await setDoc(docRef, { balance: 100000 });
+      await setDoc(docRef, { balance: 100000, upd: Math.floor(Date.now() / 1000) });
       return 100000;
     }
-  } catch (e) {
-    console.error('[VirtualBalance] initVirtualBalance failed:', e);
+  } catch (e: any) {
+    console.warn('[VirtualBalance] initVirtualBalance failed (using fallback balance ₹1,00,000):', e?.message || e);
     return 100000;
   }
 }
 
-export async function updateVirtualBalance(uid: string, realizedPnL: number): Promise<void> {
-  if (!uid) return;
+export async function updateVirtualBalance(
+  uid: string,
+  realizedPnL: number
+): Promise<number> {
+  if (!uid) return 0;
   const docRef = doc(db, 'tradeBot', uid, 'balance', 'current');
   try {
     const snap = await getDoc(docRef);
-    const currentBal = snap.exists() ? (snap.data().balance ?? 100000) : 100000;
-    const nextBal = parseFloat((currentBal + realizedPnL).toFixed(2));
-    await setDoc(docRef, { balance: nextBal }, { merge: true });
-  } catch (e) {
-    console.error('[VirtualBalance] updateVirtualBalance failed:', e);
+    const current = snap.exists() ? (snap.data().balance ?? 100000) : 100000;
+    const next = parseFloat((current + realizedPnL).toFixed(2));
+    await setDoc(docRef, { balance: next, upd: Math.floor(Date.now() / 1000) }, { merge: true });
+    return next;
+  } catch (e: any) {
+    console.error('[VB] updateVirtualBalance failed:', e?.message || e);
+    return 0;   // 0 means caller should use local fallback
   }
 }

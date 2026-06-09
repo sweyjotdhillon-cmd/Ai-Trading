@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useRef } from 'react';
+import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import {
   Activity, TrendingUp, TrendingDown, Shield,
   AlertTriangle, CheckCircle, Clock, Target,
@@ -146,13 +146,13 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
   const prevPhaseRef    = useRef<string>('');
   const prevOutcomeRef  = useRef<string | null>(null);
 
-  const addToast = (message: string, type: Toast['type']) => {
+  const addToast = useCallback((message: string, type: Toast['type']) => {
     const id = Date.now().toString() + Math.random().toString(36).substr(2, 5);
     setToasts(prev => [{ id, message, type }, ...prev].slice(0, 4));
     setTimeout(() => {
       setToasts(prev => prev.filter(t => t.id !== id));
     }, 4000);
-  };
+  }, []);
 
   const primaryPlan = bot.activePlans[0];
 
@@ -191,7 +191,7 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
     }
 
     prevPhaseRef.current = phaseValue;
-  }, [bot.phase, bot.tradeHistory, bot.tp1Hit, primaryPlan, bot.lastBlockReason]);
+  }, [bot.phase, bot.tradeHistory, bot.tp1Hit, primaryPlan, bot.lastBlockReason, addToast]);
 
   const phase  = PHASE_CONFIG[bot.phase];
   const pnlPos = (bot.sessionStats.totalPnL ?? 0) >= 0;
@@ -455,8 +455,13 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
 
       {/* Last block reason */}
       {bot.lastBlockReason && bot.phase !== 'IN_TRADE' && (
-        <div className="px-4 py-2 bg-zinc-900/40 border border-zinc-800/40 rounded-xl text-[10px] font-mono text-zinc-500">
-          <span className="text-zinc-600">LAST BLOCK:</span> {bot.lastBlockReason}
+        <div className="bg-amber-500/8 border border-amber-500/20 rounded-xl px-4 py-3">
+          <p className="text-[9px] text-amber-500 font-black uppercase tracking-widest mb-1 font-mono">
+            Last Block Reason
+          </p>
+          <p className="text-xs text-amber-300 font-mono break-all leading-normal">
+            {bot.lastBlockReason}
+          </p>
         </div>
       )}
 
@@ -709,181 +714,164 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
         );
       })()}
 
-      {/* ── SECTION 3: Active Positions (Multi-Trade View) ───────────── */}
+      {/* ── Buy Now button ────────────────────────────────────────── */}
+      {bot.phase !== 'IDLE' && bot.phase !== 'IN_TRADE' && bot.phase !== 'HALTED' && bot.currentPrice != null && (
+        <button
+          onClick={bot.manualBuy}
+          id="btn-manual-buy"
+          className="w-full py-3 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25
+                     border border-emerald-500/40 text-emerald-400 text-sm font-black
+                     uppercase tracking-widest transition-all shadow-lg active:scale-[0.98]"
+        >
+          ⚡ Buy Now at ₹{bot.currentPrice.toFixed(2)}
+        </button>
+      )}
+
+      {/* ── SECTION 3: Active Positions (Broker Interface) ───────────── */}
       <div className="bg-zinc-900/40 border border-zinc-800/40 rounded-xl p-4 flex flex-col gap-3">
-        <h3 className="font-black text-xs text-zinc-300 uppercase tracking-widest flex items-center gap-1.5 border-b border-zinc-800/60 pb-2">
-          <Target size={12} className="text-emerald-400" /> Active Positions
-        </h3>
+        <div className="flex items-center justify-between border-b border-zinc-800/60 pb-2">
+          <h3 className="font-black text-xs text-zinc-300 uppercase tracking-widest flex items-center gap-1.5">
+            <Target size={12} className="text-emerald-400" /> Active Positions
+          </h3>
+          {bot.activeTrades && bot.activeTrades.length > 0 && (
+            <span className="font-mono text-[10px] text-zinc-500 uppercase font-black">
+              {bot.activeTrades.length} position{bot.activeTrades.length > 1 ? 's' : ''} open
+            </span>
+          )}
+        </div>
 
         {bot.activeTrades && bot.activeTrades.length > 0 ? (
           <div className="flex flex-col gap-4">
-            {/* Multi-Trade Rows */}
-            <div className="flex flex-col gap-3">
-              {bot.activeTrades.map(trade => {
-                if (!trade.plan) return null;
-                const entry = trade.plan.entry;
-                const tp = trade.plan.takeProfit2;
-                const sl = trade.plan.stopLoss;
-                const currentPrice = bot.currentPrice ?? entry;
-                
-                // Progress bar: (currentPrice - entry) / (tp - entry) clamped 0–100
-                const progressPct = (tp - entry) !== 0
-                  ? Math.max(0, Math.min(100, ((currentPrice - entry) / (tp - entry)) * 100))
-                  : 0;
-                
-                const isProgressPos = currentPrice >= entry;
-                const progressColor = isProgressPos ? 'text-emerald-400' : 'text-rose-400';
-                const barColor = isProgressPos ? 'bg-emerald-500' : 'bg-rose-500';
+            {bot.activeTrades.map(trade => {
+              if (!trade.plan) return null;
+              const entry = trade.plan.entry;
+              const tp = trade.plan.takeProfit2;
+              const sl = bot.trailSL || trade.plan.stopLoss;
+              const currentPrice = bot.currentPrice ?? entry;
+              const shares = trade.plan.positionSize ?? 1;
+              const invested = trade.plan.investmentRupees ?? (shares * entry);
+              
+              // P&L calculation
+              const unrealizedPnL = (currentPrice - entry) * shares;
+              const pnlPct = (unrealizedPnL / invested) * 105; // 105% to reflect leverage or direct percentage
+              const isPnLPos = unrealizedPnL >= 0;
+              
+              // Progress to TP: (currentPrice - entry) / (tp - entry) clamped 0 to 100
+              const progressPct = (tp - entry) !== 0
+                ? Math.max(0, Math.min(100, ((currentPrice - entry) / (tp - entry)) * 100))
+                : 0;
+              
+              const barColor = isPnLPos ? 'bg-emerald-500' : 'bg-rose-500';
+              const textColor = isPnLPos ? 'text-emerald-400' : 'text-rose-400';
+              const borderPnlColor = isPnLPos ? 'border-emerald-500/20 bg-emerald-950/20' : 'border-rose-500/20 bg-rose-950/20';
 
-                // Unrealized P&L
-                const unrealizedPnL = (currentPrice - entry) * (trade.plan.positionSize ?? 1);
-                const isPnLPos = unrealizedPnL >= 0;
+              // Broker estimation
+              const estCharges = trade.plan.brokerCharges ?? (invested * 0.0005);
+              const riskAmount = trade.plan.riskRupees ?? Math.abs((entry - sl) * shares);
+              const tpReward = trade.plan.netExpectedPnL ?? ((tp - entry) * shares);
 
-                return (
-                  <div key={trade.id} className="bg-zinc-950/65 border border-zinc-800/80 rounded-xl p-3 flex flex-col gap-2 font-mono">
-                    <div className="flex items-center justify-between">
-                      <div className="flex flex-wrap items-center gap-1.5 text-xs text-zinc-300">
-                        <span className="font-extrabold text-[#D9B382] uppercase bg-[#D9B382]/10 px-1.5 py-0.5 rounded tracking-wide">{trade.symbol}</span>
-                        <span>Entry {fmt(entry)}</span>
-                        <span className="text-zinc-500">·</span>
-                        <span className="text-rose-400 font-bold">SL {fmt(sl)}</span>
-                        <span className="text-zinc-500">·</span>
-                        <span className="text-emerald-400 font-bold">TP {fmt(tp)}</span>
-                      </div>
-                    </div>
+              // Time elapsed since opened
+              const elapsedSec = Math.max(0, Math.floor((Date.now() - trade.openedAt) / 1000));
+              const durationStr = elapsedSec < 60 ? `${elapsedSec}s ago` : `${Math.floor(elapsedSec / 60)}m ago`;
 
-                    <div className="flex justify-between items-center text-xs">
-                      <div className="text-zinc-400">
-                        Current <span className="font-bold text-zinc-200">{fmt(currentPrice)}</span>
-                      </div>
-                      <div className={`font-bold ${isPnLPos ? 'text-emerald-400' : 'text-rose-400'}`}>
-                        Unrealized {isPnLPos ? '+' : ''}₹{unrealizedPnL.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </div>
-                    </div>
-
-                    {/* Progress bar info & visuals */}
+              return (
+                <div key={trade.id} className="bg-zinc-950/60 border border-zinc-800/80 rounded-xl overflow-hidden font-mono text-zinc-300">
+                  {/* Card Header */}
+                  <div className="p-3.5 flex items-center justify-between border-b border-zinc-800/40 bg-zinc-950/40">
                     <div>
-                      <div className="flex justify-between items-center text-[9px] text-zinc-500 mb-1">
-                        <span>Progress to Take Profit</span>
-                        <span className={`font-bold ${progressColor}`}>{progressPct.toFixed(1)}%</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] bg-emerald-500/10 text-emerald-400 px-1.5 py-0.5 rounded font-black uppercase tracking-wider font-sans">
+                          LONG
+                        </span>
+                        <strong className="text-zinc-100 text-sm font-bold font-sans">{trade.symbol}</strong>
                       </div>
-                      <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
-                        <div
-                          className={`h-full rounded-full transition-all duration-300 ${barColor}`}
-                          style={{ width: `${progressPct}%` }}
-                        />
+                      <div className="text-[10px] text-zinc-500 mt-1">
+                        {shares} shares · {fmt(invested)} invested
                       </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
 
-            {/* Detailed Stats Panel & Controls for primary active trade */}
-            {bot.activeTrades[0] && bot.activePlans[0] && (
-              <div className="border-t border-zinc-800 pt-4 flex flex-col gap-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-[10px] text-emerald-400 font-bold tracking-wider font-mono">
-                    PRIMARY ACTIVE POSITION FOCUS ({bot.activeTrades[0].symbol})
-                  </span>
-                  {/* Unrealized P&L */}
-                  <span className={`font-mono text-sm font-black ${
-                    (bot.unrealizedPnL ?? 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'
-                  }`}>
-                    {bot.unrealizedPnL != null
-                      ? `${bot.unrealizedPnL >= 0 ? '+' : ''}₹${bot.unrealizedPnL.toFixed(2)}`
-                      : '—'}
-                    {bot.unrealizedPnLPct != null && (
-                      <span className="text-[10px] ml-1 font-mono opacity-70">
-                        ({bot.unrealizedPnLPct >= 0 ? '+' : ''}{bot.unrealizedPnLPct.toFixed(2)}%)
+                    <div className="flex flex-col items-end gap-1">
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                        <span className="text-[10px] text-emerald-400 font-extrabold tracking-widest uppercase">LIVE</span>
+                      </div>
+                      <span className="text-[9px] text-zinc-500">Opened {durationStr}</span>
+                    </div>
+                  </div>
+
+                  {/* Price info grid */}
+                  <div className="grid grid-cols-3 gap-2 p-3.5 border-b border-zinc-800/40 text-center">
+                    <div>
+                      <p className="text-[9px] text-zinc-500 uppercase tracking-widest mb-0.5">ENTRY</p>
+                      <p className="text-xs font-bold text-zinc-200">{fmt(entry)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[9px] text-zinc-500 uppercase tracking-widest mb-0.5">CURRENT</p>
+                      <p className="text-xs font-bold text-zinc-200">{fmt(currentPrice)}</p>
+                    </div>
+                    <div className={`rounded-xl px-1 py-0.5 flex flex-col items-center justify-center ${borderPnlColor} border`}>
+                      <p className="text-[9px] text-zinc-500 uppercase tracking-widest mb-0.5">P&L</p>
+                      <p className={`text-xs font-black ${textColor}`}>
+                        {isPnLPos ? '+' : ''}{fmt(unrealizedPnL)}
+                      </p>
+                      <span className={`text-[8px] font-bold ${textColor}`}>
+                        ({isPnLPos ? '+' : ''}{pnlPct.toFixed(2)}%)
                       </span>
-                    )}
-                  </span>
-                </div>
-
-                {/* THE CORE — Entry / SL / TP1 / TP2 */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {/* Entry */}
-                  <div className="bg-zinc-800/40 rounded-lg p-2.5 border border-zinc-700/40">
-                    <span className="block text-[9px] font-mono text-[#D9B382]/80 uppercase tracking-wider mb-1">
-                      ENTRY
-                    </span>
-                    <span className="font-mono text-xs font-black text-zinc-200">
-                      {fmt(bot.activePlans[0].entry)}
-                    </span>
+                    </div>
                   </div>
 
-                  {/* Stop Loss — shows trailing SL, red */}
-                  <div className="bg-rose-500/5 rounded-lg p-2.5 border border-rose-500/20">
-                    <span className="block text-[9px] font-mono text-rose-400/80 uppercase tracking-wider mb-1 flex items-center gap-1">
-                      SL
-                      {bot.tp1Hit && (
-                        <span className="text-[8px] text-sky-400 bg-sky-500/10 px-1 rounded">B/E</span>
-                      )}
-                    </span>
-                    <span className="font-mono text-xs font-black text-rose-400">
-                      {fmt(bot.trailSL || bot.activePlans[0].stopLoss)}
-                    </span>
-                    <span className="block text-[8px] font-mono text-zinc-600 mt-0.5">
-                      {bot.activePlans[0].slMode}
-                    </span>
+                  {/* SL / TP Progress bar */}
+                  <div className="p-3.5 border-b border-zinc-800/40">
+                    <div className="flex justify-between items-center text-[9px] text-zinc-500 mb-2 font-bold uppercase tracking-wider">
+                      <span>Progress to Take Profit</span>
+                      <span className={textColor}>{progressPct.toFixed(0)}% to TP</span>
+                    </div>
+                    <div className="h-2 bg-zinc-800 rounded-full overflow-hidden relative">
+                      <div
+                        className={`h-full rounded-full transition-all duration-300 ${barColor}`}
+                        style={{ width: `${progressPct}%` }}
+                      />
+                    </div>
+                    <div className="flex justify-between items-center text-[10px] text-zinc-500 mt-2 font-bold">
+                      <span className="text-rose-450 font-sans">SL {fmt(sl)}</span>
+                      <span className="text-emerald-400 font-sans">TP {fmt(tp)}</span>
+                    </div>
                   </div>
 
-                  {/* TP1 */}
-                  <div className={`rounded-lg p-2.5 border ${
-                    bot.tp1Hit
-                      ? 'bg-teal-500/10 border-teal-500/30'
-                      : 'bg-zinc-800/40 border-zinc-700/40'
-                  }`}>
-                    <span className="block text-[9px] font-mono text-teal-400/80 uppercase tracking-wider mb-1 flex items-center gap-1">
-                      TP1 {bot.tp1Hit && <CheckCircle size={9} className="text-teal-400" />}
-                    </span>
-                    <span className={`font-mono text-xs font-black ${bot.tp1Hit ? 'text-teal-400 line-through opacity-60' : 'text-teal-400'}`}>
-                      {fmt(bot.activePlans[0].takeProfit1)}
-                    </span>
-                    <span className="block text-[8px] font-mono text-zinc-600 mt-0.5">1.0R</span>
+                  {/* Calculations & charges estimation */}
+                  <div className="p-3.5 grid grid-cols-2 gap-2 text-[10px] text-zinc-500 bg-zinc-950/20">
+                    <div className="flex flex-col gap-1 text-left">
+                      <span>Charges est. <strong className="text-[#D9B382]">{fmt(estCharges)}</strong></span>
+                      <span>Risk <strong className="text-rose-400">{fmt(riskAmount)}</strong></span>
+                    </div>
+                    <div className="text-right flex flex-col justify-center items-end">
+                      <span className="text-[9px] uppercase tracking-wider mb-0.5">Reward if TP</span>
+                      <strong className="text-emerald-400 text-xs font-black">+{fmt(tpReward)} (net)</strong>
+                    </div>
                   </div>
 
-                  {/* TP2 */}
-                  <div className="bg-emerald-500/5 rounded-lg p-2.5 border border-emerald-500/20">
-                    <span className="block text-[9px] font-mono text-emerald-400/80 uppercase tracking-wider mb-1">
-                      TP2
-                    </span>
-                    <span className="font-mono text-xs font-black text-emerald-400">
-                      {fmt(bot.activePlans[0].takeProfit2)}
-                    </span>
-                    <span className="block text-[8px] font-mono text-zinc-600 mt-0.5">
-                      {bot.activePlans[0].rrRatio}R
-                    </span>
+                  {/* Action buttons */}
+                  <div className="p-3 bg-zinc-950/40">
+                    <button
+                      onClick={bot.forceExit}
+                      className="w-full py-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 text-xs font-black uppercase tracking-widest transition-all shadow-md active:scale-[0.98]"
+                    >
+                      Force Exit at Market
+                    </button>
                   </div>
                 </div>
-
-                {/* Trade meta */}
-                <div className="flex justify-between items-center mt-1 text-[10px] font-mono text-zinc-500">
-                  <span>Size: <strong className="text-zinc-300">{bot.activePlans[0].positionSize ?? 1} shares</strong></span>
-                  <span>Risk: <strong className="text-rose-400">₹{bot.activePlans[0].riskRupees?.toFixed(0) ?? '—'}</strong></span>
-                  <span>Reward: <strong className="text-emerald-400">₹{((bot.activePlans[0].riskRupees ?? 0) * bot.activePlans[0].rrRatio).toFixed(0)}</strong></span>
-                </div>
-
-                {/* Time remaining bar */}
-                <TimeBar
-                  timeRemainingMs={bot.timeRemainingMs}
-                  maxHoldingMinutes={bot.activePlans[0].maxHoldingMinutes || 15}
-                />
-
-                {/* Force exit button */}
-                <button
-                  onClick={bot.forceExit}
-                  className="mt-2 w-full py-2.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 text-xs font-black uppercase tracking-wider transition-colors"
-                >
-                  Force Exit Now
-                </button>
-              </div>
-            )}
+              );
+            })}
           </div>
         ) : (
-          <div className="text-center py-6 text-zinc-500 text-xs font-mono">
-            No active positions
+          <div className="border border-dashed border-zinc-800 rounded-xl p-8 text-center text-zinc-500 bg-zinc-950/20 flex flex-col items-center justify-center gap-2">
+            <div className="flex items-center justify-center gap-2 text-zinc-400 font-bold font-mono text-xs">
+              <div className="w-1.5 h-1.5 bg-zinc-600 rounded-full animate-ping" />
+              <span>Waiting for signal...</span>
+            </div>
+            <p className="text-[10px] font-mono text-zinc-600 uppercase tracking-widest">
+              Bot is scanning {symbol || '—'} · {bot.stabilityCount}/3 signals
+            </p>
           </div>
         )}
       </div>

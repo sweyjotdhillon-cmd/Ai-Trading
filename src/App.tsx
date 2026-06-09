@@ -9,12 +9,16 @@ import {
   Platform,
   ScrollView
 } from 'react-native';
-import { Settings, LogIn, Activity, RefreshCw, XCircle, User } from 'lucide-react';
+import { Settings, LogIn, Activity, RefreshCw, XCircle, User, Bot, Wallet } from 'lucide-react';
 import { motion, AnimatePresence, LayoutGroup, useReducedMotion } from 'motion/react';
 import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, User as FirebaseUser } from 'firebase/auth';
 import { auth } from './services/firebase';
 
-import { LiveAnalysis } from './components/LiveAnalysis';
+import { BotSetupScreen, BotStartPayload } from './components/BotSetupScreen';
+import { BotDashboard } from './components/BotDashboard';
+import { BalanceDashboard } from './components/BalanceDashboard';
+import { useBotLoop } from './hooks/useBotLoop';
+import { getDefaultScalpConfig } from './quant/scalpingEngine';
 import { SystemSettingsModal } from './components/SystemSettingsModal';
 import { HeroIntro } from './components/HeroIntro';
 import { UserProfileModal } from './components/UserProfileModal';
@@ -85,6 +89,30 @@ function App() {
   const [showSystemSettings, setShowSystemSettings] = useState(false);
   const [showProfileCard, setShowProfileCard] = useState(false);
   const [heroDismissed, setHeroDismissed] = useState(false);
+
+  const [activeTab, setActiveTab] = useState<'bot' | 'balance'>('bot');
+  const [botPayload, setBotPayload] = useState<BotStartPayload | null>(null);
+
+  const bot = useBotLoop(
+    botPayload?.symbol ?? null,
+    botPayload?.timeframeMinutes ?? 3,
+    botPayload?.capital ?? 100000,
+    botPayload?.minConfidence ?? 70,
+    botPayload?.config ?? getDefaultScalpConfig(),
+    botPayload?.techniquesList ?? []
+  );
+
+  // Auto-start bot the moment the user completes setup
+  useEffect(() => {
+    if (botPayload) {
+      bot.startBot();
+    }
+  }, [botPayload, bot]);
+
+  const handleStopBot = () => {
+    bot.stopBot();
+    setBotPayload(null);
+  };
   const [user, setUser] = useState<FirebaseUser | null>(auth.currentUser);
   const [globalErrors, setGlobalErrors] = useState<{ message: string; stack?: string; time: string }[]>([]);
   const [signingIn, setSigningIn] = useState(false);
@@ -335,7 +363,7 @@ function App() {
               </motion.div>
             ) : (
               <motion.div
-                key="live"
+                key={activeTab === 'bot' ? (botPayload ? 'dashboard' : 'setup') : 'balance'}
                 layout
                 initial={{ opacity: 0, y: prefersReducedMotion ? 0 : 12 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -344,13 +372,54 @@ function App() {
                 style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, flexGrow: 1 }}
               >
                 <TerminalErrorBoundary>
-                  <LiveAnalysis />
+                  {activeTab === 'bot' ? (
+                    botPayload ? (
+                      <BotDashboard
+                        bot={bot}
+                        capital={botPayload.capital}
+                        symbol={botPayload.symbol}
+                        onStop={handleStopBot}
+                        onPause={() => bot.pauseBot()}
+                      />
+                    ) : (
+                      <BotSetupScreen onStart={(payload) => setBotPayload(payload)} />
+                    )
+                  ) : (
+                    <BalanceDashboard />
+                  )}
                 </TerminalErrorBoundary>
               </motion.div>
             )}
           </AnimatePresence>
         </LayoutGroup>
       </View>
+
+      {/* Persistent Beautiful Responsive Bottom Tab Bar */}
+      {user && heroDismissed && (
+        <View style={styles.bottomBar}>
+          <Pressable 
+            style={[styles.bottomBarItem]} 
+            onPress={() => setActiveTab('bot')}
+            id="tab-bot"
+          >
+            <View style={[styles.bottomBarIcon, activeTab === 'bot' && styles.bottomBarIconActive]}>
+              <Bot color={activeTab === 'bot' ? '#1A1308' : '#8E9299'} size={18} />
+            </View>
+            <Text style={[styles.bottomBarText, activeTab === 'bot' && styles.bottomBarTextActive]}>Bot</Text>
+          </Pressable>
+
+          <Pressable 
+            style={[styles.bottomBarItem]} 
+            onPress={() => setActiveTab('balance')}
+            id="tab-balance"
+          >
+            <View style={[styles.bottomBarIcon, activeTab === 'balance' && styles.bottomBarIconActive]}>
+              <Wallet color={activeTab === 'balance' ? '#1A1308' : '#8E9299'} size={18} />
+            </View>
+            <Text style={[styles.bottomBarText, activeTab === 'balance' && styles.bottomBarTextActive]}>Balance</Text>
+          </Pressable>
+        </View>
+      )}
 
       <SystemSettingsModal 
         show={showSystemSettings} 
