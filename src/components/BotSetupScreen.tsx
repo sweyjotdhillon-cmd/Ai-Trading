@@ -325,11 +325,12 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
 
   return (
     <div 
-      className="flex flex-col gap-6 p-6 bg-[#0E1014] text-white max-w-lg mx-auto pb-32 w-full"
-      style={{ height: 'calc(100vh - 128px)', overflowY: 'auto' }}
+      className="flex-1 overflow-y-auto overflow-x-hidden bg-[#0E1014] text-white w-full max-w-full box-border"
+      style={{ height: 'calc(100vh - 128px)' }}
       id="bot-setup-screen-scroll"
     >
-      <div className="bg-gray-800 p-6 rounded-lg border border-gray-700">
+      <div className="flex flex-col gap-6 px-4 py-6 sm:px-6 max-w-lg mx-auto pb-32 w-full max-w-full box-border overflow-hidden">
+        <div className="bg-gray-800 p-6 rounded-lg border border-gray-700 w-full max-w-full overflow-hidden">
         <h1 className="text-2xl font-bold mb-2">🤖 BOT SETUP</h1>
         <p className="text-sm text-gray-400">Configure before starting automated mode</p>
       </div>
@@ -644,15 +645,15 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
       </div>
 
       {/* Technique File Upload */}
-      <div className="bg-gray-800 p-4 rounded-lg flex flex-col gap-2">
+      <div className="bg-gray-800 p-4 rounded-lg flex flex-col gap-2 w-full max-w-full overflow-hidden">
         <label className="text-[11px] font-mono text-zinc-400 uppercase tracking-wider font-bold">
           Technique File
         </label>
 
         {techFileName ? (
           // File loaded state
-          <div className="flex items-center justify-between px-4 py-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl">
-            <div className="flex-1 min-w-0 mr-4">
+          <div className="flex items-center justify-between px-4 py-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl w-full max-w-full overflow-hidden">
+            <div className="flex-1 min-w-0 mr-4 overflow-hidden">
               <span className="block text-xs font-mono font-bold text-emerald-400 truncate" title={techFileName}>
                 ✓ {techFileName}
               </span>
@@ -688,23 +689,23 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
         )}
       </div>
 
-      <div className="bg-gray-800 p-4 rounded-lg flex flex-col gap-2 font-mono text-xs">
+      <div className="bg-gray-800 p-4 rounded-lg flex flex-col gap-2 font-mono text-xs w-full max-w-full overflow-hidden">
         <h2 className="font-bold text-gray-300 font-sans mb-1">SL / TP PREVIEW</h2>
-        <div className="flex justify-between">
+        <div className="flex justify-between items-center gap-2 flex-wrap">
           <span className="text-gray-400">SL:</span>
           <span>Entry − ATR × {previewConfig.atrMultiplierSL}</span>
         </div>
         <div className="flex justify-between text-gray-500 pl-4 mb-2">
           <span>(AUTO mode, structural floor)</span>
         </div>
-        <div className="flex justify-between">
+        <div className="flex justify-between items-center gap-2 flex-wrap">
           <span className="text-gray-400">TP1:</span>
           <span>Entry + {previewConfig.tp1RMultiple}R</span>
         </div>
         <div className="flex justify-between text-gray-500 pl-4 mb-2">
           <span>({previewConfig.tpMode === 'PARTIAL_1R' ? '50% booked' : 'Wait'}, SL → Break-even)</span>
         </div>
-        <div className="flex justify-between">
+        <div className="flex justify-between items-center gap-2 flex-wrap">
           <span className="text-gray-400">TP2:</span>
           <span>Entry + {previewConfig.rrRatio}R</span>
         </div>
@@ -712,21 +713,21 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
           <span>(full exit)</span>
         </div>
         <div className="h-px bg-gray-700 my-1"></div>
-        <div className="flex justify-between text-gray-300">
+        <div className="flex justify-between items-center gap-2 flex-wrap text-gray-300">
           <span>Risk per trade:</span>
-          <span>₹{(previewConfig.capitalRupees * (previewConfig.riskPerTradePct / 100)).toFixed(0)} ({previewConfig.riskPerTradePct}% of ₹{previewConfig.capitalRupees.toLocaleString()})</span>
+          <span className="text-right">₹{(previewConfig.capitalRupees * (previewConfig.riskPerTradePct / 100)).toFixed(0)} ({previewConfig.riskPerTradePct}% of ₹{previewConfig.capitalRupees.toLocaleString()})</span>
         </div>
-        <div className="flex justify-between text-gray-300">
+        <div className="flex justify-between items-center gap-2 flex-wrap text-gray-300">
           <span>Daily loss cap:</span>
-          <span>₹{previewConfig.risk.dailyLossCapRupees.toFixed(0)}</span>
+          <span className="text-right">₹{previewConfig.risk.dailyLossCapRupees.toFixed(0)}</span>
         </div>
-        <div className="flex justify-between text-gray-300">
+        <div className="flex justify-between items-center gap-2 flex-wrap text-gray-300">
           <span>Max trades:</span>
-          <span>{previewConfig.risk.maxTradesPerDay}/day</span>
+          <span className="text-right">{previewConfig.risk.maxTradesPerDay}/day</span>
         </div>
-        <div className="flex justify-between text-gray-300">
+        <div className="flex justify-between items-center gap-2 flex-wrap text-gray-300">
           <span>Max hold:</span>
-          <span>{previewConfig.maxHoldingMinutes} mins</span>
+          <span className="text-right">{previewConfig.maxHoldingMinutes} mins</span>
         </div>
       </div>
 
@@ -742,6 +743,7 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
       >
         START BOT
       </button>
+      </div>
     </div>
   );
 }
