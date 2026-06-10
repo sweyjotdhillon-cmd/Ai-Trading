@@ -206,7 +206,8 @@ self.onmessage = async (e: MessageEvent) => {
             scalpDecision.signal,
             finalConfidence,
             finalScore,
-            stabScalar.stable
+            stabScalar.stable,
+            data.minConfidence
           );
           finalSignal = tfResult.signal;
           finalConfidence = tfResult.confidence;
@@ -224,7 +225,8 @@ self.onmessage = async (e: MessageEvent) => {
             decision.signal,
             decision.finalConfidence,
             decision.finalScore,
-            stab.stable
+            stab.stable,
+            data.minConfidence
           );
           finalSignal = tfResult.signal;
           finalConfidence = tfResult.confidence;

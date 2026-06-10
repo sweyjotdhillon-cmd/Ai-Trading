@@ -8,6 +8,7 @@ export const temporalFilterConfig = {
   // but currently kept at 0.0 to maintain strict deterministic EMA.
   beta: 0.0,
 
-  // The confidence threshold below which the smoothed signal will drop to NO_TRADE.
-  confidenceThreshold: 55,
+  // The safety floor below which even a heavily smoothed signal will drop to NO_TRADE.
+  // The primary confidence gate is defined dynamically by the user's minConfidence setting.
+  confidenceFloor: 20,
 };

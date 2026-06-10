@@ -147,6 +147,7 @@ export async function runSingleAnalysis(params: {
   onJudgeLogs?: (logs: any) => void;
   isTestMode?: boolean;
   isManifestCheck?: boolean;
+  minConfidence?: number;  // Bug #23 fix: user's threshold forwarded to worker
   onDirectionFound?: (direction: "LONG" | "SHORT" | "NO_TRADE") => void;
 }): Promise<{
   analysis: any;
@@ -353,6 +354,7 @@ export async function runSingleAnalysis(params: {
         techniquesList: params.techniquesList,
         isTestMode: params.isTestMode,
         isManifestCheck: params.isManifestCheck,
+        minConfidence: params.minConfidence,  // Bug #23 fix: pass user threshold to worker
         neutralityConfig: {
           strictNeutrality,
           biasCorrectionStrength,
@@ -620,6 +622,7 @@ export async function runSingleAnalysis(params: {
             holdingMinutesVal: durM,
             techniquesList: params.techniquesList,
             isTestMode: true,
+            minConfidence: params.minConfidence, // Bug #23 fix: pass user threshold to worker
           });
         } catch (e: any) {
           reject(e);

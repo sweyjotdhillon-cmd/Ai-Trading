@@ -24,6 +24,8 @@ export interface UseStockFeedResult {
   isLoading:            boolean;
   error:                string | null;
   isStale:              boolean;
+  isStalePriceFallback: boolean;
+  stalePriceWarningMsg: string | null;
   marketOpen:           boolean;
   consecutiveFailures:  number;
   candleCount:          number;
@@ -132,6 +134,8 @@ export function useStockFeed(
   const [isLoading,           setIsLoading]           = useState(true);
   const [error,               setError]               = useState<string | null>(null);
   const [isStale,             setIsStale]             = useState(false);
+  const [isStalePriceFallback, setIsStalePriceFallback] = useState(false);
+  const [stalePriceWarningMsg, setStalePriceWarningMsg] = useState<string | null>(null);
   const [marketOpen,          setMarketOpen]          = useState(false);
   const [consecutiveFailures, setConsecutiveFailures] = useState(0);
 
@@ -174,6 +178,8 @@ export function useStockFeed(
       setIsLoading(true);
       setError(null);
       setIsStale(false);
+      setIsStalePriceFallback(false);
+      setStalePriceWarningMsg(null);
       setConsecutiveFailures(0);
     } else if (tfChanged) {
       // Same symbol, different timeframe — keep price, clear candles
@@ -228,6 +234,14 @@ export function useStockFeed(
       let price  = result.price;
       marketIsOpen = result.marketState === 'REGULAR';
       setMarketOpen(marketIsOpen);
+
+      if (result.isStalePrice) {
+        setIsStalePriceFallback(true);
+        setStalePriceWarningMsg(result.stalePriceWarning ?? '⚠ Using cached reference price — live feed unavailable.');
+      } else {
+        setIsStalePriceFallback(false);
+        setStalePriceWarningMsg(null);
+      }
 
       // If market is closed, simulate realistic micro-fluctuations around the closing price so the bot can trade 24/7
       if (!marketIsOpen) {
@@ -392,6 +406,8 @@ export function useStockFeed(
     isLoading,
     error,
     isStale,
+    isStalePriceFallback,
+    stalePriceWarningMsg,
     marketOpen,
     consecutiveFailures,
     candleCount: ohlcvBuffer.length,

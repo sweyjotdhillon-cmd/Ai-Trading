@@ -18,24 +18,24 @@ describe('Temporal Filter Integration', () => {
     // Spike: raw confidence 80, raw score 70
     // Alpha is 0.25 by default.
     // First frame initialization (no smoothing yet)
-    let res = applyTemporalFilter('LONG', 80, 70, true);
+    let res = applyTemporalFilter('LONG', 80, 70, true, 55);
     expect(res.confidence).toBe(80);
     expect(res.stable).toBe(true);
 
     // Frame 2: Confidence drops sharply.
-    res = applyTemporalFilter('LONG', 40, 20, false);
+    res = applyTemporalFilter('LONG', 40, 20, false, 55);
     // EMA: 0.25 * 40 + 0.75 * 80 = 10 + 60 = 70
     expect(res.confidence).toBe(70);
     // Still technically above 55 threshold, so it remains LONG but inherits rawStable=false.
     expect(res.signal).toBe('LONG');
 
     // Frame 3: Drops again.
-    res = applyTemporalFilter('LONG', 20, 10, false);
+    res = applyTemporalFilter('LONG', 20, 10, false, 55);
     // EMA: 0.25 * 20 + 0.75 * 70 = 5 + 52.5 = 57.5
     expect(res.confidence).toBe(57.5);
 
     // Frame 4: Drops again, crossing the threshold (55).
-    res = applyTemporalFilter('LONG', 10, 5, false);
+    res = applyTemporalFilter('LONG', 10, 5, false, 55);
     // EMA: 0.25 * 10 + 0.75 * 57.5 = 2.5 + 43.125 = 45.625
     expect(res.confidence).toBe(45.625);
     // Suppressed to NO_TRADE due to stable silence rule!

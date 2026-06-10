@@ -15,9 +15,11 @@ export function applyTemporalFilter(
   rawSignal: 'LONG' | 'NO_TRADE',
   rawConfidence: number,
   rawFinalScore: number,
-  rawStable: boolean
+  rawStable: boolean,
+  userMinConfidence?: number
 ): TemporalFilterResult {
-  const { alpha, confidenceThreshold } = temporalFilterConfig;
+  const { alpha, confidenceFloor } = temporalFilterConfig;
+  const confidenceThreshold = userMinConfidence ?? confidenceFloor;
 
   const lastScore = smoothedFinalScore;
   const oppositeSign = lastScore !== null && (
@@ -101,10 +103,11 @@ export function applyScalpTemporalFilter(
   rawSignal: ScalpSignal,
   rawConfidence: number,
   rawFinalScore: number,
-  rawStable: boolean
+  rawStable: boolean,
+  userMinConfidence?: number
 ): { signal: ScalpSignal; confidence: number; finalScore: number; stable: boolean } {
   const mappedSignal = (rawSignal === 'BUY' || rawSignal === 'LONG') ? 'LONG' : 'NO_TRADE';
-  const res = applyTemporalFilter(mappedSignal, rawConfidence, rawFinalScore, rawStable);
+  const res = applyTemporalFilter(mappedSignal, rawConfidence, rawFinalScore, rawStable, userMinConfidence);
   return {
     signal: res.signal === 'LONG' ? rawSignal : 'NO_TRADE',
     confidence: res.confidence,

@@ -64,13 +64,15 @@ const PROXY_CHAIN: ProxyConfig[] = [
 // ── Core price fetch ──────────────────────────────────────────────────────────
 
 export interface PriceResult {
-  price:         number;
-  previousClose: number;
-  dayHigh:       number;
-  dayLow:        number;
-  marketState:   string;   // 'REGULAR' | 'CLOSED' | 'PRE' | 'POST'
-  currency:      string;
-  proxyUsed:     string;
+  price:              number;
+  previousClose:      number;
+  dayHigh:            number;
+  dayLow:             number;
+  marketState:        string;   // 'REGULAR' | 'CLOSED' | 'PRE' | 'POST'
+  currency:           string;
+  proxyUsed:          string;
+  isStalePrice?:      boolean;
+  stalePriceWarning?: string;
 }
 
 export async function fetchLivePrice(symbol: string): Promise<PriceResult> {
@@ -95,7 +97,9 @@ export async function fetchLivePrice(symbol: string): Promise<PriceResult> {
           dayLow: Number(data.dayLow ?? data.price),
           marketState: String(data.marketState ?? 'REGULAR'),
           currency: String(data.currency ?? 'INR'),
-          proxyUsed: 'local-server'
+          proxyUsed: 'local-server',
+          isStalePrice: data.isStalePrice,
+          stalePriceWarning: data.stalePriceWarning
         };
       }
     }
@@ -253,7 +257,9 @@ export async function fetchLivePrice(symbol: string): Promise<PriceResult> {
     dayLow: Number((basePrice * 0.985).toFixed(2)),
     marketState: 'REGULAR',
     currency: 'INR',
-    proxyUsed: 'client-offline-fail-safe'
+    proxyUsed: 'client-offline-fail-safe',
+    isStalePrice: true,
+    stalePriceWarning: `⚠ Live price unavailable — using cached reference price for ${parsed.ticker}. Indicators computed on stale data.`
   };
 }
 

@@ -94,7 +94,9 @@ async function startServer() {
         dayLow: Number((basePrice * 0.985).toFixed(2)),
         marketState: 'REGULAR',
         currency: 'INR',
-        proxyUsed: 'local-server-fail-safe'
+        proxyUsed: 'local-server-fail-safe',
+        isStalePrice: true,
+        stalePriceWarning: `⚠ Live price unavailable — using cached reference price for ${req.body.symbol || 'this symbol'}. Indicators computed on stale data.`
       });
     }
   });
@@ -230,7 +232,7 @@ async function startServer() {
         for (let i = 0; i < outputsize; i++) {
           const pctChange = (Math.random() - 0.5) * 0.006;
           const o = lastPrice;
-          const c = lastPrice * (1 - pctChange);
+          const c = lastPrice * (1 + pctChange);
           const h = Math.max(o, c) * (1 + Math.random() * 0.003);
           const l = Math.min(o, c) * (1 - Math.random() * 0.003);
           fallbackHistory.push({
@@ -256,7 +258,7 @@ async function startServer() {
       for (let i = 0; i < outputsize; i++) {
         const pctChange = (Math.random() - 0.5) * 0.006;
         const o = lastPrice;
-        const c = lastPrice * (1 - pctChange);
+        const c = lastPrice * (1 + pctChange);
         const h = Math.max(o, c) * (1 + Math.random() * 0.003);
         const l = Math.min(o, c) * (1 - Math.random() * 0.003);
         fallbackHistory.push({

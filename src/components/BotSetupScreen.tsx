@@ -652,8 +652,8 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
         {techFileName ? (
           // File loaded state
           <div className="flex items-center justify-between px-4 py-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl">
-            <div>
-              <span className="text-xs font-mono font-bold text-emerald-400">
+            <div className="flex-1 min-w-0 mr-4">
+              <span className="block text-xs font-mono font-bold text-emerald-400 truncate" title={techFileName}>
                 ✓ {techFileName}
               </span>
               <span className="block text-[10px] font-mono text-emerald-600 mt-0.5">
@@ -662,7 +662,7 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
             </div>
             <button
               onClick={handleClearTechniques}
-              className="text-[10px] font-mono text-zinc-500 hover:text-rose-400 transition-colors"
+              className="text-[10px] font-mono text-zinc-500 hover:text-rose-400 transition-colors shrink-0"
             >
               Remove
             </button>

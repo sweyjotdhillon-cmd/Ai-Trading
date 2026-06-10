@@ -559,6 +559,7 @@ export function useBotLoop(
         investmentAmount: String(activeConfig.investmentPerTrade ?? 10000),
         techniquesList,
         signal:           abortRef.current.signal,
+        minConfidence,
       });
 
       if (!result) return;
