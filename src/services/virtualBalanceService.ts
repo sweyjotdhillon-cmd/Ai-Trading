@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc, increment } from 'firebase/firestore';
+import { doc, getDoc, setDoc, runTransaction } from 'firebase/firestore';
 import { db } from './firebase';
 
 export async function initVirtualBalance(uid: string): Promise<number> {
@@ -37,41 +37,38 @@ export async function initVirtualBalance(uid: string): Promise<number> {
 
 export async function updateVirtualBalance(
   uid: string,
-  realizedPnL: number
+  delta: number
 ): Promise<number> {
   if (!uid) return 0;
   const docRef = doc(db, 'tradeBot', uid, 'balance', 'current');
   try {
-    // Perform an atomic increment on the database side to protect against race conditions
-    await setDoc(docRef, { 
-      balance: increment(realizedPnL), 
-      upd: Math.floor(Date.now() / 1000) 
-    }, { merge: true });
-
-    // Read the updated balance to ensure accurate state returned to the app
-    const snap = await getDoc(docRef);
-    const next = snap.exists() ? (snap.data().balance ?? 100000) : 100000;
-    const rounded = parseFloat(next.toFixed(2));
-
+    const newBalance = await runTransaction(db, async (transaction) => {
+      const snap = await transaction.get(docRef);
+      const current = snap.exists() ? (snap.data().balance ?? 100000) : 100000;
+      const next = parseFloat((current + delta).toFixed(2));
+      transaction.set(docRef, { balance: next, upd: Math.floor(Date.now() / 1000) }, { merge: true });
+      return next;
+    });
     try {
-      localStorage.setItem('user_virtual_balance', String(rounded));
+      localStorage.setItem('user_virtual_balance', String(newBalance));
     } catch (err) {
-      // LocalStorage is unavailable or full
+      // Ignore localStorage failure in environments where it's disabled or full
     }
-    return rounded;
+    return newBalance;
   } catch (e: any) {
-    console.error('[VB] updateVirtualBalance failed:', e?.message || e);
+    console.error('[VB] updateVirtualBalance transaction failed:', e?.message || e);
+    // Local fallback
     try {
       const cached = localStorage.getItem('user_virtual_balance');
       if (cached) {
-        const next = parseFloat((parseFloat(cached) + realizedPnL).toFixed(2));
+        const next = parseFloat((parseFloat(cached) + delta).toFixed(2));
         localStorage.setItem('user_virtual_balance', String(next));
         return next;
       }
     } catch (err) {
-      // LocalStorage is unavailable
+      // Ignore localStorage failure in local fallback
     }
-    return 0;   // 0 means caller should use local fallback
+    return 0;
   }
 }
 

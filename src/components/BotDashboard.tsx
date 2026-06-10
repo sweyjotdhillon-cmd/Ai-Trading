@@ -5,6 +5,9 @@ import {
   Zap, BarChart2, List, Wifi, WifiOff, Pause, Square
 } from 'lucide-react';
 import { UseBotLoopResult, BotPhase, BotTradeRecord } from '../hooks/useBotLoop';
+import { filterTradesByRange } from '../services/botTradeService';
+import { auth } from '../services/firebase';
+import { useEODSettlement } from '../hooks/useEODSettlement';
 
 interface BotDashboardProps {
   bot:      UseBotLoopResult;
@@ -143,8 +146,19 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
 
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [showTech, setShowTech] = useState(false);
+  const [selectedRange, setSelectedRange] = useState<string>('TODAY');
   const prevPhaseRef    = useRef<string>('');
   const prevOutcomeRef  = useRef<string | null>(null);
+
+  const [uid, setUid] = useState<string | null>(auth.currentUser?.uid ?? null);
+  useEffect(() => {
+    const unsub = auth.onAuthStateChanged(user => {
+      setUid(user?.uid ?? null);
+    });
+    return () => unsub();
+  }, []);
+
+  const { state: eodState, triggerSettlement } = useEODSettlement(uid);
 
   const addToast = useCallback((message: string, type: Toast['type']) => {
     const id = Date.now().toString() + Math.random().toString(36).substr(2, 5);
@@ -154,7 +168,32 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
     }, 4000);
   }, []);
 
+  const prevLastResultRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (eodState.lastResult && eodState.lastResult !== prevLastResultRef.current) {
+      prevLastResultRef.current = eodState.lastResult;
+      const { settled, skipped, totalNetPnL, errors, ambiguous } = eodState.lastResult;
+      
+      if (settled > 0) {
+        const sign = totalNetPnL >= 0 ? '+' : '';
+        const ambPart = ambiguous > 0 ? ` (${ambiguous} ambiguous, closed at close price)` : '';
+        addToast(`Settlement done — ${settled} trade(s) | Net P&L: ${sign}₹${totalNetPnL}${ambPart}`, 'win');
+      } else if (skipped > 0 && errors.length > 0) {
+        addToast(`Settlement failed for ${skipped} trade(s)`, 'warning');
+      } else if (errors.includes('Already settled this session')) {
+        addToast("Already settled this session", "info");
+      } else {
+        addToast("No open trades to settle", "info");
+      }
+    }
+  }, [eodState.lastResult, addToast]);
+
   const primaryPlan = bot.activePlans[0];
+
+  const filteredTrades = useMemo(() => {
+    return filterTradesByRange(bot.tradeHistory, selectedRange);
+  }, [bot.tradeHistory, selectedRange]);
 
   // Fire toasts on key state changes
   useEffect(() => {
@@ -378,12 +417,53 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
               <AlertTriangle size={9} /> STALE FEED
             </span>
           )}
+
+          {/* EOD SETTLEMENT STATUS PILLS */}
+          {eodState.isSettling && (
+            <span className="flex items-center gap-1 text-[10px] font-mono text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full animate-pulse">
+              <Clock size={9} /> Settling trades…
+            </span>
+          )}
+          {!eodState.isSettling && eodState.alreadySettled && eodState.lastResult && eodState.lastResult.settled > 0 && (
+            <div className="flex flex-col">
+              <span className="flex items-center gap-1 text-[10px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
+                <CheckCircle size={9} /> Settled {eodState.lastResult.settled} trades | {eodState.lastResult.totalNetPnL >= 0 ? '+' : ''}₹{eodState.lastResult.totalNetPnL}
+              </span>
+              {eodState.lastResult.ambiguous > 0 && (
+                <span className="text-[8px] font-mono text-amber-500 font-bold ml-1 mt-0.5">
+                  ⚠ {eodState.lastResult.ambiguous} trade(s) ambiguous — closed at day's price
+                </span>
+              )}
+            </div>
+          )}
+          {!eodState.isSettling && eodState.error && (
+            <span
+              onClick={triggerSettlement}
+              className="flex items-center gap-1 text-[10px] font-mono text-rose-400 bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 rounded-full cursor-pointer hover:bg-rose-500/20 transition-all"
+              title="Click to retry settlement"
+            >
+              <AlertTriangle size={9} /> Settlement error (Click to retry)
+            </span>
+          )}
         </div>
 
         {/* Controls */}
         <div className="flex items-center justify-between md:justify-end gap-3 border-t border-zinc-800/40 md:border-t-0 pt-2.5 md:pt-0">
           <StabilityDots />
           <div className="flex items-center gap-2">
+            {eodState.canSettle && (
+              <button
+                onClick={triggerSettlement}
+                disabled={eodState.isSettling || eodState.alreadySettled}
+                className="px-3 py-2 rounded-lg text-[10px] font-mono font-bold uppercase tracking-wider border border-zinc-700 bg-zinc-800 hover:bg-zinc-750 text-zinc-300 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-[0.98]"
+              >
+                {eodState.isSettling
+                  ? "Settling…"
+                  : eodState.alreadySettled
+                  ? "Already Settled"
+                  : "Settle Today's Trades"}
+              </button>
+            )}
             <button
               onClick={onPause}
               className="p-2.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-400 transition-colors"
@@ -996,33 +1076,71 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
         </div>
       </div>
 
-      {/* ── SECTION 5: Equity Curve ───────────────────────────────────── */}
-      {bot.tradeHistory.length >= 2 && (
-        <div className="bg-zinc-900/40 border border-zinc-800/40 rounded-xl p-3.5">
-          <h3 className="font-black text-[10px] text-zinc-400 uppercase tracking-widest flex items-center gap-1.5 mb-3">
-            <BarChart2 size={11} /> Equity Curve
-          </h3>
-          <EquityCurve trades={bot.tradeHistory} />
+      {/* ── TIME RANGE SELECTOR FOR BOT ANALYSIS ──────────────────────── */}
+      {bot.tradeHistory.length > 0 && (
+        <div className="bg-zinc-900/40 border border-zinc-800/40 rounded-xl p-3 flex flex-wrap items-center justify-between gap-3">
+          <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider font-mono flex items-center gap-1.5">
+            <Clock size={11} className="text-[#D9B382]" /> Filter Range:
+          </span>
+          <div className="flex flex-wrap items-center gap-1 bg-zinc-950 border border-zinc-850 p-0.5 rounded-lg">
+            {[
+              { id: 'TODAY', label: 'Today' },
+              { id: 'YESTERDAY', label: 'Yesterday' },
+              { id: '7D', label: '7D' },
+              { id: '30D', label: '30D' },
+              { id: 'ALL', label: 'All' }
+            ].map(range => (
+              <button
+                key={range.id}
+                onClick={() => setSelectedRange(range.id)}
+                className={`px-2.5 py-1 rounded text-[8px] font-mono font-bold uppercase transition-all ${
+                  selectedRange === range.id
+                    ? 'bg-[#D9B382] text-zinc-950 font-black shadow'
+                    : 'text-zinc-500 hover:text-zinc-300'
+                }`}
+              >
+                {range.label}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
-      {/* ── SECTION 6: Trade Log ──────────────────────────────────────── */}
-      {bot.tradeHistory.length > 0 && (
+      {/* ── SECTION 5: Equity Curve ───────────────────────────────────── */}
+      {filteredTrades.length >= 2 ? (
         <div className="bg-zinc-900/40 border border-zinc-800/40 rounded-xl p-3.5">
           <h3 className="font-black text-[10px] text-zinc-400 uppercase tracking-widest flex items-center gap-1.5 mb-3">
-            <List size={11} /> Trade Log
-            <span className="ml-auto text-zinc-600 font-mono normal-case">{bot.tradeHistory.length} trades</span>
+            <BarChart2 size={11} /> Equity Curve ({selectedRange})
+          </h3>
+          <EquityCurve trades={filteredTrades} />
+        </div>
+      ) : bot.tradeHistory.length > 0 ? (
+        <div className="bg-zinc-900/40 border border-zinc-800/40 rounded-xl p-3.5 text-center text-zinc-550 font-mono text-xs py-5">
+          Need 2+ closed trades in {selectedRange} to plot curve
+        </div>
+      ) : null}
+
+      {/* ── SECTION 6: Trade Log ──────────────────────────────────────── */}
+      {filteredTrades.length > 0 ? (
+        <div className="bg-zinc-900/40 border border-zinc-800/40 rounded-xl p-3.5">
+          <h3 className="font-black text-[10px] text-zinc-400 uppercase tracking-widest flex items-center gap-1.5 mb-3">
+            <List size={11} /> Trade Log ({selectedRange})
+            <span className="ml-auto text-zinc-600 font-mono normal-case">{filteredTrades.length} trades</span>
           </h3>
 
-          <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1 text-zinc-300">
-            {bot.tradeHistory.map(trade => {
+          <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1 text-zinc-300 font-mono">
+            {filteredTrades.map(trade => {
               const oc  = OUTCOME_CONFIG[trade.outcome ?? ''] ?? OUTCOME_CONFIG['MANUAL_EXIT'];
               const pos = (trade.realizedPnL ?? 0) >= 0;
+              const dateStr = selectedRange === 'TODAY' || selectedRange === 'YESTERDAY'
+                ? new Date(trade.openedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                : new Date(trade.openedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) + ' ' + new Date(trade.openedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+
               return (
                 <div key={trade.id} className="flex items-center justify-between bg-zinc-950/60 border border-zinc-800/20 rounded-lg p-2.5">
                   <div className="flex items-center gap-2">
                     <span className="text-[10px] font-mono text-zinc-500">
-                      {new Date(trade.openedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                      {dateStr}
                     </span>
                     <span className="text-xs font-mono font-bold text-zinc-300">{trade.symbol}</span>
                     <span className={`text-[8px] px-1.5 py-0.5 rounded font-mono font-extrabold ${oc.bg} ${oc.color}`}>
@@ -1046,7 +1164,11 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
             })}
           </div>
         </div>
-      )}
+      ) : bot.tradeHistory.length > 0 ? (
+        <div className="bg-zinc-900/40 border border-zinc-800/40 rounded-xl p-3.5 text-center text-zinc-600 font-mono text-xs py-5">
+          No records found in {selectedRange}
+        </div>
+      ) : null}
     </div>
   );
 }

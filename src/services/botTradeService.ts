@@ -437,14 +437,13 @@ export async function loadOpenTrade(
   return trades[0] ?? null;
 }
 
-export async function loadTodayTrades(
+export async function loadAllTrades(
   uid: string
 ): Promise<BotTradeRecord[]> {
   const path = `tradeBot/${uid}/tr`;
   try {
     const q = query(
-      collection(db, 'tradeBot', uid, 'tr'),
-      where('sd', '==', todayIST())
+      collection(db, 'tradeBot', uid, 'tr')
     );
     const snap = await getDocs(q);
     const trades = snap.docs.map(docSnap => {
@@ -490,11 +489,9 @@ export async function loadTodayTrades(
         } as any,
       };
     });
-    // Sort in memory style
-    trades.sort((a, b) => b.openedAt - a.openedAt);
-    return trades;
-  } catch (error) {
-    console.warn('[botTradeService] loadTodayTrades direct query failed, falling back to compressed archive:', error);
+
+    // Merge with archived trades to ensure complete historical representation
+    let archiveTrades: BotTradeRecord[] = [];
     try {
       const statsDocRef = doc(db, 'tradeBot', uid, 'st', 'g');
       const statsSnap = await getDoc(statsDocRef);
@@ -502,28 +499,50 @@ export async function loadTodayTrades(
         const data = statsSnap.data();
         if (data.ha && typeof data.ha === 'string') {
           const archive: CompressedTrade[] = JSON.parse(data.ha);
-          const todayStr = todayIST();
-          const todayDecoded = archive
-            .map(decompressTrade)
-            .filter(t => {
-              const tDate = new Date(t.openedAt + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
-              return tDate === todayStr;
-            });
-          if (todayDecoded.length > 0) {
-            return todayDecoded;
-          }
+          archiveTrades = archive.map(decompressTrade);
         }
       }
     } catch (err) {
-      console.warn('[Compressed Archive] loadTodayTrades fallback failed:', err);
+      console.warn('[Compressed Archive] Load archive failed in loadAllTrades:', err);
     }
 
+    const finalMap = new Map<string, BotTradeRecord>();
+    archiveTrades.forEach(t => finalMap.set(t.id, t));
+    trades.forEach(t => finalMap.set(t.id, t));
+
+    const finalTrades = Array.from(finalMap.values());
+    finalTrades.sort((a, b) => b.openedAt - a.openedAt);
+    return finalTrades;
+  } catch (error) {
+    console.warn('[botTradeService] loadAllTrades failed, falling back to archive:', error);
     try {
-      handleFirestoreError(error, OperationType.LIST, path);
-    } catch {
-      return [];
+      const statsDocRef = doc(db, 'tradeBot', uid, 'st', 'g');
+      const statsSnap = await getDoc(statsDocRef);
+      if (statsSnap.exists()) {
+        const data = statsSnap.data();
+        if (data.ha && typeof data.ha === 'string') {
+          const archive: CompressedTrade[] = JSON.parse(data.ha);
+          const finalTrades = archive.map(decompressTrade);
+          finalTrades.sort((a, b) => b.openedAt - a.openedAt);
+          return finalTrades;
+        }
+      }
+    } catch (err) {
+      console.warn('[Compressed Archive] Fallback failed in loadAllTrades:', err);
     }
+    return [];
   }
+}
+
+export async function loadTodayTrades(
+  uid: string
+): Promise<BotTradeRecord[]> {
+  const all = await loadAllTrades(uid);
+  const todayStr = todayIST();
+  return all.filter(t => {
+    const tDate = new Date(t.openedAt + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    return tDate === todayStr;
+  });
 }
 
 export async function purgeAllSavedData(uid: string): Promise<void> {
@@ -543,5 +562,34 @@ export async function purgeAllSavedData(uid: string): Promise<void> {
     localStorage.setItem('ledger_cached_balance', '100000');
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
+export function filterTradesByRange(trades: BotTradeRecord[], range: string): BotTradeRecord[] {
+  const now = Date.now();
+  const dayMs = 24 * 60 * 60 * 1000;
+  
+  // IST correction (5.5 hrs ahead of UTC)
+  const istOffset = 5.5 * 60 * 60 * 1000;
+  const getISTDateString = (timestamp: number) => {
+    return new Date(timestamp + istOffset).toISOString().slice(0, 10);
+  };
+  
+  const todayStr = getISTDateString(now);
+  const tempYesterday = new Date(now - dayMs + istOffset);
+  const yesterdayStr = tempYesterday.toISOString().slice(0, 10);
+
+  switch (range) {
+    case 'TODAY':
+      return trades.filter(t => getISTDateString(t.openedAt) === todayStr);
+    case 'YESTERDAY':
+      return trades.filter(t => getISTDateString(t.openedAt) === yesterdayStr);
+    case '7D':
+      return trades.filter(t => t.openedAt >= now - 7 * dayMs);
+    case '30D':
+      return trades.filter(t => t.openedAt >= now - 30 * dayMs);
+    case 'ALL':
+    default:
+      return trades;
   }
 }

@@ -16,12 +16,13 @@ import {
   writeStats_Update,
   loadStats,
   loadOpenTrades,
-  loadTodayTrades,
+  loadAllTrades,
 } from '../services/botTradeService';
-import { initVirtualBalance, updateVirtualBalance } from '../services/virtualBalanceService';
+import { initVirtualBalance, updateVirtualBalance, setVirtualBalanceValue } from '../services/virtualBalanceService';
+import { computeRoundTripCharges } from '../quant/brokerCharges';
 import { auth } from '../services/firebase';
 import {
-  OHLCV, ScalpingPlan, ScalpConfig, RiskState, TradeOutcome
+  OHLCV, ScalpingPlan, ScalpConfig, RiskState, TradeOutcome, ScalpInstrument
 } from '../types';
 
 export type BotPhase =
@@ -163,6 +164,11 @@ export function useBotLoop(
       return 100000;
     }
   });
+
+  const virtualBalanceRef = useRef<number>(virtualBalance);
+  useEffect(() => {
+    virtualBalanceRef.current = virtualBalance;
+  }, [virtualBalance]);
   const [tradeHistory,    setTradeHistory]    = useState<BotTradeRecord[]>([]);
   const [sessionStats,    setSessionStats]    = useState<BotSessionStats>(emptyStats());
   const [stabilityCount,  setStabilityCount]  = useState(0);
@@ -199,6 +205,7 @@ export function useBotLoop(
 
   const [userId, setUserId] = useState<string | null>(auth.currentUser?.uid ?? null);
   const uidRef = useRef<string | null>(auth.currentUser?.uid ?? null);
+  const hasHydratedRef = useRef<boolean>(false);
 
   // Release wake lock on unmount
   useEffect(() => {
@@ -263,13 +270,14 @@ export function useBotLoop(
     if (!trade) return;
 
     // 1. Calculate trade results locally and immediately (no network block)
-    const posSize      = trade.plan.positionSize ?? 1;
-    const grossPnL     = (exitPrice - trade.entryPrice) * posSize;
-    const estCharges   = trade.plan.brokerCharges ?? 0;
-    const realizedPnL  = parseFloat((grossPnL - estCharges).toFixed(2));
-    const invested     = trade.plan.investmentRupees ?? (posSize * trade.entryPrice);
+    const posSize       = trade.plan.positionSize ?? 1;
+    const instrument    = (trade.plan.instrument ?? 'EQUITY_INTRADAY') as ScalpInstrument;
+    const actualCharges = computeRoundTripCharges(trade.entryPrice, exitPrice, posSize, instrument).total;
+    const grossPnL      = (exitPrice - trade.entryPrice) * posSize;
+    const realizedPnL   = parseFloat((grossPnL - actualCharges).toFixed(2));
+    const invested      = trade.plan.investmentRupees ?? (posSize * trade.entryPrice);
     const realizedPnLPct = invested > 0 ? (realizedPnL / invested) * 100 : 0;
-    const rMultiple = trade.plan.riskRupees > 0 ? realizedPnL / trade.plan.riskRupees : 0;
+    const rMultiple     = trade.plan.riskRupees > 0 ? realizedPnL / trade.plan.riskRupees : 0;
 
     const closed: BotTradeRecord = {
       ...trade,
@@ -282,11 +290,14 @@ export function useBotLoop(
       durationMinutes: Math.round((Date.now() - trade.openedAt) / 60_000),
     };
 
-    // 2. Perform optimistic local UI state updates instantly
-    // Credit back the original total deduction plus the exact realized profit/loss of the trade
-    const openTotalDeduct = invested + estCharges;
-    const creditBack = parseFloat((realizedPnL + openTotalDeduct).toFixed(2));
-    setVirtualBalance(prev => parseFloat((prev + creditBack).toFixed(2)));
+    // creditBack = what we return to the balance: invested capital back + the net PnL
+    // Note: at open we deducted (invested + estimatedCharges). At close we credit back
+    // (invested + grossPnL - actualCharges). The difference accounts for the charge correction.
+    const creditBack = parseFloat((invested + grossPnL - actualCharges).toFixed(2));
+
+    // Optimistic local update — do this immediately (synchronous)
+    const newBalance = parseFloat((virtualBalanceRef.current + creditBack).toFixed(2));
+    setVirtualBalance(newBalance);
     setTradeHistory(h => [closed, ...h]);
 
     setActiveTrades(prev => {
@@ -332,15 +343,13 @@ export function useBotLoop(
     riskStateRef.current = nextRisk;
     saveRiskState(nextRisk);
 
-    // 5. Save trade details & synch balance to Firestore in the background
+    // 5. Save trade details & synch balance to Firestore in the background — use ABSOLUTE balance write, NOT delta
     if (uidRef.current) {
       writeTrade_Close(uidRef.current, closed, exitPrice, invested)
-        .then(async (finalized) => {
-          // Add back the credit proceeds to Firestore and synchronize with local UI state
-          const newBalance = await updateVirtualBalance(uidRef.current!, creditBack);
-          if (newBalance > 0) {
-            setVirtualBalance(newBalance);
-          }
+        .then(async () => {
+          // Write ABSOLUTE balance — avoids race conditions entirely
+          await setVirtualBalanceValue(uidRef.current!, virtualBalanceRef.current);
+          // DO NOT call setVirtualBalance here again — local state is already correct
         })
         .catch(err => {
           console.error('[BotLoop] Background writeTrade_Close fail:', err);
@@ -360,10 +369,6 @@ export function useBotLoop(
     setLastBlockReason(null);
     setPhase('SCANNING');
     requestLock(); // prevent screen sleep during bot operation
-
-    if (uidRef.current) {
-      initVirtualBalance(uidRef.current).then(bal => setVirtualBalance(bal));
-    }
   }, [symbol, requestLock]);
 
   const stopBot = useCallback(() => {
@@ -495,15 +500,14 @@ export function useBotLoop(
     setActivePlans(prev => [...prev, plan]);
     setPhase('IN_TRADE');
 
-    // Deduct totalDeduct from local virtualBalance state instantly!
-    setVirtualBalance(prev => parseFloat((prev - totalDeduct).toFixed(2)));
+    const newBal = parseFloat((virtualBalanceRef.current - totalDeduct).toFixed(2));
+    setVirtualBalance(newBal);
 
     if (uidRef.current) {
       writeTrade_Open(uidRef.current, trade).catch(err =>
         console.warn('[BotLoop] manualBuy writeTrade_Open failed:', err)
       );
-      // Decrease virtual balance in Firestore!
-      updateVirtualBalance(uidRef.current, -totalDeduct).catch(err =>
+      setVirtualBalanceValue(uidRef.current, newBal).catch(err =>
         console.error('[BotLoop] Failed to decrease virtual balance on manual open:', err)
       );
     }
@@ -755,16 +759,15 @@ export function useBotLoop(
       setActivePlans(prev => [...prev, plan]);
       setPhase('IN_TRADE');
 
-      // Deduct totalDeduct from local virtualBalance state instantly!
-      setVirtualBalance(prev => parseFloat((prev - totalDeduct).toFixed(2)));
+      const newBal = parseFloat((virtualBalanceRef.current - totalDeduct).toFixed(2));
+      setVirtualBalance(newBal);
 
       // Write OPEN trade to Firestore
       if (uidRef.current) {
         writeTrade_Open(uidRef.current, trade).catch(err =>
           console.warn('[BotLoop] writeTrade_Open failed:', err)
         );
-        // Decrease virtual balance in Firestore!
-        updateVirtualBalance(uidRef.current, -totalDeduct).catch(err =>
+        setVirtualBalanceValue(uidRef.current, newBal).catch(err =>
           console.error('[BotLoop] Failed to decrease virtual balance on auto open:', err)
         );
       }
@@ -930,6 +933,7 @@ export function useBotLoop(
       setTradeHistory([]);
       setActivePlans([]);
       setActiveTrades([]);
+      hasHydratedRef.current = false;
       return;
     }
     const uid = userId;
@@ -938,7 +942,7 @@ export function useBotLoop(
       try {
         const [stats, trades, openTrades] = await Promise.all([
           loadStats(uid),
-          loadTodayTrades(uid),
+          loadAllTrades(uid),
           loadOpenTrades(uid)
         ]);
 
@@ -950,16 +954,20 @@ export function useBotLoop(
           setPhase('IN_TRADE');
         }
 
-        // Initialize virtual balance
-        const bal = await initVirtualBalance(uid);
-        setVirtualBalance(bal);
+        // ONLY hydrate balance from Firestore if we haven't done it yet this session
+        // OR if there are no active trades (safe to sync)
+        if (!hasHydratedRef.current || activeTradesRef.current.length === 0) {
+          const bal = await initVirtualBalance(uid);
+          setVirtualBalance(bal);
+          hasHydratedRef.current = true;
+        }
       } catch (err) {
         console.error('[BotLoop] Session recovery failed:', err);
       }
     }
 
     recoverSession();
-  }, [userId]); // runs when user changes
+  }, [isIdle, userId]);
 
   // Computed fields for backward compatibility and reactive UI elements
   const activePlan = activePlans[0] ?? null;

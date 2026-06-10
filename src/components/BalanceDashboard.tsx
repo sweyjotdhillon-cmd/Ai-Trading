@@ -10,7 +10,7 @@ import {
 } from 'recharts';
 import { auth } from '../services/firebase';
 import { initVirtualBalance } from '../services/virtualBalanceService';
-import { loadStats, loadTodayTrades } from '../services/botTradeService';
+import { loadStats, loadAllTrades, filterTradesByRange } from '../services/botTradeService';
 import { computeRoundTripCharges } from '../quant/brokerCharges';
 import { BotSessionStats, BotTradeRecord } from '../hooks/useBotLoop';
 
@@ -36,7 +36,7 @@ export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) 
       return null;
     }
   });
-  const [todayTrades, setTodayTrades] = useState<BotTradeRecord[]>(() => {
+  const [allTrades, setAllTrades] = useState<BotTradeRecord[]>(() => {
     try {
       const cached = localStorage.getItem('ledger_cached_trades');
       return cached ? JSON.parse(cached) : [];
@@ -44,6 +44,7 @@ export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) 
       return [];
     }
   });
+  const [selectedRange, setSelectedRange] = useState<string>('TODAY');
   const [loading, setLoading] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [uid, setUid] = useState<string | null>(auth.currentUser?.uid ?? null);
@@ -52,22 +53,22 @@ export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) 
     setIsSyncing(true);
     try {
       // Parallelize all ledger fetches for extreme high speed sync
-      const [liveBal, stats, today] = await Promise.all([
+      const [liveBal, stats, tradesList] = await Promise.all([
         initVirtualBalance(userId),
         loadStats(userId),
-        loadTodayTrades(userId)
+        loadAllTrades(userId)
       ]);
       
       setBalance(liveBal);
       setAllTimeStats(stats);
-      setTodayTrades(today || []);
+      setAllTrades(tradesList || []);
 
       // Cache results to localStorage for instant subsequent visual loads
       try {
         localStorage.setItem('user_virtual_balance', liveBal.toString());
         localStorage.setItem('ledger_cached_balance', liveBal.toString());
         localStorage.setItem('ledger_cached_stats', JSON.stringify(stats));
-        localStorage.setItem('ledger_cached_trades', JSON.stringify(today || []));
+        localStorage.setItem('ledger_cached_trades', JSON.stringify(tradesList || []));
       } catch (err) {
         console.warn('[BalanceDashboard] Failed to cache ledger:', err);
       }
@@ -110,7 +111,8 @@ export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) 
   };
 
   // ─── HIGH FIDELITY BROKER ANALYTICS ───────────────────────────────────
-  const openTrades = todayTrades.filter(t => t.exitPrice == null);
+  const selectedRangeTrades = filterTradesByRange(allTrades, selectedRange);
+  const openTrades = allTrades.filter(t => t.exitPrice == null);
   const openTradesOutlay = openTrades.reduce((sum, t) => {
     const entry = t.entryPrice;
     const shares = t.plan?.positionSize ?? 1;
@@ -119,7 +121,7 @@ export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) 
     return sum + invested + estCharges;
   }, 0);
 
-  const closedToday = todayTrades.filter(t => t.exitPrice != null);
+  const closedToday = selectedRangeTrades.filter(t => t.exitPrice != null);
   const todayPnL = closedToday.reduce((sum, t) => sum + (t.realizedPnL ?? 0), 0);
   const todayTradesCount = closedToday.length;
 
@@ -315,6 +317,34 @@ export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) 
           >
             <RefreshCw size={15} className={isSyncing ? "animate-spin" : ""} />
           </button>
+        </div>
+
+        {/* TIME RANGE SELECTOR */}
+        <div className="flex flex-wrap items-center justify-between gap-3 bg-zinc-950/40 border border-zinc-900/65 rounded-2xl p-3">
+          <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider font-mono flex items-center gap-1.5">
+            <Clock size={11} className="text-[#D9B382]" /> RANGE PERIOD:
+          </span>
+          <div className="flex flex-wrap items-center gap-1 bg-zinc-950 border border-zinc-850 p-1 rounded-xl">
+            {[
+              { id: 'TODAY', label: 'Today' },
+              { id: 'YESTERDAY', label: 'Yesterday' },
+              { id: '7D', label: '7 Days' },
+              { id: '30D', label: '30 Days' },
+              { id: 'ALL', label: 'All Time' }
+            ].map(range => (
+              <button
+                key={range.id}
+                onClick={() => setSelectedRange(range.id)}
+                className={`px-3 py-1.5 rounded-lg text-[9px] font-mono font-bold uppercase transition-all ${
+                  selectedRange === range.id
+                    ? 'bg-[#D9B382] text-zinc-950 font-black shadow-md'
+                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/50'
+                }`}
+              >
+                {range.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Section 1 — Balance & Equity Performance Header */}
@@ -580,8 +610,17 @@ export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) 
 
         {/* Section 4 — Trade history list (today's trades, most recent first) */}
         <div className="flex flex-col gap-3" id="ledger-trade-history">
-          <h3 className="text-xs font-black text-zinc-400 uppercase tracking-widest font-sans flex items-center gap-1.5">
-            <List size={12} className="text-[#D9B382]" /> Today's Trade Records
+          <h3 className="text-xs font-black text-zinc-400 uppercase tracking-widest font-sans flex items-center gap-1.55">
+            <List size={12} className="text-[#D9B382]" />
+            {selectedRange === 'TODAY'
+              ? "Today's Trade Records"
+              : selectedRange === 'YESTERDAY'
+              ? "Yesterday's Trade Records"
+              : selectedRange === '7D'
+              ? 'Last 7 Days Trade Records'
+              : selectedRange === '30D'
+              ? 'Last 30 Days Trade Records'
+              : 'All-Time Trade Records'}
           </h3>
 
           {closedToday.length > 0 ? (
@@ -592,7 +631,11 @@ export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) 
                 const shares = trade.plan?.positionSize ?? 1;
                 const invested = trade.plan?.investmentRupees ?? (entry * shares);
                 const isPnLPos = (trade.realizedPnL ?? 0) >= 0;
-                const dateStr = new Date(trade.openedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                
+                const dateStr = selectedRange === 'TODAY' || selectedRange === 'YESTERDAY'
+                  ? new Date(trade.openedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                  : new Date(trade.openedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) + ' ' + new Date(trade.openedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+
                 const holdSec = Math.max(0, Math.round(((trade.closedAt ?? Date.now()) - trade.openedAt) / 1000));
                 const estCharges = trade.plan?.brokerCharges ?? (invested * 0.0005);
 
