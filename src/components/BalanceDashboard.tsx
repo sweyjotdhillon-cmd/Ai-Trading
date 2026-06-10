@@ -64,13 +64,11 @@ export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) 
     setIsSyncing(true);
     setSyncError(null);
     
-    // Set a client-side timeout of 4.5 seconds to prevent sticking in SYNCING state if connection is blocked/offline
-    let hasTimedOut = false;
+    // Set a client-side timeout of 10 seconds to warn about slow/restricted connections,
+    // but NEVER discard retrieved data once it successfully arrives.
     const timeoutId = setTimeout(() => {
-      hasTimedOut = true;
-      setSyncError('Cloud Sync took too long. Operating on local offline cache. Runs inside partitioned iframes may have restricted Firebase cloud channels.');
-      setIsSyncing(false);
-    }, 4500);
+      setSyncError('Cloud Sync took longer than expected due to network latency. Showing cached data while we continue to synchronize...');
+    }, 10000);
 
     try {
       // Parallelize all ledger fetches for extreme high speed sync
@@ -80,33 +78,28 @@ export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) 
         loadAllTrades(userId)
       ]);
       
-      if (!hasTimedOut) {
-        clearTimeout(timeoutId);
-        setBalance(liveBal);
-        setAllTimeStats(stats);
-        setAllTrades(tradesList || []);
+      clearTimeout(timeoutId);
+      setBalance(liveBal);
+      setAllTimeStats(stats);
+      setAllTrades(tradesList || []);
+      setSyncError(null); // Clear any warning since sync succeeded perfectly
 
-        // Cache results to localStorage for instant subsequent visual loads
-        try {
-          localStorage.setItem('user_virtual_balance', liveBal.toString());
-          localStorage.setItem('ledger_cached_balance', liveBal.toString());
-          localStorage.setItem('ledger_cached_stats', JSON.stringify(stats));
-          localStorage.setItem('ledger_cached_trades', JSON.stringify(tradesList || []));
-        } catch (err) {
-          console.warn('[BalanceDashboard] Failed to cache ledger:', err);
-        }
+      // Cache results to localStorage for instant subsequent visual loads
+      try {
+        localStorage.setItem('user_virtual_balance', liveBal.toString());
+        localStorage.setItem('ledger_cached_balance', liveBal.toString());
+        localStorage.setItem('ledger_cached_stats', JSON.stringify(stats));
+        localStorage.setItem('ledger_cached_trades', JSON.stringify(tradesList || []));
+      } catch (err) {
+        console.warn('[BalanceDashboard] Failed to cache ledger:', err);
       }
     } catch (e: any) {
-      if (!hasTimedOut) {
-        clearTimeout(timeoutId);
-        console.error('[BalanceDashboard] Failed to fetch metrics:', e);
-        setSyncError(e?.message || 'Failed to sync cloud data. Switched to offline backup.');
-      }
+      clearTimeout(timeoutId);
+      console.error('[BalanceDashboard] Failed to fetch metrics:', e);
+      setSyncError(e?.message || 'Failed to sync cloud data. Switched to offline backup.');
     } finally {
-      if (!hasTimedOut) {
-        setLoading(false);
-        setIsSyncing(false);
-      }
+      setLoading(false);
+      setIsSyncing(false);
     }
   };
 
@@ -392,10 +385,10 @@ export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) 
       <div className="max-w-3xl mx-auto w-full flex flex-col gap-6">
         
         {/* Header Block */}
-        <div className="flex items-center justify-between border-b border-zinc-900 pb-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-900 pb-4 pt-2">
           <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl font-black text-white tracking-widest uppercase">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-lg sm:text-xl font-black text-white tracking-widest uppercase leading-normal pt-1">
                 Broker Ledger & Analytics
               </h1>
               {isSyncing ? (
@@ -416,10 +409,10 @@ export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) 
               PRO-GRADE MATHEMATICAL TELEMETRY · 100% AUDIT SATISFACTION
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
             <button
               onClick={() => setShowDiagnostics(!showDiagnostics)}
-              className="px-3 py-2 rounded-xl bg-zinc-950 border border-zinc-800 hover:bg-zinc-800 text-[10px] font-mono font-bold tracking-wider uppercase text-zinc-400 flex items-center gap-1.5 active:scale-95 transition-all"
+              className="flex-1 sm:flex-none px-3.5 py-2.5 rounded-xl bg-zinc-950 border border-zinc-800 hover:bg-zinc-800 text-[10px] font-mono font-bold tracking-wider uppercase text-zinc-400 flex items-center justify-center gap-1.5 active:scale-95 transition-all"
             >
               <Database size={11} className="text-[#D9B382]" /> Diagnostician
             </button>
@@ -427,7 +420,7 @@ export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) 
               onClick={handleManualRefresh}
               id="btn-ledger-refresh"
               disabled={isSyncing}
-              className="p-2.5 rounded-xl bg-zinc-950 border border-zinc-800 hover:bg-zinc-800 text-[#D9B382] transition-colors flex items-center justify-center active:scale-95 disabled:opacity-50"
+              className="p-3 rounded-xl bg-zinc-950 border border-zinc-800 hover:bg-zinc-800 text-[#D9B382] transition-colors flex items-center justify-center active:scale-95 disabled:opacity-50"
               title="Force ledger sync"
             >
               <RefreshCw size={15} className={isSyncing ? "animate-spin" : ""} />
