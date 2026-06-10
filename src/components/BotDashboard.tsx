@@ -150,16 +150,6 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
   const prevPhaseRef    = useRef<string>('');
   const prevOutcomeRef  = useRef<string | null>(null);
 
-  const [uid, setUid] = useState<string | null>(auth.currentUser?.uid ?? null);
-  useEffect(() => {
-    const unsub = auth.onAuthStateChanged(user => {
-      setUid(user?.uid ?? null);
-    });
-    return () => unsub();
-  }, []);
-
-  const { state: eodState, triggerSettlement } = useEODSettlement(uid);
-
   const addToast = useCallback((message: string, type: Toast['type']) => {
     const id = Date.now().toString() + Math.random().toString(36).substr(2, 5);
     setToasts(prev => [{ id, message, type }, ...prev].slice(0, 4));
@@ -168,28 +158,28 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
     }, 4000);
   }, []);
 
-  const prevLastResultRef = useRef<any>(null);
-
-  useEffect(() => {
-    if (eodState.lastResult && eodState.lastResult !== prevLastResultRef.current) {
-      prevLastResultRef.current = eodState.lastResult;
-      const { settled, skipped, totalNetPnL, errors, ambiguous } = eodState.lastResult;
-      
-      if (settled > 0) {
-        const sign = totalNetPnL >= 0 ? '+' : '';
-        const ambPart = ambiguous > 0 ? ` (${ambiguous} ambiguous, closed at close price)` : '';
-        addToast(`Settlement done — ${settled} trade(s) | Net P&L: ${sign}₹${totalNetPnL}${ambPart}`, 'win');
-      } else if (skipped > 0 && errors.length > 0) {
-        addToast(`Settlement failed for ${skipped} trade(s)`, 'warning');
-      } else if (errors.includes('Already settled this session')) {
-        addToast("Already settled this session", "info");
-      } else {
-        addToast("No open trades to settle", "info");
-      }
-    }
-  }, [eodState.lastResult, addToast]);
-
   const primaryPlan = bot.activePlans[0];
+  const uid = auth.currentUser?.uid ?? null;
+  const { state: eodState, triggerSettlement } = useEODSettlement(uid);
+  const [eodBanner, setEodBanner] = useState<{ type: 'success' | 'error'; message: string; sub?: string } | null>(null);
+
+  // Show persistent banner when settlement completes
+  useEffect(() => {
+    if (!eodState.lastResult) return;
+    const r = eodState.lastResult;
+    if (r.settled === 0 && r.skipped === 0) {
+      setEodBanner({ type: 'success', message: 'No open trades to settle' });
+    } else if (r.settled > 0) {
+      const sign = r.totalNetPnL >= 0 ? '+' : '';
+      setEodBanner({
+        type: 'success',
+        message: `Settlement done — ${r.settled} trade${r.settled > 1 ? 's' : ''} · Net P&L: ${sign}₹${Math.abs(r.totalNetPnL).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
+        sub: r.ambiguous > 0 ? `${r.ambiguous} ambiguous (both TP & SL hit same day — closed at day's close price). Restart bot to see trades in log.` : 'Restart bot to see settled trades in trade log.',
+      });
+    } else {
+      setEodBanner({ type: 'error', message: `Settlement failed for ${r.skipped} trade(s)` });
+    }
+  }, [eodState.lastResult]);
 
   const filteredTrades = useMemo(() => {
     return filterTradesByRange(bot.tradeHistory, selectedRange);
@@ -411,38 +401,22 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
             {bot.marketOpen ? 'MARKET OPEN' : 'MARKET CLOSED'}
           </span>
 
+          {/* EOD Settlement status pill */}
+          {eodState.isSettling && (
+            <span className="flex items-center gap-1 text-[10px] font-mono text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full animate-pulse">
+              ⏳ Settling trades...
+            </span>
+          )}
+          {!eodState.isSettling && eodState.alreadySettled && eodState.lastResult && eodState.lastResult.settled > 0 && (
+            <span className="flex items-center gap-1 text-[10px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
+              ✓ EOD SETTLED
+            </span>
+          )}
+
           {/* Stale warning */}
           {bot.isStale && (
             <span className="flex items-center gap-1 text-[10px] font-mono text-orange-400 bg-orange-500/10 border border-orange-500/20 px-2 py-0.5 rounded-full">
               <AlertTriangle size={9} /> STALE FEED
-            </span>
-          )}
-
-          {/* EOD SETTLEMENT STATUS PILLS */}
-          {eodState.isSettling && (
-            <span className="flex items-center gap-1 text-[10px] font-mono text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full animate-pulse">
-              <Clock size={9} /> Settling trades…
-            </span>
-          )}
-          {!eodState.isSettling && eodState.alreadySettled && eodState.lastResult && eodState.lastResult.settled > 0 && (
-            <div className="flex flex-col">
-              <span className="flex items-center gap-1 text-[10px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
-                <CheckCircle size={9} /> Settled {eodState.lastResult.settled} trades | {eodState.lastResult.totalNetPnL >= 0 ? '+' : ''}₹{eodState.lastResult.totalNetPnL}
-              </span>
-              {eodState.lastResult.ambiguous > 0 && (
-                <span className="text-[8px] font-mono text-amber-500 font-bold ml-1 mt-0.5">
-                  ⚠ {eodState.lastResult.ambiguous} trade(s) ambiguous — closed at day's price
-                </span>
-              )}
-            </div>
-          )}
-          {!eodState.isSettling && eodState.error && (
-            <span
-              onClick={triggerSettlement}
-              className="flex items-center gap-1 text-[10px] font-mono text-rose-400 bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 rounded-full cursor-pointer hover:bg-rose-500/20 transition-all"
-              title="Click to retry settlement"
-            >
-              <AlertTriangle size={9} /> Settlement error (Click to retry)
             </span>
           )}
         </div>
@@ -451,19 +425,6 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
         <div className="flex items-center justify-between md:justify-end gap-3 border-t border-zinc-800/40 md:border-t-0 pt-2.5 md:pt-0">
           <StabilityDots />
           <div className="flex items-center gap-2">
-            {eodState.canSettle && (
-              <button
-                onClick={triggerSettlement}
-                disabled={eodState.isSettling || eodState.alreadySettled}
-                className="px-3 py-2 rounded-lg text-[10px] font-mono font-bold uppercase tracking-wider border border-zinc-700 bg-zinc-800 hover:bg-zinc-750 text-zinc-300 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-[0.98]"
-              >
-                {eodState.isSettling
-                  ? "Settling…"
-                  : eodState.alreadySettled
-                  ? "Already Settled"
-                  : "Settle Today's Trades"}
-              </button>
-            )}
             <button
               onClick={onPause}
               className="p-2.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-400 transition-colors"
@@ -495,6 +456,48 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
             </span>
           )}
         </div>
+      )}
+
+      {/* EOD Settlement Banner */}
+      {eodBanner && (
+        <div className={`flex flex-col gap-1 px-4 py-3 border rounded-xl ${
+          eodBanner.type === 'success'
+            ? 'bg-emerald-500/8 border-emerald-500/20'
+            : 'bg-rose-500/10 border-rose-500/30'
+        }`}>
+          <div className="flex items-center justify-between">
+            <div className={`flex items-center gap-2 text-xs font-mono font-bold ${
+              eodBanner.type === 'success' ? 'text-emerald-400' : 'text-rose-400'
+            }`}>
+              <span>{eodBanner.type === 'success' ? '✓' : '✗'}</span>
+              <span>{eodBanner.message}</span>
+            </div>
+            <button
+              onClick={() => setEodBanner(null)}
+              className="text-zinc-500 hover:text-zinc-300 text-xs ml-3 shrink-0"
+            >✕</button>
+          </div>
+          {eodBanner.sub && (
+            <span className="text-[10px] font-mono text-zinc-500 pl-5">{eodBanner.sub}</span>
+          )}
+        </div>
+      )}
+
+      {/* EOD Settle Button — only visible after 15:30 IST */}
+      {eodState.canSettle && (
+        <button
+          onClick={triggerSettlement}
+          disabled={eodState.isSettling || eodState.alreadySettled}
+          className={`w-full py-2.5 rounded-xl border text-xs font-black uppercase tracking-widest transition-all active:scale-[0.98] ${
+            eodState.alreadySettled
+              ? 'bg-zinc-800/40 border-zinc-700/40 text-zinc-600 cursor-not-allowed'
+              : eodState.isSettling
+              ? 'bg-amber-500/10 border-amber-500/30 text-amber-500 cursor-wait animate-pulse'
+              : 'bg-zinc-800/60 hover:bg-zinc-700/60 border-zinc-600/60 text-zinc-300'
+          }`}
+        >
+          {eodState.alreadySettled ? '✓ Already Settled' : eodState.isSettling ? '⏳ Settling...' : '📋 Settle Today\'s Trades'}
+        </button>
       )}
 
       {/* Feed error */}
