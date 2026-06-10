@@ -19,13 +19,13 @@ interface BalanceDashboardProps {
 }
 
 export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) {
-  const STARTING_CAPITAL = 100000;
+  const DEFAULT_STARTING_CAPITAL = 100000;
   const [balance, setBalance] = useState<number>(() => {
     try {
-      const cached = localStorage.getItem('ledger_cached_balance');
-      return cached ? parseFloat(cached) : STARTING_CAPITAL;
+      const cached = localStorage.getItem('user_virtual_balance') || localStorage.getItem('ledger_cached_balance');
+      return cached ? parseFloat(cached) : DEFAULT_STARTING_CAPITAL;
     } catch {
-      return STARTING_CAPITAL;
+      return DEFAULT_STARTING_CAPITAL;
     }
   });
   const [allTimeStats, setAllTimeStats] = useState<BotSessionStats | null>(() => {
@@ -64,6 +64,7 @@ export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) 
 
       // Cache results to localStorage for instant subsequent visual loads
       try {
+        localStorage.setItem('user_virtual_balance', liveBal.toString());
         localStorage.setItem('ledger_cached_balance', liveBal.toString());
         localStorage.setItem('ledger_cached_stats', JSON.stringify(stats));
         localStorage.setItem('ledger_cached_trades', JSON.stringify(today || []));
@@ -109,9 +110,25 @@ export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) 
   };
 
   // ─── HIGH FIDELITY BROKER ANALYTICS ───────────────────────────────────
+  const openTrades = todayTrades.filter(t => t.exitPrice == null);
+  const openTradesOutlay = openTrades.reduce((sum, t) => {
+    const entry = t.entryPrice;
+    const shares = t.plan?.positionSize ?? 1;
+    const invested = t.plan?.investmentRupees ?? (entry * shares);
+    const estCharges = t.plan?.brokerCharges ?? 0;
+    return sum + invested + estCharges;
+  }, 0);
+
   const closedToday = todayTrades.filter(t => t.exitPrice != null);
   const todayPnL = closedToday.reduce((sum, t) => sum + (t.realizedPnL ?? 0), 0);
   const todayTradesCount = closedToday.length;
+
+  // Dynamic starting capital representing ledger base before today's trades
+  const STARTING_CAPITAL = balance + openTradesOutlay - todayPnL;
+  const initialAllocation = STARTING_CAPITAL;
+
+  // Account net equity is current available cash plus capital deployed in open positions
+  const accountEquity = balance + openTradesOutlay;
 
   // Historical calculation metrics
   const totalTradesCount = closedToday.length;
@@ -202,7 +219,7 @@ export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) 
     return sum + (t.plan?.brokerCharges ?? 0);
   }, 0);
 
-  const chargesCapitalFootprint = (totalChargesPaid / STARTING_CAPITAL) * 100;
+  const chargesCapitalFootprint = initialAllocation > 0 ? (totalChargesPaid / initialAllocation) * 100 : 0;
 
   // ─── MATH CONGRUENCE & ANTI-HALLUCINATION TELEMETRY ───────────────────
   const priceOrderingPassed = closedToday.every(t => !t.plan || (t.plan.takeProfit2 > t.plan.takeProfit1 && t.plan.takeProfit1 > t.entryPrice && t.entryPrice > t.plan.stopLoss));
@@ -221,9 +238,8 @@ export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) 
   const passedAuditsCount = (priceOrderingPassed ? 1 : 0) + (boundsIntegrityPassed ? 1 : 0) + (localMathConsistent ? 1 : 0) + 1; // 1 auto-passed for standard ATR sync
   const mathVerityScore = Math.round((passedAuditsCount / totalAuditPoints) * 100);
 
-  const initialAllocation = STARTING_CAPITAL;
-  const totalPnL = balance - initialAllocation;
-  const totalPnLPct = (totalPnL / initialAllocation) * 100;
+  const totalPnL = todayPnL;
+  const totalPnLPct = initialAllocation > 0 ? (totalPnL / initialAllocation) * 100 : 0;
 
   // Broker charges breakdown for last closed trade
   const lastClosedTrade = closedToday[0];
@@ -291,17 +307,17 @@ export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) 
               <div className="flex items-center gap-1.5">
                 <Wallet size={14} className="text-[#D9B382]" />
                 <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider font-mono">
-                  Virtual Capital
+                  Virtual Account Equity
                 </span>
               </div>
               <span className="text-[8px] font-mono text-emerald-400 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded uppercase">
-                Paper Margin
+                Paper Portfolio
               </span>
             </div>
 
             <div className="flex flex-col gap-1 my-2">
               <h2 className="text-2xl font-black text-white tracking-tight font-mono">
-                {fmt(balance)}
+                {fmt(accountEquity)}
               </h2>
               <div className="flex items-center gap-1.5 flex-wrap">
                 {totalPnL >= 0 ? (
@@ -322,9 +338,9 @@ export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) 
               </div>
             </div>
 
-            <div className="border-t border-zinc-900 pt-2 flex justify-between text-[8px] text-zinc-500 font-mono uppercase tracking-wider">
+            <div className="border-t border-zinc-900 pt-2 flex justify-between text-[8px] text-zinc-500 font-mono uppercase tracking-wider gap-2 flex-wrap">
               <span>Allocated: {fmt(initialAllocation)}</span>
-              <span>Leverage: 1.0X</span>
+              <span>Cash Margin: {fmt(balance)}</span>
             </div>
           </div>
 

@@ -126,7 +126,14 @@ const POPULAR_STOCKS: StockSearchResult[] = [
 export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
   const [query,          setQuery]          = useState('');
   const [searchResults,  setSearchResults]  = useState<StockSearchResult[]>([]);
-  const [selectedStock,  setSelectedStock]  = useState<StockSearchResult | null>(null);
+  const [selectedStock,  setSelectedStock]  = useState<StockSearchResult | null>(() => {
+    try {
+      const stored = localStorage.getItem('chartlens_selected_stock');
+      return stored ? JSON.parse(stored) : null;
+    } catch {
+      return null;
+    }
+  });
   const [isSearching,    setIsSearching]    = useState(false);
   const [searchError,    setSearchError]    = useState<string | null>(null);
 
@@ -141,20 +148,84 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
   const [loadingBalance, setLoadingBalance] = useState<boolean>(false);
 
   const [capital,           setCapital]           = useState(100000);
-  const [timeframe,         setTimeframe]         = useState(3);
-  const [preset,            setPreset]            = useState<RiskPreset>('BALANCED');
-  const [instrument,        setInstrument]        = useState<ScalpInstrument>('EQUITY_INTRADAY');
-  const [minConfidence,     setMinConfidence]     = useState(70);
+  const [timeframe,         setTimeframe]         = useState<number>(() => {
+    try {
+      const v = localStorage.getItem('chartlens_timeframe');
+      return v ? parseInt(v, 10) : 3;
+    } catch { return 3; }
+  });
+  const [preset,            setPreset]            = useState<RiskPreset>(() => {
+    try {
+      return (localStorage.getItem('chartlens_preset') as RiskPreset) || 'BALANCED';
+    } catch { return 'BALANCED'; }
+  });
+  const [instrument,        setInstrument]        = useState<ScalpInstrument>(() => {
+    try {
+      return (localStorage.getItem('chartlens_instrument') as ScalpInstrument) || 'EQUITY_INTRADAY';
+    } catch { return 'EQUITY_INTRADAY'; }
+  });
+  const [minConfidence,     setMinConfidence]     = useState<number>(() => {
+    try {
+      const v = localStorage.getItem('chartlens_min_confidence');
+      return v ? parseInt(v, 10) : 70;
+    } catch { return 70; }
+  });
   const [capitalInput,      setCapitalInput]      = useState('100000');
-  const [marketHoursGate,   setMarketHoursGate]   = useState(false);
+  const [marketHoursGate,   setMarketHoursGate]   = useState<boolean>(() => {
+    try {
+      const v = localStorage.getItem('chartlens_market_hours_gate');
+      return v === 'true';
+    } catch { return false; }
+  });
 
-  const [investmentPerTrade, setInvestmentPerTrade] = useState(10000);
-  const [rrRatioChoice,      setRrRatioChoice]      = useState<1.5 | 2 | 2.5 | 3 | 4>(2);
-  const [useConfidenceThreshold, setUseConfidenceThreshold] = useState(true);
-  const [maxConcurrentTrades, setMaxConcurrentTrades] = useState(3);
+  const [investmentPerTrade, setInvestmentPerTrade] = useState<number>(() => {
+    try {
+      const v = localStorage.getItem('chartlens_investment_per_trade');
+      return v ? parseInt(v, 10) : 10000;
+    } catch { return 10000; }
+  });
+  const [rrRatioChoice,      setRrRatioChoice]      = useState<1.5 | 2 | 2.5 | 3 | 4>(() => {
+    try {
+      const v = localStorage.getItem('chartlens_rr_ratio_choice');
+      return v ? parseFloat(v) as any : 2;
+    } catch { return 2; }
+  });
+  const [useConfidenceThreshold, setUseConfidenceThreshold] = useState<boolean>(() => {
+    try {
+      const v = localStorage.getItem('chartlens_use_confidence_threshold');
+      return v !== 'false';
+    } catch { return true; }
+  });
+  const [maxConcurrentTrades, setMaxConcurrentTrades] = useState<number>(() => {
+    try {
+      const v = localStorage.getItem('chartlens_max_concurrent_trades');
+      return v ? parseInt(v, 10) : 3;
+    } catch { return 3; }
+  });
 
   const [errors, setErrors] = useState<string[]>([]);
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('chartlens_timeframe', String(timeframe));
+      localStorage.setItem('chartlens_preset', preset);
+      localStorage.setItem('chartlens_instrument', instrument);
+      localStorage.setItem('chartlens_min_confidence', String(minConfidence));
+      localStorage.setItem('chartlens_market_hours_gate', String(marketHoursGate));
+      localStorage.setItem('chartlens_investment_per_trade', String(investmentPerTrade));
+      localStorage.setItem('chartlens_rr_ratio_choice', String(rrRatioChoice));
+      localStorage.setItem('chartlens_use_confidence_threshold', String(useConfidenceThreshold));
+      localStorage.setItem('chartlens_max_concurrent_trades', String(maxConcurrentTrades));
+      if (selectedStock) {
+        localStorage.setItem('chartlens_selected_stock', JSON.stringify(selectedStock));
+      } else {
+        localStorage.removeItem('chartlens_selected_stock');
+      }
+    } catch (e) {
+      console.warn('Failed to save setup config to localStorage:', e);
+    }
+  }, [timeframe, preset, instrument, minConfidence, marketHoursGate, investmentPerTrade, rrRatioChoice, useConfidenceThreshold, maxConcurrentTrades, selectedStock]);
 
   const [techniquesList, setTechniquesList] = useState<any[]>(() => {
     try {
@@ -515,10 +586,13 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
             type="number"
             min="500"
             max={Number(capitalInput) || 100000}
-            value={investmentPerTrade}
+            value={investmentPerTrade === 0 ? '' : investmentPerTrade}
             onChange={(e) => {
-              const val = Math.max(500, Number(e.target.value));
-              setInvestmentPerTrade(val);
+              const val = e.target.value;
+              setInvestmentPerTrade(val === '' ? 0 : Number(val));
+            }}
+            onBlur={() => {
+              setInvestmentPerTrade(prev => Math.max(500, Math.min(prev, Number(capitalInput) || 100000)));
             }}
             className="flex-1 bg-gray-700 text-white border border-gray-600 rounded p-2 focus:outline-none focus:border-blue-500 font-mono"
           />

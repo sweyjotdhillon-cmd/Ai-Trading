@@ -502,14 +502,30 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
       {/* Virtual Balance Card */}
       {(() => {
         const balance = bot.virtualBalance ?? 100000;
-        const delta = balance - 100000;
-        const deltaPct = (delta / 100000) * 100;
+        const openTrades = bot.activeTrades ?? [];
+        const openTradesOutlay = openTrades.reduce((sum, t) => {
+          const entry = t.entryPrice;
+          const shares = t.plan?.positionSize ?? 1;
+          const invested = t.plan?.investmentRupees ?? (entry * shares);
+          const estCharges = t.plan?.brokerCharges ?? 0;
+          return sum + invested + estCharges;
+        }, 0);
+
+        const totalRealizedPnL = (bot.tradeHistory ?? []).reduce((sum, t) => sum + (t.realizedPnL ?? 0), 0);
+        const STARTING_BASE = balance + openTradesOutlay - totalRealizedPnL;
+        const accountEquity = balance + openTradesOutlay;
+        const delta = accountEquity - STARTING_BASE;
+        const deltaPct = STARTING_BASE > 0 ? (delta / STARTING_BASE) * 100 : 0;
+
         return (
           <div className="bg-zinc-900/40 border border-zinc-800/40 rounded-xl p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <div>
-              <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest">Virtual Balance</span>
+              <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest font-bold">Virtual Account Equity</span>
               <div className="mt-1 font-mono text-2xl font-black text-zinc-100">
-                ₹{balance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                ₹{accountEquity.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+              <div className="text-[9px] text-zinc-500 mt-0.5">
+                Available Cash: ₹{balance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
             </div>
             <div className="text-left sm:text-right font-mono text-xs">
@@ -518,8 +534,8 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
               }`}>
                 {delta > 0 ? '+' : ''}₹{delta.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({delta > 0 ? '+' : ''}{deltaPct.toFixed(2)}%)
               </span>
-              <div className="text-[9px] text-zinc-500 mt-0.5">
-                from initial ₹1,00,000
+              <div className="text-[9px] text-zinc-500 mt-1">
+                from starting ₹{STARTING_BASE.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
               </div>
             </div>
           </div>

@@ -180,12 +180,23 @@ export function evaluateScalpSignal(
   // Position Sizing
   const investmentAmount = ctx.config.investmentPerTrade ?? 10000;
   const lotSize = ctx.config.lotSize ?? 1;
-  let sizeShares = Math.floor(investmentAmount / entry / lotSize) * lotSize;
-  if (sizeShares <= 0) sizeShares = 1;
+  let sizeShares = 0;
+
+  if (lotSize === 1) {
+    // Standard equity stocks: allow fractional shares down to 2 decimal places (such as 0.5 shares)
+    sizeShares = Math.floor((investmentAmount / entry) * 100) / 100;
+  } else {
+    // Non-equity options/futures: keep standard lot size multiples
+    sizeShares = Math.floor(investmentAmount / entry / lotSize) * lotSize;
+  }
+
+  if (sizeShares <= 0 && !isForced) {
+    blockers.push(`INSUFFICIENT_INVESTMENT: Allocated per trade (₹${investmentAmount}) results in 0 shares. (Stock price: ₹${entry.toFixed(2)})`);
+    return { signal: 'WAIT', confluenceScore, blockers, features, rawWinner };
+  }
 
   if (sizeShares <= 0) {
-    blockers.push('POSITION_SIZE_ZERO');
-    return { signal: 'WAIT', confluenceScore, blockers, features, rawWinner };
+    sizeShares = lotSize === 1 ? 0.5 : lotSize;
   }
 
   // Exit Targets

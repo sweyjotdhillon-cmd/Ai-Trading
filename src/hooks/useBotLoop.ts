@@ -283,9 +283,10 @@ export function useBotLoop(
     };
 
     // 2. Perform optimistic local UI state updates instantly
-    // Credit back the proceeds from selling (exitPrice * posSize)
-    const saleProceeds = parseFloat((exitPrice * posSize).toFixed(2));
-    setVirtualBalance(prev => parseFloat((prev + saleProceeds).toFixed(2)));
+    // Credit back the original total deduction plus the exact realized profit/loss of the trade
+    const openTotalDeduct = invested + estCharges;
+    const creditBack = parseFloat((realizedPnL + openTotalDeduct).toFixed(2));
+    setVirtualBalance(prev => parseFloat((prev + creditBack).toFixed(2)));
     setTradeHistory(h => [closed, ...h]);
 
     setActiveTrades(prev => {
@@ -335,8 +336,8 @@ export function useBotLoop(
     if (uidRef.current) {
       writeTrade_Close(uidRef.current, closed, exitPrice, invested)
         .then(async (finalized) => {
-          // Add back the sale proceeds
-          const newBalance = await updateVirtualBalance(uidRef.current!, saleProceeds);
+          // Add back the credit proceeds to Firestore and synchronize with local UI state
+          const newBalance = await updateVirtualBalance(uidRef.current!, creditBack);
           if (newBalance > 0) {
             setVirtualBalance(newBalance);
           }
