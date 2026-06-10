@@ -67,3 +67,25 @@ export async function updateVirtualBalance(
     return 0;   // 0 means caller should use local fallback
   }
 }
+
+export async function setVirtualBalanceValue(
+  uid: string | null,
+  value: number
+): Promise<number> {
+  const rounded = parseFloat(value.toFixed(2));
+  try {
+    localStorage.setItem('user_virtual_balance', String(rounded));
+    localStorage.setItem('ledger_cached_balance', String(rounded));
+  } catch (err) {
+    // LocalStorage is unavailable or full
+  }
+  if (!uid) return rounded;
+  const docRef = doc(db, 'tradeBot', uid, 'balance', 'current');
+  try {
+    await setDoc(docRef, { balance: rounded, upd: Math.floor(Date.now() / 1000) }, { merge: true });
+    return rounded;
+  } catch (e: any) {
+    console.error('[VB] setVirtualBalanceValue failed:', e?.message || e);
+    return rounded;
+  }
+}

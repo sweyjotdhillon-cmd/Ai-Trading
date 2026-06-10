@@ -188,6 +188,24 @@ export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) 
 
   const drawdownPct = parseFloat(maxDD.toFixed(2));
 
+  // --- ADVANCED RISK & QUANT SECTOR MATH ---
+  const wRatio = winRate / 100;
+  const payRatio = payoffRatio > 0 ? payoffRatio : 1.0;
+  // Kelly % = W - (1 - W)/R
+  const kellyPct = payRatio > 0 ? (wRatio - (1 - wRatio) / payRatio) * 100 : 0;
+  
+  // Recovery Factor = Net PnL / Max Drawdown Rupees
+  const maxDDAmt = (drawdownPct / 100) * STARTING_CAPITAL;
+  const recoveryFactor = maxDDAmt > 0 && todayPnL > 0 
+    ? parseFloat((todayPnL / maxDDAmt).toFixed(2)) 
+    : todayPnL > 0 ? 99.9 : 0.0;
+
+  // Consistency / Quality Score out of 100
+  const profitPoints = todayPnL > 0 ? 30 : 0;
+  const winRatePoints = Math.min(40, (winRate / 100) * 40);
+  const payoffPoints = Math.min(30, (payRatio / 3) * 30);
+  const compositeConsistency = Math.round(profitPoints + winRatePoints + payoffPoints);
+
   // Cumulative Equity series for graphing
   let accumBal = STARTING_CAPITAL;
   const chartData = [{ name: 'Alloc', Equity: accumBal }];
@@ -481,6 +499,64 @@ export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) 
                   {drawdownPct.toFixed(2)}%
                 </p>
                 <p className="text-[8px] text-zinc-500 font-mono uppercase mt-0.5">Peak-to-Valley dip</p>
+              </div>
+            </div>
+          </div>
+
+          {/* NEW SECTION 2.5: QUANT SIZING & ADVANCED COGNITIVE ANALYTICS */}
+          <div className="bg-zinc-900/40 border border-zinc-800 rounded-xl p-4 flex flex-col gap-3 mt-1 shadow-md">
+            <div className="flex items-center justify-between border-b border-zinc-800/80 pb-2">
+              <span className="text-[10px] text-[#D9B382] font-black uppercase tracking-widest font-mono flex items-center gap-1.5">
+                <Sparkles size={11} className="text-amber-450 animate-pulse" /> Advanced Sizing & Sensation Science Metrics
+              </span>
+              <span className="text-[8px] font-mono text-zinc-550 uppercase font-bold bg-zinc-800 px-1.5 py-0.5 rounded">Interactive stats model</span>
+            </div>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {/* Kelly Sizing Sensation */}
+              <div className="bg-zinc-950/30 p-3 rounded-lg border border-zinc-850 flex flex-col justify-between min-h-[96px]">
+                <div>
+                  <span className="text-[9px] text-zinc-400 font-mono uppercase font-bold">Kelly Optimal Sizing %</span>
+                  <p className={`text-base font-black font-mono mt-0.5 ${kellyPct > 0 ? 'text-emerald-400' : 'text-zinc-500'}`}>
+                    {kellyPct > 0 ? `${kellyPct.toFixed(2)}%` : '0.00% (Capital Guard Active)'}
+                  </p>
+                </div>
+                <p className="text-[8px] text-zinc-500 font-mono leading-normal mt-1.5">
+                  Optimal percentage of capital to allocate per concurrent trading position based on win profile.
+                </p>
+              </div>
+
+              {/* Recovery Index */}
+              <div className="bg-zinc-950/30 p-3 rounded-lg border border-zinc-850 flex flex-col justify-between min-h-[96px]">
+                <div>
+                  <span className="text-[9px] text-zinc-400 font-mono uppercase font-bold">Recovery Factor</span>
+                  <p className="text-base font-black text-sky-400 font-mono mt-0.5">
+                    {recoveryFactor === 99.9 ? '∞' : recoveryFactor.toFixed(2)}
+                  </p>
+                </div>
+                <p className="text-[8px] text-zinc-500 font-mono leading-normal mt-1.5">
+                  Ratio of total customized realized P&L relative to historical peak-to-valley drawdown size.
+                </p>
+              </div>
+
+              {/* Quality & Consistency Matrix */}
+              <div className="bg-zinc-950/30 p-3 rounded-lg border border-zinc-850 flex flex-col justify-between min-h-[96px]">
+                <div>
+                  <span className="text-[9px] text-zinc-400 font-mono uppercase font-bold">Trading Consistency Index</span>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <p className="text-base font-black text-[#D9B382] font-mono">
+                      {compositeConsistency}/100
+                    </p>
+                    <span className={`text-[8.5px] px-1.5 py-0.5 rounded font-bold uppercase ${
+                      compositeConsistency >= 70 ? 'bg-emerald-500/10 text-emerald-400' : compositeConsistency >= 40 ? 'bg-amber-500/10 text-amber-400' : 'bg-red-500/10 text-red-400'
+                    }`}>
+                      {compositeConsistency >= 70 ? 'STABLE' : compositeConsistency >= 40 ? 'MODERATE' : 'WEAK'}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[8px] text-zinc-500 font-mono leading-normal mt-1.5">
+                  Statistically modeled scoring integrating payout edge, trading consistency, and winrate.
+                </p>
               </div>
             </div>
           </div>

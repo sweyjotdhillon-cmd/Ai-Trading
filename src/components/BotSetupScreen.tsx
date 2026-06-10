@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { ScalpConfig, RiskConfig, ScalpInstrument, SLMode, TPMode } from '../types';
 import { getDefaultScalpConfig } from '../quant/scalpingEngine';
 import { searchNSEStocks as searchSymbols } from '../services/stockPriceFeed';
-import { initVirtualBalance } from '../services/virtualBalanceService';
+import { initVirtualBalance, setVirtualBalanceValue } from '../services/virtualBalanceService';
 import { auth } from '../services/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 
@@ -524,8 +524,63 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
             LEDGER SYNCED ✓
           </span>
         </div>
+
+        {/* Dynamic Money Processes: Custom Balance / Capital Adjustment */}
+        <div className="mt-1 flex flex-col gap-1.5 bg-black/25 p-2.5 rounded border border-zinc-800">
+          <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider font-sans">Set Custom Account Size</label>
+          <div className="flex gap-2">
+            <div className="flex-1 flex items-center bg-zinc-800 px-2 rounded border border-zinc-700">
+              <span className="text-zinc-500 font-mono text-xs pr-1">₹</span>
+              <input
+                type="number"
+                value={capitalInput}
+                onChange={(e) => setCapitalInput(e.target.value)}
+                placeholder="100000"
+                min="1000"
+                max="10000000"
+                className="w-full bg-transparent text-white font-mono text-xs focus:outline-none py-1"
+              />
+            </div>
+            <button
+              onClick={async () => {
+                const val = parseFloat(capitalInput);
+                if (!isNaN(val) && val >= 1000) {
+                  setLoadingBalance(true);
+                  const uid = auth.currentUser?.uid ?? null;
+                  const newBal = await setVirtualBalanceValue(uid, val);
+                  setVirtualBalance(newBal);
+                  setInvestmentPerTrade(prev => Math.max(500, Math.min(prev, newBal)));
+                  setLoadingBalance(false);
+                }
+              }}
+              className="px-3 py-1 bg-[#D9B382] hover:bg-[#c49f71] text-zinc-950 rounded text-xs font-black transition-colors"
+            >
+              Apply
+            </button>
+          </div>
+          <div className="flex gap-1.5 flex-wrap mt-0.5">
+            {[10000, 50000, 100000, 500000, 1000000].map(amt => (
+              <button
+                key={amt}
+                onClick={async () => {
+                  setCapitalInput(String(amt));
+                  setLoadingBalance(true);
+                  const uid = auth.currentUser?.uid ?? null;
+                  const newBal = await setVirtualBalanceValue(uid, amt);
+                  setVirtualBalance(newBal);
+                  setInvestmentPerTrade(prev => Math.max(500, Math.min(prev, amt)));
+                  setLoadingBalance(false);
+                }}
+                className="text-[9px] font-mono text-zinc-400 bg-zinc-800/80 hover:bg-zinc-700 border border-zinc-700 rounded px-1.5 py-0.5 transition-colors"
+              >
+                ₹{amt.toLocaleString('en-IN')}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div className="text-[11px] text-zinc-400 font-sans mt-1">
-          Daily max loss cap: <span className="font-mono font-bold text-zinc-300">₹{previewConfig.risk.dailyLossCapRupees.toFixed(0)}</span> (scaled automatically)
+          Daily max loss cap: <span className="font-mono font-bold text-zinc-300">₹{(virtualBalance * (previewConfig.risk.riskPerTradePct * 0.01 || 0.01)).toFixed(0)}</span> (scaled automatically)
         </div>
       </div>
 

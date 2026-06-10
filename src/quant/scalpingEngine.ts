@@ -183,8 +183,8 @@ export function evaluateScalpSignal(
   let sizeShares = 0;
 
   if (lotSize === 1) {
-    // Standard equity stocks: allow fractional shares down to 2 decimal places (such as 0.5 shares)
-    sizeShares = Math.floor((investmentAmount / entry) * 100) / 100;
+    // Standard equity stocks: allow fractional shares down to 3 decimal places (such as 0.001 shares)
+    sizeShares = Math.floor((investmentAmount / entry) * 1000) / 1000;
   } else {
     // Non-equity options/futures: keep standard lot size multiples
     sizeShares = Math.floor(investmentAmount / entry / lotSize) * lotSize;
@@ -196,7 +196,7 @@ export function evaluateScalpSignal(
   }
 
   if (sizeShares <= 0) {
-    sizeShares = lotSize === 1 ? 0.5 : lotSize;
+    sizeShares = lotSize === 1 ? 0.001 : lotSize;
   }
 
   // Exit Targets
