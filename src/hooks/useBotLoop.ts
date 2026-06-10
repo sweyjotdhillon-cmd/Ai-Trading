@@ -959,7 +959,7 @@ export function useBotLoop(
     }
 
     recoverSession();
-  }, [isIdle, userId]); // runs when bot is toggled or user changes
+  }, [userId]); // runs when user changes
 
   // Computed fields for backward compatibility and reactive UI elements
   const activePlan = activePlans[0] ?? null;

@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, increment } from 'firebase/firestore';
 import { db } from './firebase';
 
 export async function initVirtualBalance(uid: string): Promise<number> {
@@ -42,16 +42,23 @@ export async function updateVirtualBalance(
   if (!uid) return 0;
   const docRef = doc(db, 'tradeBot', uid, 'balance', 'current');
   try {
+    // Perform an atomic increment on the database side to protect against race conditions
+    await setDoc(docRef, { 
+      balance: increment(realizedPnL), 
+      upd: Math.floor(Date.now() / 1000) 
+    }, { merge: true });
+
+    // Read the updated balance to ensure accurate state returned to the app
     const snap = await getDoc(docRef);
-    const current = snap.exists() ? (snap.data().balance ?? 100000) : 100000;
-    const next = parseFloat((current + realizedPnL).toFixed(2));
-    await setDoc(docRef, { balance: next, upd: Math.floor(Date.now() / 1000) }, { merge: true });
+    const next = snap.exists() ? (snap.data().balance ?? 100000) : 100000;
+    const rounded = parseFloat(next.toFixed(2));
+
     try {
-      localStorage.setItem('user_virtual_balance', String(next));
+      localStorage.setItem('user_virtual_balance', String(rounded));
     } catch (err) {
       // LocalStorage is unavailable or full
     }
-    return next;
+    return rounded;
   } catch (e: any) {
     console.error('[VB] updateVirtualBalance failed:', e?.message || e);
     try {
