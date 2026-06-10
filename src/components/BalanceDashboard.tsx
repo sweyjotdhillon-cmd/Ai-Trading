@@ -3,7 +3,8 @@ import { View, Text, Pressable, ScrollView, ActivityIndicator } from 'react-nati
 import { 
   Wallet, RefreshCw, ArrowUpRight, ArrowDownRight, Award, 
   ShieldCheck, List, TrendingUp, TrendingDown, Clock, Info,
-  Percent, AlertCircle, ShieldAlert, Sparkles, ChevronRight
+  Percent, AlertCircle, ShieldAlert, Sparkles, ChevronRight,
+  ChevronDown, Copy, Check, Database, Terminal
 } from 'lucide-react';
 import { 
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid 
@@ -48,9 +49,29 @@ export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) 
   const [loading, setLoading] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [uid, setUid] = useState<string | null>(auth.currentUser?.uid ?? null);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  
+  // Backup / Diagnostic States
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [backupInput, setBackupInput] = useState('');
+  const [backupSuccess, setBackupSuccess] = useState('');
+  const [importSuccess, setImportSuccess] = useState('');
+  const [importError, setImportError] = useState('');
+  const [copiedEmail, setCopiedEmail] = useState(false);
+  const [copiedUid, setCopiedUid] = useState(false);
 
   const fetchAllData = async (userId: string) => {
     setIsSyncing(true);
+    setSyncError(null);
+    
+    // Set a client-side timeout of 4.5 seconds to prevent sticking in SYNCING state if connection is blocked/offline
+    let hasTimedOut = false;
+    const timeoutId = setTimeout(() => {
+      hasTimedOut = true;
+      setSyncError('Cloud Sync took too long. Operating on local offline cache. Runs inside partitioned iframes may have restricted Firebase cloud channels.');
+      setIsSyncing(false);
+    }, 4500);
+
     try {
       // Parallelize all ledger fetches for extreme high speed sync
       const [liveBal, stats, tradesList] = await Promise.all([
@@ -59,24 +80,107 @@ export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) 
         loadAllTrades(userId)
       ]);
       
-      setBalance(liveBal);
-      setAllTimeStats(stats);
-      setAllTrades(tradesList || []);
+      if (!hasTimedOut) {
+        clearTimeout(timeoutId);
+        setBalance(liveBal);
+        setAllTimeStats(stats);
+        setAllTrades(tradesList || []);
 
-      // Cache results to localStorage for instant subsequent visual loads
-      try {
-        localStorage.setItem('user_virtual_balance', liveBal.toString());
-        localStorage.setItem('ledger_cached_balance', liveBal.toString());
-        localStorage.setItem('ledger_cached_stats', JSON.stringify(stats));
-        localStorage.setItem('ledger_cached_trades', JSON.stringify(tradesList || []));
-      } catch (err) {
-        console.warn('[BalanceDashboard] Failed to cache ledger:', err);
+        // Cache results to localStorage for instant subsequent visual loads
+        try {
+          localStorage.setItem('user_virtual_balance', liveBal.toString());
+          localStorage.setItem('ledger_cached_balance', liveBal.toString());
+          localStorage.setItem('ledger_cached_stats', JSON.stringify(stats));
+          localStorage.setItem('ledger_cached_trades', JSON.stringify(tradesList || []));
+        } catch (err) {
+          console.warn('[BalanceDashboard] Failed to cache ledger:', err);
+        }
       }
-    } catch (e) {
-      console.error('[BalanceDashboard] Failed to fetch metrics:', e);
+    } catch (e: any) {
+      if (!hasTimedOut) {
+        clearTimeout(timeoutId);
+        console.error('[BalanceDashboard] Failed to fetch metrics:', e);
+        setSyncError(e?.message || 'Failed to sync cloud data. Switched to offline backup.');
+      }
     } finally {
-      setLoading(false);
-      setIsSyncing(false);
+      if (!hasTimedOut) {
+        setLoading(false);
+        setIsSyncing(false);
+      }
+    }
+  };
+
+  const handleExportBackup = () => {
+    try {
+      const data = {
+        balance,
+        stats: allTimeStats,
+        trades: allTrades,
+        exportedAt: Date.now(),
+        uid: uid,
+        email: auth.currentUser?.email ?? 'anonymous'
+      };
+      
+      const str = JSON.stringify(data);
+      const encoded = btoa(encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, (match, p1) => {
+        return String.fromCharCode(parseInt(p1, 16));
+      }));
+      
+      if (typeof navigator !== 'undefined' && navigator.clipboard) {
+        navigator.clipboard.writeText(encoded);
+        setBackupSuccess('Session state string copied to clipboard!');
+        setTimeout(() => setBackupSuccess(''), 4000);
+      } else {
+        setBackupSuccess('See Code: Copy text inside the input instead.');
+      }
+    } catch (err: any) {
+      console.error(err);
+      setBackupSuccess('Failed to generate export string: ' + err.message);
+    }
+  };
+
+  const handleImportBackup = () => {
+    setImportError('');
+    setImportSuccess('');
+    if (!backupInput.trim()) {
+      setImportError('Please paste a backup string first.');
+      return;
+    }
+    try {
+      const decodedStr = decodeURIComponent(atob(backupInput).split('').map((c) => {
+        return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+      }).join(''));
+      
+      const parsed = JSON.parse(decodedStr);
+      if (typeof parsed.balance !== 'number') {
+        throw new Error('Invalid balance schema');
+      }
+      
+      setBalance(parsed.balance);
+      setAllTimeStats(parsed.stats || null);
+      setAllTrades(parsed.trades || []);
+
+      // Cache locally so it is immediately restored on future visits
+      localStorage.setItem('user_virtual_balance', String(parsed.balance));
+      localStorage.setItem('ledger_cached_balance', String(parsed.balance));
+      localStorage.setItem('ledger_cached_stats', JSON.stringify(parsed.stats || null));
+      localStorage.setItem('ledger_cached_trades', JSON.stringify(parsed.trades || []));
+
+      setImportSuccess('Import successful! Balanced and trades updated on this local browser tab.');
+      setBackupInput('');
+      
+      // Attempt background Firestore sync to align Cloud DB values
+      if (uid && parsed.balance) {
+        initVirtualBalance(uid).then(() => {
+          // If Firestore is reachable, update balance to keep Firebase up to date
+          const docRef = doc(db, 'tradeBot', uid, 'balance', 'current');
+          setDoc(docRef, { balance: parsed.balance, upd: Math.floor(Date.now() / 1000) }, { merge: true }).catch(err => {
+            console.warn('Background Firestore balance align failed:', err);
+          });
+        }).catch(() => {});
+      }
+    } catch (err: any) {
+      setImportError('Invalid backup data. Ensure you copied the entire string correctly.');
     }
   };
 
@@ -298,6 +402,10 @@ export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) 
                 <span className="text-[8px] bg-amber-500/10 text-amber-500 border border-amber-500/20 px-1.5 py-0.5 rounded font-black tracking-widest font-mono animate-pulse uppercase">
                   SYNCING
                 </span>
+              ) : syncError ? (
+                <span className="text-[8px] bg-amber-500/10 text-amber-500 border border-amber-500/20 px-1.5 py-0.5 rounded font-black tracking-widest font-mono uppercase">
+                  LOCAL CACHE
+                </span>
               ) : (
                 <span className="text-[8px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-1.5 py-0.5 rounded font-black tracking-widest font-mono uppercase">
                   LIVE
@@ -308,15 +416,23 @@ export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) 
               PRO-GRADE MATHEMATICAL TELEMETRY · 100% AUDIT SATISFACTION
             </p>
           </div>
-          <button
-            onClick={handleManualRefresh}
-            id="btn-ledger-refresh"
-            disabled={isSyncing}
-            className="p-2.5 rounded-xl bg-zinc-950 border border-zinc-800 hover:bg-zinc-800 text-[#D9B382] transition-colors flex items-center justify-center active:scale-95 disabled:opacity-50"
-            title="Force ledger sync"
-          >
-            <RefreshCw size={15} className={isSyncing ? "animate-spin" : ""} />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowDiagnostics(!showDiagnostics)}
+              className="px-3 py-2 rounded-xl bg-zinc-950 border border-zinc-800 hover:bg-zinc-800 text-[10px] font-mono font-bold tracking-wider uppercase text-zinc-400 flex items-center gap-1.5 active:scale-95 transition-all"
+            >
+              <Database size={11} className="text-[#D9B382]" /> Diagnostician
+            </button>
+            <button
+              onClick={handleManualRefresh}
+              id="btn-ledger-refresh"
+              disabled={isSyncing}
+              className="p-2.5 rounded-xl bg-zinc-950 border border-zinc-800 hover:bg-zinc-800 text-[#D9B382] transition-colors flex items-center justify-center active:scale-95 disabled:opacity-50"
+              title="Force ledger sync"
+            >
+              <RefreshCw size={15} className={isSyncing ? "animate-spin" : ""} />
+            </button>
+          </div>
         </div>
 
         {/* TIME RANGE SELECTOR */}
@@ -346,6 +462,139 @@ export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) 
             ))}
           </div>
         </div>
+
+        {/* Sync Warn banner (rendered on timeout/offline) */}
+        {syncError && (
+          <div className="bg-amber-950/15 border border-amber-500/20 p-3.5 rounded-2xl flex items-start gap-3">
+            <span className="text-amber-500 text-sm mt-0.5 font-bold">⚠️</span>
+            <div className="flex-1">
+              <p className="text-amber-500 font-black text-[10px] uppercase tracking-wider font-mono">Ledger Synchronization Delay / Restriction</p>
+              <p className="text-zinc-400 text-[10px] font-mono leading-normal uppercase mt-1">
+                {syncError} Use the <strong className="text-amber-500 font-bold">Diagnostician</strong> tool to copy/paste your account balance and trades across partitions in 1 second!
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Collapsible Diagnostics & Account Backup Transfer Tool */}
+        {showDiagnostics && (
+          <div className="bg-[#0E1014] border border-zinc-800 rounded-2xl p-5 flex flex-col gap-5 relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-24 h-24 bg-zinc-800 bg-opacity-20 rounded-full blur-3xl pointer-events-none" />
+            
+            <div className="flex items-center justify-between border-b border-zinc-900 pb-3">
+              <div className="flex items-center gap-2">
+                <Terminal size={14} className="text-[#D9B382]" strokeWidth={2.5} />
+                <span className="text-xs font-black text-white tracking-widest uppercase font-mono">
+                  Ledger Diagnostics Console
+                </span>
+              </div>
+              <span className="text-[9px] font-mono text-zinc-500 font-bold uppercase">
+                v1.0 (PRO)
+              </span>
+            </div>
+
+            {/* Profile Credentials Compare */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 bg-black bg-opacity-40 p-4 border border-zinc-900 rounded-xl">
+              <div>
+                <p className="text-[9px] text-zinc-500 font-bold uppercase tracking-wider font-mono">Authenticated Email</p>
+                <div className="flex items-center justify-between gap-2 mt-1.5 bg-zinc-950 border border-zinc-850 px-3 py-2 rounded-lg">
+                  <span className="text-[10px] text-zinc-300 font-mono truncate">{auth.currentUser?.email ?? 'Not Logged In'}</span>
+                  {auth.currentUser?.email && (
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(auth.currentUser?.email ?? '');
+                        setCopiedEmail(true);
+                        setTimeout(() => setCopiedEmail(false), 2000);
+                      }}
+                      className="text-zinc-400 hover:text-white transition-colors"
+                    >
+                      {copiedEmail ? <Check size={11} className="text-emerald-500" /> : <Copy size={11} />}
+                    </button>
+                  )}
+                </div>
+              </div>
+              
+              <div>
+                <p className="text-[9px] text-zinc-500 font-bold uppercase tracking-wider font-mono">Firebase Account UID</p>
+                <div className="flex items-center justify-between gap-2 mt-1.5 bg-zinc-950 border border-zinc-850 px-3 py-2 rounded-lg">
+                  <span className="text-[10px] text-zinc-300 font-mono truncate">{uid ?? 'No active session'}</span>
+                  {uid && (
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(uid);
+                        setCopiedUid(true);
+                        setTimeout(() => setCopiedUid(false), 2000);
+                      }}
+                      className="text-zinc-400 hover:text-white transition-colors"
+                    >
+                      {copiedUid ? <Check size={11} className="text-emerald-500" /> : <Copy size={11} />}
+                    </button>
+                  )}
+                </div>
+              </div>
+              <p className="text-[8px] text-zinc-500 font-mono leading-relaxed col-span-1 md:col-span-2 uppercase">
+                💡 <strong className="text-zinc-400 font-bold">Inconsistent Stats Check:</strong> If the UID value here does not MATCH the UID on your other tab, you are logged into different google accounts or anonymous schemas. Ensure UIDs match perfectly for synchronized cloud databases.
+              </p>
+            </div>
+
+            {/* Instant State Transfer (Export/Import) */}
+            <div className="border-t border-zinc-900 pt-4">
+              <span className="text-[10px] text-[#D9B382] font-black uppercase tracking-wider font-mono block mb-2.5">
+                📦 Instant State Transfer & Backup (No Cloud Dependency)
+              </span>
+              <p className="text-[10px] text-zinc-400 font-mono leading-relaxed uppercase mb-4">
+                If third-party iframe cookie-blocking or private browsing blocks Firestore syncing, you can export your entire state (trades, stats, balance) as a string from one tab and import it in another tab instantly!
+              </p>
+
+              <div className="flex flex-col gap-3">
+                {/* Export Block */}
+                <div>
+                  <button
+                    onClick={handleExportBackup}
+                    className="px-4 py-2.5 bg-zinc-900 border border-zinc-800 hover:bg-zinc-850 rounded-xl text-[10px] font-mono font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-2 transition-all active:scale-95"
+                  >
+                    <Database size={11} /> 1. Generate & Copy State Backup String
+                  </button>
+                  {backupSuccess && (
+                    <p className="text-emerald-400 font-mono text-[9px] uppercase mt-2 font-bold select-all bg-emerald-950/10 border border-emerald-500/20 px-2.5 py-1 rounded">
+                      {backupSuccess}
+                    </p>
+                  )}
+                </div>
+
+                {/* Import Block */}
+                <div className="border-t border-zinc-900 pt-3.5 mt-2.5 flex flex-col gap-2">
+                  <p className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider font-mono">2. Import State Backup String</p>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Paste your state backup string here..."
+                      value={backupInput}
+                      onChange={(e) => setBackupInput(e.target.value)}
+                      className="flex-1 bg-zinc-950 border border-zinc-850 rounded-xl px-3.5 py-2.5 text-zinc-300 font-mono text-[10px] placeholder-zinc-650 focus:border-[#D9B382] focus:outline-none"
+                    />
+                    <button
+                      onClick={handleImportBackup}
+                      className="px-4 py-2.5 bg-[#D9B382] hover:bg-[#c9a171] rounded-xl text-zinc-950 text-[10px] font-mono font-black uppercase tracking-wider active:scale-95 transition-all text-center"
+                    >
+                      Import
+                    </button>
+                  </div>
+                  {importSuccess && (
+                    <p className="text-emerald-400 font-mono text-[9px] uppercase mt-1 font-bold">
+                      ✓ {importSuccess}
+                    </p>
+                  )}
+                  {importError && (
+                    <p className="text-rose-450 font-mono text-[9px] uppercase mt-1 font-bold">
+                      ⚠️ {importError}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Section 1 — Balance & Equity Performance Header */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4" id="ledger-balance-card">
