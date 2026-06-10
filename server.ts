@@ -179,6 +179,9 @@ async function startServer() {
       } else if (tfVal === 60 || tfVal === 120) {
         interval = '1h';
         range = '1mo';
+      } else if (tfVal === 1440) {
+        interval = '1d';
+        range = '1mo';
       }
 
       const { yahoo } = parseSymbol(symbol);
@@ -218,6 +221,7 @@ async function startServer() {
             low: Number(low[i].toFixed(2)),
             close: Number(close[i].toFixed(2)),
             volume: Number((volume?.[i] || 0).toFixed(0)),
+            timestamp: timestamps[i] * 1000,
           });
         }
       }
@@ -229,6 +233,8 @@ async function startServer() {
         const live = await getYahooPrice(symbol);
         let lastPrice = live.price;
         const fallbackHistory = [];
+        const baseTime = Date.now();
+        const tfValMs = tfVal * 60 * 1000;
         for (let i = 0; i < outputsize; i++) {
           const pctChange = (Math.random() - 0.5) * 0.006;
           const o = lastPrice;
@@ -240,7 +246,8 @@ async function startServer() {
             high: Number(h.toFixed(2)),
             low: Number(l.toFixed(2)),
             close: Number(c.toFixed(2)),
-            volume: Math.floor(Math.random() * 50000) + 5000
+            volume: Math.floor(Math.random() * 50000) + 5000,
+            timestamp: baseTime - (outputsize - i) * tfValMs
           });
           lastPrice = c;
         }
@@ -255,6 +262,8 @@ async function startServer() {
       const outputsize = req.body.outputsize || 60;
       let lastPrice = 1000;
       const fallbackHistory = [];
+      const baseTime = Date.now();
+      const tfValMs = tfVal * 60 * 1000;
       for (let i = 0; i < outputsize; i++) {
         const pctChange = (Math.random() - 0.5) * 0.006;
         const o = lastPrice;
@@ -266,7 +275,8 @@ async function startServer() {
           high: Number(h.toFixed(2)),
           low: Number(l.toFixed(2)),
           close: Number(c.toFixed(2)),
-          volume: Math.floor(Math.random() * 50000) + 5000
+          volume: Math.floor(Math.random() * 50000) + 5000,
+          timestamp: baseTime - (outputsize - i) * tfValMs
         });
         lastPrice = c;
       }
