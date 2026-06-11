@@ -9,7 +9,7 @@ import {
   Platform,
   ScrollView
 } from 'react-native';
-import { Settings, LogIn, Activity, RefreshCw, XCircle, User, Bot, Wallet } from 'lucide-react';
+import { Settings, LogIn, Activity, RefreshCw, XCircle, User, Bot, Wallet, List } from 'lucide-react';
 import { motion, AnimatePresence, LayoutGroup, useReducedMotion } from 'motion/react';
 import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, User as FirebaseUser } from 'firebase/auth';
 import { auth } from './services/firebase';
@@ -17,7 +17,9 @@ import { auth } from './services/firebase';
 import { BotSetupScreen, BotStartPayload } from './components/BotSetupScreen';
 import { BotDashboard } from './components/BotDashboard';
 import { BalanceDashboard } from './components/BalanceDashboard';
+import { OpenTradesDashboard } from './components/OpenTradesDashboard';
 import { useBotLoop } from './hooks/useBotLoop';
+import { registerUserProfile } from './services/botTradeService';
 import { getDefaultScalpConfig } from './quant/scalpingEngine';
 import { SystemSettingsModal } from './components/SystemSettingsModal';
 import { HeroIntro } from './components/HeroIntro';
@@ -88,10 +90,24 @@ function App() {
   const buildStamp = (import.meta as any).env?.VITE_BUILD_STAMP || 'dev';
   const [showSystemSettings, setShowSystemSettings] = useState(false);
   const [showProfileCard, setShowProfileCard] = useState(false);
-  const [heroDismissed, setHeroDismissed] = useState(false);
+  const [heroDismissed, setHeroDismissed] = useState(() => {
+    try {
+      const stored = localStorage.getItem('chartlens_hero_dismissed');
+      return stored === 'true' || localStorage.getItem('chartlens_active_bot_payload') !== null;
+    } catch {
+      return false;
+    }
+  });
 
-  const [activeTab, setActiveTab] = useState<'bot' | 'balance'>('bot');
-  const [botPayload, setBotPayload] = useState<BotStartPayload | null>(null);
+  const [activeTab, setActiveTab] = useState<'bot' | 'open-trades' | 'balance'>('bot');
+  const [botPayload, setBotPayload] = useState<BotStartPayload | null>(() => {
+    try {
+      const stored = localStorage.getItem('chartlens_active_bot_payload');
+      return stored ? JSON.parse(stored) : null;
+    } catch {
+      return null;
+    }
+  });
 
   const bot = useBotLoop(
     botPayload?.symbol ?? null,
@@ -106,8 +122,19 @@ function App() {
   useEffect(() => {
     if (botPayload) {
       bot.startBot();
+      try {
+        localStorage.setItem('chartlens_active_bot_payload', JSON.stringify(botPayload));
+      } catch (e) {
+        console.warn('Failed to save botPayload to localStorage:', e);
+      }
+    } else {
+      try {
+        localStorage.removeItem('chartlens_active_bot_payload');
+      } catch (e) {
+        console.warn('Failed to clean botPayload in localStorage:', e);
+      }
     }
-  }, [botPayload, bot]);
+  }, [botPayload]);
 
   const handleStopBot = () => {
     bot.stopBot();
@@ -133,16 +160,31 @@ function App() {
   };
   
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, u => setUser(u));
+    const unsub = onAuthStateChanged(auth, u => {
+      setUser(u);
+      if (u) {
+        registerUserProfile(u.uid, u.email, u.displayName);
+      }
+    });
     return () => unsub();
   }, []);
   
   const handleLaunch = () => {
     setHeroDismissed(true);
+    try {
+      localStorage.setItem('chartlens_hero_dismissed', 'true');
+    } catch (e) {
+      console.warn('Storage failed:', e);
+    }
   };
 
   const handleResetHero = () => {
     setHeroDismissed(false);
+    try {
+      localStorage.removeItem('chartlens_hero_dismissed');
+    } catch (e) {
+      console.warn('Storage clear failed:', e);
+    }
   };
 
   const prefersReducedMotion = useReducedMotion();
@@ -363,7 +405,7 @@ function App() {
               </motion.div>
             ) : (
               <motion.div
-                key={activeTab === 'bot' ? (botPayload ? 'dashboard' : 'setup') : 'balance'}
+                key={activeTab === 'bot' ? (botPayload ? 'dashboard' : 'setup') : activeTab === 'open-trades' ? 'open-trades' : 'balance'}
                 layout
                 initial={{ opacity: 0, y: prefersReducedMotion ? 0 : 12 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -384,6 +426,8 @@ function App() {
                     ) : (
                       <BotSetupScreen onStart={(payload) => setBotPayload(payload)} />
                     )
+                  ) : activeTab === 'open-trades' ? (
+                    <OpenTradesDashboard />
                   ) : (
                     <BalanceDashboard />
                   )}
@@ -406,6 +450,17 @@ function App() {
               <Bot color={activeTab === 'bot' ? '#1A1308' : '#8E9299'} size={18} />
             </View>
             <Text style={[styles.bottomBarText, activeTab === 'bot' && styles.bottomBarTextActive]}>Bot</Text>
+          </Pressable>
+
+          <Pressable 
+            style={[styles.bottomBarItem]} 
+            onPress={() => setActiveTab('open-trades')}
+            id="tab-open-trades"
+          >
+            <View style={[styles.bottomBarIcon, activeTab === 'open-trades' && styles.bottomBarIconActive]}>
+              <List color={activeTab === 'open-trades' ? '#1A1308' : '#8E9299'} size={18} />
+            </View>
+            <Text style={[styles.bottomBarText, activeTab === 'open-trades' && styles.bottomBarTextActive]}>Open Trades</Text>
           </Pressable>
 
           <Pressable 
@@ -613,7 +668,7 @@ const styles = StyleSheet.create({
     borderTopColor: 'rgba(255,255,255,0.05)',
     paddingBottom: Platform.OS === 'ios' ? 20 : 0,
     paddingHorizontal: 30,
-    justifyContent: 'space-between',
+    justifyContent: 'space-around',
     alignItems: 'center',
   },
   bottomBarItem: {

@@ -2,7 +2,7 @@ import { doc, getDoc } from 'firebase/firestore';
 import { db } from './firebase';
 import { BotTradeRecord } from '../hooks/useBotLoop';
 import { TradeOutcome } from '../types';
-import { loadTodayTrades, writeTrade_Close } from './botTradeService';
+import { loadOpenTrades, writeTrade_Close } from './botTradeService';
 import { setVirtualBalanceValue } from './virtualBalanceService';
 import { parseSymbol } from './stockPriceFeed';
 
@@ -111,12 +111,12 @@ export async function fetchDailyOHLC(
         }
       }
 
-      // Meta fallback — only if no candle matched but it IS today's date AND isAfterMarketClose()
-      if (result.meta && dateIST === todayIST() && isAfterMarketClose()) {
+      // Meta fallback — only if no candle matched but it IS today's date
+      if (result.meta && dateIST === todayIST()) {
         const meta = result.meta;
         const h = Number(meta.regularMarketDayHigh);
         const l = Number(meta.regularMarketDayLow);
-        const o = Number(meta.chartPreviousClose);
+        const o = Number(meta.regularMarketOpen ?? meta.chartPreviousClose);
         const c = Number(meta.regularMarketPrice);
         if (isFinite(h) && isFinite(l) && isFinite(o) && isFinite(c) && h > 0 && l > 0 && o > 0 && c > 0) {
           return { open: o, high: h, low: l, close: c };
@@ -134,8 +134,8 @@ export function determineEODOutcome(
   trade: BotTradeRecord,
   ohlc: { open: number; high: number; low: number; close: number }
 ): { exitPrice: number; outcome: TradeOutcome; isAmbiguous: boolean } {
-  const tp = trade.plan.takeProfit2;
-  const sl = trade.plan.stopLoss;
+  const tp = trade.plan?.takeProfit2 ?? (trade.entryPrice * 1.01);
+  const sl = trade.plan?.stopLoss ?? (trade.entryPrice * 0.99);
   const tpHit = ohlc.high >= tp;
   const slHit = ohlc.low <= sl;
 
@@ -160,21 +160,16 @@ export async function settleEODTrades(uid: string): Promise<{
 }> {
   const todayStr = todayIST();
   const lockKey = `eod_settled_${uid}_${todayStr}`;
-  try {
-    if (sessionStorage.getItem(lockKey)) {
-      return { settled: 0, skipped: 0, totalNetPnL: 0, errors: ['Already settled this session'], ambiguous: 0 };
-    }
-  } catch {
-    // sessionStorage unavailable — proceed
-  }
-
-  const allTodayTrades = await loadTodayTrades(uid);
-  const openTrades = allTodayTrades.filter(t => t.exitPrice === null);
+  // For sandbox testing in this paper portfolio, we allow multiple manual settlements on the same calendar day.
+  // This lets the user launch new bots and settle their trades repeatedly.
+  
+  const openTrades = await loadOpenTrades(uid);
   if (openTrades.length === 0) {
     return { settled: 0, skipped: 0, totalNetPnL: 0, errors: [], ambiguous: 0 };
   }
 
   let netPnLSum = 0;
+  let returnedCapitalSum = 0;
   let settled = 0;
   let skipped = 0;
   let ambiguous = 0;
@@ -182,9 +177,10 @@ export async function settleEODTrades(uid: string): Promise<{
 
   for (const trade of openTrades) {
     try {
-      const ohlc = await fetchDailyOHLC(trade.symbol, todayStr);
+      const tradeDateStr = new Date(trade.openedAt + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      const ohlc = await fetchDailyOHLC(trade.symbol, tradeDateStr);
       if (!ohlc) {
-        errors.push(`${trade.symbol}: OHLC fetch failed`);
+        errors.push(`${trade.symbol}: OHLC fetch failed for date ${tradeDateStr}`);
         skipped++;
         continue;
       }
@@ -201,14 +197,16 @@ export async function settleEODTrades(uid: string): Promise<{
         closedAt: Date.now(),
       };
 
+      const invested = trade.plan?.investmentRupees ?? ((trade.plan?.positionSize || 1) * trade.entryPrice);
       const result = await writeTrade_Close(
         uid,
         closedTrade,
         exitPrice,
-        trade.plan.investmentRupees ?? (trade.plan.positionSize * trade.entryPrice)
+        invested
       );
 
       netPnLSum += result.realizedPnL;
+      returnedCapitalSum += (invested + result.realizedPnL);
       settled++;
     } catch (err: any) {
       errors.push(`${trade.symbol}: ${err?.message ?? 'Unknown error'}`);
@@ -220,7 +218,7 @@ export async function settleEODTrades(uid: string): Promise<{
     try {
       const balSnap = await getDoc(doc(db, 'tradeBot', uid, 'balance', 'current'));
       const currentBalance = balSnap.exists() ? (balSnap.data().balance ?? 100000) : 100000;
-      const newBalance = parseFloat((currentBalance + netPnLSum).toFixed(2));
+      const newBalance = parseFloat((currentBalance + returnedCapitalSum).toFixed(2));
       await setVirtualBalanceValue(uid, newBalance);
     } catch (err: any) {
       errors.push(`Balance update failed: ${err?.message ?? 'Unknown'}`);

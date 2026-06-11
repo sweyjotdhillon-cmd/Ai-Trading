@@ -21,6 +21,7 @@ import {
 import { initVirtualBalance, updateVirtualBalance, setVirtualBalanceValue } from '../services/virtualBalanceService';
 import { computeRoundTripCharges } from '../quant/brokerCharges';
 import { auth } from '../services/firebase';
+import { fetchLivePrice } from '../services/stockPriceFeed';
 import {
   OHLCV, ScalpingPlan, ScalpConfig, RiskState, TradeOutcome, ScalpInstrument
 } from '../types';
@@ -93,7 +94,7 @@ export interface UseBotLoopResult {
   startBot:   () => void;
   stopBot:    () => void;
   pauseBot:   () => void;
-  forceExit:  () => void;             // manual exit current trade
+  forceExit:  (tradeId?: string) => void;             // manual exit trade
   manualBuy:  (isForced?: boolean) => Promise<void>;
   reEvaluate: () => Promise<void>;   // manual force re-analyze current candle
 
@@ -251,10 +252,10 @@ export function useBotLoop(
   const activeTradesRef = useRef<BotTradeRecord[]>([]);
   useEffect(() => {
     activeTradesRef.current = activeTrades;
-    const active = activeTrades.length > 0;
+    const active = activeTrades.some(t => t.symbol === symbol);
     isInTradeRef.current = active;
     setIsInTrade(active);
-  }, [activeTrades]);
+  }, [activeTrades, symbol]);
 
   const tradeHistoryRef = useRef<BotTradeRecord[]>([]);
   useEffect(() => {
@@ -302,7 +303,8 @@ export function useBotLoop(
 
     setActiveTrades(prev => {
       const filtered = prev.filter(t => t.id !== tradeId);
-      if (filtered.length === 0) {
+      const activeSymbolTrades = filtered.filter(t => t.symbol === symbol);
+      if (activeSymbolTrades.length === 0 && trade.symbol === symbol) {
         setPhase('COOLDOWN');
       }
       return filtered;
@@ -330,7 +332,7 @@ export function useBotLoop(
           })
           .reduce((sum, t) => sum + (t.realizedPnL ?? 0), 0);
 
-        writeStats_Update(uidRef.current, next, todayPnL).catch(e =>
+         writeStats_Update(uidRef.current, next, todayPnL).catch(e =>
           console.error('[BotLoop] writeStats_Update fail:', e)
         );
       }
@@ -356,7 +358,7 @@ export function useBotLoop(
         });
     }
 
-  }, [activeConfig]);
+  }, [activeConfig, symbol]);
 
   const startBot = useCallback(() => {
     if (!symbol) return;
@@ -367,7 +369,7 @@ export function useBotLoop(
     noTechWarnedRef.current = false;
     setStabilityCount(0);
     setLastBlockReason(null);
-    setPhase('SCANNING');
+    setPhase(activeTradesRef.current.some(t => t.symbol === symbol) ? 'IN_TRADE' : 'SCANNING');
     requestLock(); // prevent screen sleep during bot operation
   }, [symbol, requestLock]);
 
@@ -376,40 +378,51 @@ export function useBotLoop(
     setBotActive(false);
     abortRef.current?.abort();
 
-    // Force-close all active trades at last known price before stopping
-    if (feed.currentPrice) {
-      activeTradesRef.current.forEach(t => {
-        closeTradeById(t.id, feed.currentPrice!, 'MANUAL_EXIT');
-      });
-    }
-
     releaseLock();
     setPhase('IDLE');
-    setActivePlans([]);
-    setActiveTrades([]);
     stabilityRef.current = 0;
     setStabilityCount(0);
     analysisErrorCount.current = 0;
-  }, [feed.currentPrice, closeTradeById, releaseLock]);
+  }, [releaseLock]);
 
   const pauseBot = useCallback(() => {
     botEnabledRef.current = false;
     setBotActive(false);
-    if (activeTradesRef.current.length === 0) setPhase('IDLE');
-  }, []);
+    const hasActiveSymbolTrade = activeTradesRef.current.some(t => t.symbol === symbol);
+    if (!hasActiveSymbolTrade) setPhase('IDLE');
+  }, [symbol]);
 
-  const forceExit = useCallback(() => {
-    const currentPrice = feed.currentPrice;
+  const forceExit = useCallback(async (tradeId?: string) => {
     const trades = activeTradesRef.current;
-    if (trades.length === 0 || !currentPrice) {
-      console.warn('[BotLoop] cannot forceExit: trades count =', trades.length, 'price =', currentPrice);
-      return;
+    if (trades.length === 0) return;
+
+    if (tradeId && typeof tradeId === 'string') {
+      const trade = trades.find(t => t.id === tradeId);
+      if (!trade) return;
+      let price = feed.currentPrice;
+      if (trade.symbol !== symbol) {
+        try {
+          const res = await fetchLivePrice(trade.symbol);
+          price = res.price;
+        } catch {
+          price = trade.entryPrice; // reasonable backup
+        }
+      }
+      if (price) {
+        await closeTradeById(trade.id, price, 'MANUAL_EXIT');
+      }
+    } else {
+      const currentPrice = feed.currentPrice;
+      if (!currentPrice) {
+        console.warn('[BotLoop] cannot forceExit: no currentPrice for symbol', symbol);
+        return;
+      }
+      const listToClose = trades.filter(t => t.symbol === symbol);
+      for (const t of listToClose) {
+        await closeTradeById(t.id, currentPrice, 'MANUAL_EXIT');
+      }
     }
-    const listToClose = [...trades];
-    listToClose.forEach(t => {
-      closeTradeById(t.id, currentPrice, 'MANUAL_EXIT');
-    });
-  }, [feed.currentPrice, closeTradeById]);
+  }, [symbol, feed.currentPrice, closeTradeById]);
 
   const manualBuy = useCallback(async (isForcedInput?: boolean | any) => {
     const isForced = isForcedInput === true;
@@ -809,7 +822,8 @@ export function useBotLoop(
     // Guard: do not run if bot is off, already analyzing, or in trade
     if (!botEnabledRef.current) return;
     if (analyzingRef.current) return;
-    if (activeTrades.length >= (activeConfig.maxConcurrentTrades ?? 1)) return;
+    const activeSymbolTradesCount = activeTrades.filter(t => t.symbol === symbol).length;
+    if (activeSymbolTradesCount >= (activeConfig.maxConcurrentTrades ?? 1)) return;
     if (phase === 'IDLE') return;
     // Need at least 15 candles: 14 for ATR14 + 1 current
     if (feed.ohlcvBuffer.length < 15) {
@@ -824,14 +838,15 @@ export function useBotLoop(
     }
 
     runAnalysisCycle();
-  }, [feed.candleCount, feed.isStale, phase, activeTrades.length, activeConfig.maxConcurrentTrades, feed.ohlcvBuffer.length, runAnalysisCycle]);
+  }, [feed.candleCount, feed.isStale, phase, activeTrades, symbol, activeConfig.maxConcurrentTrades, feed.ohlcvBuffer.length, runAnalysisCycle]);
 
   // Trigger analysis once immediately when the initial candle buffer first loads
   // (covers market-closed scenario where no new candles will ever close)
   useEffect(() => {
     if (!botEnabledRef.current) return;
     if (phase === 'IDLE') return;
-    if (activeTrades.length >= (activeConfig.maxConcurrentTrades ?? 1)) return;
+    const activeSymbolTradesCount = activeTrades.filter(t => t.symbol === symbol).length;
+    if (activeSymbolTradesCount >= (activeConfig.maxConcurrentTrades ?? 1)) return;
     if (analyzingRef.current) return;
     if (feed.ohlcvBuffer.length < 15) return;
     if (initialAnalysisFiredRef.current) return;
@@ -839,22 +854,24 @@ export function useBotLoop(
     // Fire once when buffer first reaches 15+ candles
     initialAnalysisFiredRef.current = true;
     runAnalysisCycle();
-  }, [feed.ohlcvBuffer.length, phase, activeTrades.length, activeConfig.maxConcurrentTrades, runAnalysisCycle]);
+  }, [feed.ohlcvBuffer.length, phase, activeTrades, symbol, activeConfig.maxConcurrentTrades, runAnalysisCycle]);
 
   // Re-run analysis every 30 seconds even if no new candle closes (market-closed sim mode)
   useEffect(() => {
-    if (phase === 'IDLE' || activeTrades.length >= (activeConfig.maxConcurrentTrades ?? 1) || phase === 'HALTED') return;
+    const activeSymbolTradesCount = activeTrades.filter(t => t.symbol === symbol).length;
+    if (phase === 'IDLE' || activeSymbolTradesCount >= (activeConfig.maxConcurrentTrades ?? 1) || phase === 'HALTED') return;
     if (feed.ohlcvBuffer.length < 15) return;
 
     const intervalId = setInterval(() => {
       if (!botEnabledRef.current) return;
       if (analyzingRef.current) return;
-      if (activeTrades.length >= (activeConfig.maxConcurrentTrades ?? 1) || phase === 'IDLE') return;
+      const currentActiveSymbolTradesCount = activeTradesRef.current.filter(t => t.symbol === symbol).length;
+      if (currentActiveSymbolTradesCount >= (activeConfig.maxConcurrentTrades ?? 1) || phase === 'IDLE') return;
       runAnalysisCycle();
     }, 30 * 1000); // every 30 seconds
 
     return () => clearInterval(intervalId);
-  }, [phase, activeTrades.length, activeConfig.maxConcurrentTrades, feed.ohlcvBuffer.length, runAnalysisCycle]);
+  }, [phase, activeTrades, symbol, activeConfig.maxConcurrentTrades, feed.ohlcvBuffer.length, runAnalysisCycle]);
 
   const closeTradeByIdRef = useRef(closeTradeById);
   useEffect(() => {
@@ -869,6 +886,7 @@ export function useBotLoop(
 
     trades.forEach(trade => {
       if (!trade.plan) return;
+      if (trade.symbol !== symbol) return;
 
       // SL check
       if (price <= trade.plan.stopLoss) {
@@ -890,16 +908,17 @@ export function useBotLoop(
         return;
       }
     });
-  }, [feed.currentPrice]);
+  }, [feed.currentPrice, symbol]);
 
   // Auto-halt if feed goes dead
   useEffect(() => {
     if (!botEnabledRef.current) return;
-    if (feed.consecutiveFailures >= 3 && activeTrades.length === 0) {
+    const hasActiveSymbolTrade = activeTrades.some(t => t.symbol === symbol);
+    if (feed.consecutiveFailures >= 3 && !hasActiveSymbolTrade) {
       setPhase('HALTED');
       setLastBlockReason(`FEED_DEAD: ${feed.consecutiveFailures} consecutive API failures`);
     }
-  }, [feed.consecutiveFailures, activeTrades.length]);
+  }, [feed.consecutiveFailures, activeTrades, symbol]);
 
   // Cooldown countdown ticker
   useEffect(() => {
@@ -927,6 +946,42 @@ export function useBotLoop(
   const isIdle = phase === 'IDLE';
 
   // Session Recovery & Firebase Syncing
+  const syncFromCloud = useCallback(async () => {
+    if (!userId) return;
+    try {
+      const [stats, trades, openTrades] = await Promise.all([
+        loadStats(userId),
+        loadAllTrades(userId),
+        loadOpenTrades(userId)
+      ]);
+
+      if (stats) setSessionStats(stats);
+      if (trades) setTradeHistory(trades);
+      
+      const isBotActiveCurrently = botEnabledRef.current || botActive;
+      if (openTrades && openTrades.length > 0) {
+        setActiveTrades(openTrades);
+        setActivePlans(openTrades.map(t => t.plan));
+        const hasSymbolActive = openTrades.some(t => t.symbol === symbol);
+        setPhase(hasSymbolActive ? 'IN_TRADE' : (isBotActiveCurrently ? 'SCANNING' : 'IDLE'));
+        if (isBotActiveCurrently) {
+          setBotActive(true);
+          botEnabledRef.current = true;
+        }
+      } else {
+        setActiveTrades([]);
+        setActivePlans([]);
+        setPhase(isBotActiveCurrently ? 'SCANNING' : 'IDLE');
+      }
+
+      const bal = await initVirtualBalance(userId);
+      setVirtualBalance(bal);
+      hasHydratedRef.current = true;
+    } catch (err) {
+      console.error('[BotLoop] syncFromCloud failed:', err);
+    }
+  }, [userId, symbol, botActive]);
+
   useEffect(() => {
     if (!userId) {
       setSessionStats(emptyStats());
@@ -936,38 +991,25 @@ export function useBotLoop(
       hasHydratedRef.current = false;
       return;
     }
-    const uid = userId;
 
-    async function recoverSession() {
-      try {
-        const [stats, trades, openTrades] = await Promise.all([
-          loadStats(uid),
-          loadAllTrades(uid),
-          loadOpenTrades(uid)
-        ]);
-
-        if (stats)     setSessionStats(stats);
-        if (trades)    setTradeHistory(trades);
-        if (openTrades && openTrades.length > 0) {
-          setActiveTrades(openTrades);
-          setActivePlans(openTrades.map(t => t.plan));
-          setPhase('IN_TRADE');
-        }
-
-        // ONLY hydrate balance from Firestore if we haven't done it yet this session
-        // OR if there are no active trades (safe to sync)
-        if (!hasHydratedRef.current || activeTradesRef.current.length === 0) {
-          const bal = await initVirtualBalance(uid);
-          setVirtualBalance(bal);
-          hasHydratedRef.current = true;
-        }
-      } catch (err) {
-        console.error('[BotLoop] Session recovery failed:', err);
-      }
+    if (!hasHydratedRef.current) {
+      syncFromCloud();
     }
+  }, [userId, syncFromCloud]);
 
-    recoverSession();
-  }, [isIdle, userId]);
+  useEffect(() => {
+    const handleClearStats = () => {
+      setSessionStats(emptyStats());
+      setTradeHistory([]);
+      setActiveTrades([]);
+      setActivePlans([]);
+      setVirtualBalance(100000);
+    };
+    window.addEventListener('determinist:clearstats', handleClearStats);
+    return () => {
+      window.removeEventListener('determinist:clearstats', handleClearStats);
+    };
+  }, []);
 
   // Computed fields for backward compatibility and reactive UI elements
   const activePlan = activePlans[0] ?? null;
@@ -1012,6 +1054,7 @@ export function useBotLoop(
     forceExit,
     manualBuy,
     reEvaluate,
+    syncFromCloud,
 
     // Position watcher live data — null when not in trade
     trailSL,

@@ -155,8 +155,9 @@ async function startServer() {
 
   // API Route: Historical Candles Backfill (Warm-up buffer) via Yahoo Finance directly
   app.post("/api/stock/history", async (req, res) => {
+    const { symbol, timeframeMinutes } = req.body;
+    const tfVal = timeframeMinutes ? Number(timeframeMinutes) : 5;
     try {
-      const { symbol, timeframeMinutes } = req.body;
       if (!symbol) {
         return res.status(400).json({ error: "Symbol is required" });
       }
@@ -165,7 +166,6 @@ async function startServer() {
       
       let interval = '5m';
       let range = '5d';
-      const tfVal = timeframeMinutes ? Number(timeframeMinutes) : 5;
       
       if (tfVal === 1) {
         interval = '1m';

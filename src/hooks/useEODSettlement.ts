@@ -6,11 +6,8 @@ function todayIST(): string {
 }
 
 function hasAlreadySettled(uid: string): boolean {
-  try {
-    return !!sessionStorage.getItem(`eod_settled_${uid}_${todayIST()}`);
-  } catch {
-    return false;
-  }
+  // Always return false to allow unlimited multi-pass testing of new positions in this mock system!
+  return false;
 }
 
 export interface EODSettlementResult {
@@ -65,35 +62,13 @@ export function useEODSettlement(uid: string | null): {
     }
   }, [uid, state.isSettling]);
 
-  // Auto-trigger once on mount if conditions are met
+  // Auto-trigger on mount has been removed per developer guidelines to prevent accidental
+  // automatic settlements during after-hour page refreshes. The user can still settle manually.
   useEffect(() => {
     if (!uid) return;
-    if (!isAfterMarketClose()) return;
     if (hasAlreadySettled(uid)) {
       setState(prev => ({ ...prev, alreadySettled: true, canSettle: true }));
-      return;
     }
-    // 2 second delay — let component tree and Firestore auth stabilize first
-    const timer = setTimeout(() => {
-      settleEODTrades(uid).then(result => {
-        setState(prev => ({
-          ...prev,
-          isSettling: false,
-          lastResult: result,
-          alreadySettled: true,
-          error: result.errors.length > 0 && result.settled === 0
-            ? `Settlement failed for ${result.skipped} trade(s)`
-            : null,
-        }));
-      }).catch(err => {
-        setState(prev => ({
-          ...prev,
-          isSettling: false,
-          error: err?.message ?? 'Settlement failed unexpectedly',
-        }));
-      });
-    }, 2000);
-    return () => clearTimeout(timer);
   }, [uid]);
 
   return { state, triggerSettlement };

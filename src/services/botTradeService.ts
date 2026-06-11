@@ -8,6 +8,7 @@ import { BotTradeRecord, BotSessionStats } from '../hooks/useBotLoop';
 import { computeRoundTripCharges }         from '../quant/brokerCharges';
 import { ScalpInstrument }                 from '../types';
 import { updateVirtualBalance }            from '../services/virtualBalanceService';
+import { compressText, decompressText }    from '../utils/storageUtils';
 
 enum OperationType {
   CREATE = 'create',
@@ -146,9 +147,14 @@ async function saveTradeToCompressedArchive(uid: string, trade: BotTradeRecord):
       const data = snap.data();
       if (data.ha && typeof data.ha === 'string') {
         try {
-          archive = JSON.parse(data.ha);
+          const decompressed = decompressText(data.ha);
+          archive = JSON.parse(decompressed);
         } catch {
-          archive = [];
+          try {
+            archive = JSON.parse(data.ha);
+          } catch {
+            archive = [];
+          }
         }
       }
     }
@@ -176,7 +182,9 @@ async function saveTradeToCompressedArchive(uid: string, trade: BotTradeRecord):
       archive = archive.slice(0, 200);
     }
 
-    await setDoc(docRef, { ha: JSON.stringify(archive) }, { merge: true });
+    const serialized = JSON.stringify(archive);
+    const compressed = compressText(serialized);
+    await setDoc(docRef, { ha: compressed }, { merge: true });
   } catch (err) {
     console.warn('[Compressed Archive] Failed to save/update trade in archive:', err);
   }
@@ -241,27 +249,9 @@ export async function writeTrade_Close(
     : null;
 
   try {
-    const update = {
-      s:   trade.symbol,
-      e:   trade.entryPrice,
-      sl:  trade.plan.stopLoss,
-      tp:  trade.plan.takeProfit2,
-      sz:  trade.plan.positionSize,
-      iv:  trade.plan.investmentRupees ?? (trade.plan.positionSize * trade.entryPrice),
-      ot:  Math.floor(trade.openedAt / 1000),
-      sd:  todayIST(),
-      x:   exitPrice,
-      pnl: parseFloat(realizedPnL.toFixed(2)),
-      r:   parseFloat(rMultiple.toFixed(3)),
-      bc:  parseFloat(charges.total.toFixed(2)),
-      o:   trade.outcome,
-      st:  'C',
-      ct:  Math.floor(Date.now() / 1000),
-      dm:  durationMinutes,
-    };
-
-    // Use robust setDoc with merge: true to avoid crashes when document does not yet exist
-    await setDoc(doc(db, 'tradeBot', uid, 'tr', trade.id), update, { merge: true });
+    // Delete the trade document from the active 'tr' subcollection so that active/open trades
+    // are automatically removed from the individual cloud collection when closed.
+    await deleteDoc(doc(db, 'tradeBot', uid, 'tr', trade.id));
 
     // Update compressed historical representation
     const updatedTrade: BotTradeRecord = {
@@ -409,7 +399,13 @@ export async function loadOpenTrades(
       if (statsSnap.exists()) {
         const data = statsSnap.data();
         if (data.ha && typeof data.ha === 'string') {
-          const archive: CompressedTrade[] = JSON.parse(data.ha);
+          const decompressed = decompressText(data.ha);
+          let archive: CompressedTrade[] = [];
+          try {
+            archive = JSON.parse(decompressed);
+          } catch {
+            archive = JSON.parse(data.ha);
+          }
           const opens = archive
             .map(decompressTrade)
             .filter(t => t.exitPrice === null);
@@ -441,6 +437,35 @@ export async function loadAllTrades(
   uid: string
 ): Promise<BotTradeRecord[]> {
   const path = `tradeBot/${uid}/tr`;
+  
+  // ── FASTRACK COMPRESSED PATH ───────────────────────────────────────
+  // Directly pull from the single compressed archive document to deliver 
+  // near-instant (lightning fast) load times matching high speed requirements.
+  try {
+    const statsDocRef = doc(db, 'tradeBot', uid, 'st', 'g');
+    const statsSnap = await getDoc(statsDocRef);
+    if (statsSnap.exists()) {
+      const data = statsSnap.data();
+      if (data.ha && typeof data.ha === 'string') {
+        const decompressed = decompressText(data.ha);
+        let archive: CompressedTrade[] = [];
+        try {
+          archive = JSON.parse(decompressed);
+        } catch {
+          archive = JSON.parse(data.ha);
+        }
+        if (archive.length > 0) {
+          const finalTrades = archive.map(decompressTrade);
+          finalTrades.sort((a, b) => b.openedAt - a.openedAt);
+          return finalTrades;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[Compressed Archive] Lightning path skipped/failed in loadAllTrades:', err);
+  }
+
+  // ── SLOW FALLBACK LIVE SCAN PATH ───────────────────────────────────
   try {
     const q = query(
       collection(db, 'tradeBot', uid, 'tr')
@@ -498,7 +523,13 @@ export async function loadAllTrades(
       if (statsSnap.exists()) {
         const data = statsSnap.data();
         if (data.ha && typeof data.ha === 'string') {
-          const archive: CompressedTrade[] = JSON.parse(data.ha);
+          const decompressed = decompressText(data.ha);
+          let archive: CompressedTrade[] = [];
+          try {
+            archive = JSON.parse(decompressed);
+          } catch {
+            archive = JSON.parse(data.ha);
+          }
           archiveTrades = archive.map(decompressTrade);
         }
       }
@@ -521,7 +552,13 @@ export async function loadAllTrades(
       if (statsSnap.exists()) {
         const data = statsSnap.data();
         if (data.ha && typeof data.ha === 'string') {
-          const archive: CompressedTrade[] = JSON.parse(data.ha);
+          const decompressed = decompressText(data.ha);
+          let archive: CompressedTrade[] = [];
+          try {
+            archive = JSON.parse(decompressed);
+          } catch {
+            archive = JSON.parse(data.ha);
+          }
           const finalTrades = archive.map(decompressTrade);
           finalTrades.sort((a, b) => b.openedAt - a.openedAt);
           return finalTrades;
@@ -548,20 +585,94 @@ export async function loadTodayTrades(
 export async function purgeAllSavedData(uid: string): Promise<void> {
   const path = `tradeBot/${uid}`;
   try {
-    await deleteDoc(doc(db, 'tradeBot', uid, 'st', 'g'));
+    // 1. Safe stats / archive document deletion
+    try {
+      await deleteDoc(doc(db, 'tradeBot', uid, 'st', 'g'));
+    } catch (e) {
+      console.warn('[Purge] Failed to delete stats doc:', e);
+    }
     
-    const q = query(collection(db, 'tradeBot', uid, 'tr'));
-    const snap = await getDocs(q);
-    const deletePromises = snap.docs.map(docSnap => deleteDoc(docSnap.ref));
-    await Promise.all(deletePromises);
+    // 2. Safe scan and individual trade document cleanup (errors caught per-doc)
+    try {
+      const q = query(collection(db, 'tradeBot', uid, 'tr'));
+      const snap = await getDocs(q);
+      const deletePromises = snap.docs.map(docSnap => 
+        deleteDoc(docSnap.ref).catch(err => {
+          console.warn(`[Purge] Failed to clean document ${docSnap.id}:`, err);
+        })
+      );
+      await Promise.all(deletePromises);
+    } catch (e) {
+      console.warn('[Purge] Failed to list or clean sub-trade documents:', e);
+    }
 
-    // Also reset virtual balance to 100000 in Firestore and clear local cache
-    const balanceDocRef = doc(db, 'tradeBot', uid, 'balance', 'current');
-    await setDoc(balanceDocRef, { balance: 100000, upd: Math.floor(Date.now() / 1000) });
-    localStorage.setItem('user_virtual_balance', '100000');
-    localStorage.setItem('ledger_cached_balance', '100000');
+    // 3. Reset virtual balance to 100000 in Firestore
+    try {
+      const balanceDocRef = doc(db, 'tradeBot', uid, 'balance', 'current');
+      await setDoc(balanceDocRef, { balance: 100000, upd: Math.floor(Date.now() / 1000) });
+    } catch (e) {
+      console.warn('[Purge] Failed to reset Firestore virtual balance:', e);
+    }
+
+    // 4. Force synchronization of local caches if it is current user
+    if (auth.currentUser?.uid === uid) {
+      localStorage.setItem('user_virtual_balance', '100000');
+      localStorage.setItem('ledger_cached_balance', '100000');
+    }
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
+export interface UserProfile {
+  id: string;
+  name: string;
+  email: string;
+  createdAt: number;
+}
+
+export async function registerUserProfile(uid: string, email: string | null, name: string | null): Promise<void> {
+  try {
+    const userDocRef = doc(db, 'users', uid);
+    await setDoc(userDocRef, {
+      role: 'user',
+      email: email || '',
+      name: name || email || 'Terminal Inspector',
+      createdAt: Date.now()
+    }, { merge: true });
+  } catch (err) {
+    console.warn('[botTradeService] Failed to register user profile:', err);
+  }
+}
+
+export async function listAllUsers(): Promise<UserProfile[]> {
+  try {
+    const q = query(collection(db, 'users'));
+    const snap = await getDocs(q);
+    return snap.docs.map(docSnap => {
+      const data = docSnap.data();
+      return {
+        id: docSnap.id,
+        name: data.name || 'Anonymous User',
+        email: data.email || 'No email',
+        createdAt: data.createdAt || Date.now()
+      };
+    });
+  } catch (err) {
+    console.error('[botTradeService] listAllUsers failed:', err);
+    return [];
+  }
+}
+
+export async function resetAndPurgeUser(targetUid: string): Promise<void> {
+  // Purge stats, history, balance
+  await purgeAllSavedData(targetUid);
+  // Also delete their profile from users collection
+  try {
+    const userDocRef = doc(db, 'users', targetUid);
+    await deleteDoc(userDocRef);
+  } catch (err) {
+    console.warn(`[botTradeService] Failed to delete user profile from 'users' collection during purge:`, err);
   }
 }
 
