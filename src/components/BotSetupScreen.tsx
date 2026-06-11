@@ -49,8 +49,8 @@ function buildConfigFromPreset(
       maxHoldingMinutes:    timeframeMinutes * 2,
       risk: {
         dailyLossCapRupees:     capital * 0.01,   // 1% of capital
-        maxTradesPerDay:        3,
-        maxConsecutiveLosses:   2,
+        maxTradesPerDay:        999,
+        maxConsecutiveLosses:   999,
         cooldownMinutes:        15,
         slippageTicks:          1,
       },
@@ -66,8 +66,8 @@ function buildConfigFromPreset(
       maxHoldingMinutes:    timeframeMinutes * 2,
       risk: {
         dailyLossCapRupees:     capital * 0.02,   // 2% of capital
-        maxTradesPerDay:        5,
-        maxConsecutiveLosses:   3,
+        maxTradesPerDay:        999,
+        maxConsecutiveLosses:   999,
         cooldownMinutes:        10,
         slippageTicks:          1,
       },
@@ -83,8 +83,8 @@ function buildConfigFromPreset(
       maxHoldingMinutes:    timeframeMinutes * 3,
       risk: {
         dailyLossCapRupees:     capital * 0.04,   // 4% of capital
-        maxTradesPerDay:        8,
-        maxConsecutiveLosses:   4,
+        maxTradesPerDay:        999,
+        maxConsecutiveLosses:   999,
         cooldownMinutes:        5,
         slippageTicks:          2,
       },
@@ -199,8 +199,8 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
   const [maxConcurrentTrades, setMaxConcurrentTrades] = useState<number>(() => {
     try {
       const v = localStorage.getItem('chartlens_max_concurrent_trades');
-      return v ? parseInt(v, 10) : 3;
-    } catch { return 3; }
+      return v ? parseInt(v, 10) : 999;
+    } catch { return 999; }
   });
 
   const [errors, setErrors] = useState<string[]>([]);
@@ -729,7 +729,7 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
       <div className="bg-gray-800 p-4 rounded-lg flex flex-col gap-2">
         <h2 className="font-bold text-zinc-300 text-sm md:text-base">MAX CONCURRENT TRADES</h2>
         <div className="flex divide-zinc-700 border border-zinc-700 bg-zinc-800/40 rounded-xl overflow-hidden mt-1 text-center">
-          {([1, 2, 3, 5, 10] as const).map(num => (
+          {([1, 3, 5, 10, 999] as const).map(num => (
             <button
               key={num}
               type="button"
@@ -740,12 +740,12 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
                   : 'bg-gray-700 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/80'
               }`}
             >
-              {num}
+              {num === 999 ? '∞' : num}
             </button>
           ))}
         </div>
         <p className="text-[10px] text-zinc-400 leading-normal mt-1">
-          Max active stock positions the bot will open simultaneously. Limit: <span className="text-blue-400 font-bold">{maxConcurrentTrades} trades</span>.
+          Max active stock positions the bot will open simultaneously. Limit: <span className="text-blue-400 font-bold">{maxConcurrentTrades === 999 ? 'Unlimited' : `${maxConcurrentTrades} trades`}</span>.
         </p>
       </div>
 

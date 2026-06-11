@@ -315,8 +315,8 @@ export function getDefaultScalpConfig(): ScalpConfig {
     enablePredictabilityGate: true,
     risk: {
       dailyLossCapRupees: 2000,
-      maxTradesPerDay: 5,
-      maxConsecutiveLosses: 3,
+      maxTradesPerDay: 999,
+      maxConsecutiveLosses: 999,
       cooldownMinutes: 10,
       slippageTicks: 1,
     },
