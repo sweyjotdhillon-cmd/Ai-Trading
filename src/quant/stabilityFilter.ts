@@ -16,20 +16,11 @@ export function emitStability(decision: DecisionResult): StabilityResult {
     signals.shift();
   }
   
-  let stable = false;
-  if (signals.length >= 3) {
-    const last3 = signals.slice(-3);
-    const sameSignal = last3[0].signal === last3[1].signal && last3[1].signal === last3[2].signal;
-    const allStrong = last3.every(s => Math.abs(s.finalScore) >= 50);
-    const notNoTrade = last3[0].signal !== 'NO_TRADE';
-    
-    // Also require minimum confidence of 55
-    const latestConfidence = last3[2].confidence;
-    
-    if (sameSignal && allStrong && notNoTrade && latestConfidence >= 55) {
-      stable = true;
-    }
-  }
+  // No longer require 3 in a row. A single strong signal is immediately stable.
+  const notNoTrade = decision.signal !== 'NO_TRADE';
+  const isStrong = Math.abs(decision.finalScore) >= 50;
+  const hasMinConfidence = decision.confidence >= 55;
+  const stable = notNoTrade && isStrong && hasMinConfidence;
 
   return {
     stable,

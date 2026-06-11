@@ -370,6 +370,8 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
     const config = buildConfigFromPreset(preset, parsedCapital, instrument, timeframe, marketHoursGate);
     config.investmentPerTrade = investmentPerTrade;
     config.rrRatioChoice = rrRatioChoice;
+    config.rrRatio = rrRatioChoice;
+    config.minRR = rrRatioChoice;
     config.useConfidenceThreshold = useConfidenceThreshold;
     config.maxConcurrentTrades = maxConcurrentTrades;
 
@@ -391,6 +393,8 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
   const previewConfig = buildConfigFromPreset(preset, virtualBalance || 100000, instrument, timeframe, marketHoursGate);
   previewConfig.investmentPerTrade = investmentPerTrade;
   previewConfig.rrRatioChoice = rrRatioChoice;
+  previewConfig.rrRatio = rrRatioChoice;
+  previewConfig.minRR = rrRatioChoice;
   previewConfig.useConfidenceThreshold = useConfidenceThreshold;
   previewConfig.maxConcurrentTrades = maxConcurrentTrades;
 

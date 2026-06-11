@@ -37,7 +37,7 @@ export function useEODSettlement(uid: string | null): {
     isSettling:     false,
     lastResult:     null,
     error:          null,
-    canSettle:      isAfterMarketClose(),
+    canSettle:      true, // ALWAYS allow manual settlement/testing in simulation environment!
     alreadySettled: uid ? hasAlreadySettled(uid) : false,
   }));
 

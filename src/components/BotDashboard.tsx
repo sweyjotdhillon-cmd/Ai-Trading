@@ -158,6 +158,22 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
     }, 4000);
   }, []);
 
+  const [isReEvaluatingLocal, setIsReEvaluatingLocal] = useState(false);
+
+  const handleReEvaluate = useCallback(async () => {
+    if (isReEvaluatingLocal || bot.isAnalyzing) return;
+    setIsReEvaluatingLocal(true);
+    addToast('Initiating chart and AI signal re-evaluation...', 'info');
+    try {
+      await bot.reEvaluate();
+      addToast('Re-evaluation completed successfully.', 'info');
+    } catch (err: any) {
+      addToast(`Re-evaluation failed: ${err.message || err}`, 'warning');
+    } finally {
+      setIsReEvaluatingLocal(false);
+    }
+  }, [bot, addToast, isReEvaluatingLocal]);
+
   const primaryPlan = bot.activePlans[0];
   const uid = auth.currentUser?.uid ?? null;
   const { state: eodState, triggerSettlement } = useEODSettlement(uid);
@@ -228,21 +244,6 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
   // Format price with 2 decimals
   const fmt = (n: number | null) =>
     n == null ? '—' : `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-
-  // Stability dots — 3 dots, filled based on stabilityCount
-  const StabilityDots = () => (
-    <div className="flex gap-1 items-center">
-      {[0, 1, 2].map(i => (
-        <div
-          key={i}
-          className={`w-2 h-2 rounded-full transition-colors ${
-            i < bot.stabilityCount ? 'bg-amber-400' : 'bg-zinc-700'
-          }`}
-        />
-      ))}
-      <span className="text-[9px] font-mono text-zinc-500 ml-1">{bot.stabilityCount}/3</span>
-    </div>
-  );
 
   return (
     <div 
@@ -422,8 +423,7 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
         </div>
 
         {/* Controls */}
-        <div className="flex items-center justify-between md:justify-end gap-3 border-t border-zinc-800/40 md:border-t-0 pt-2.5 md:pt-0">
-          <StabilityDots />
+        <div className="flex items-center justify-end gap-3 border-t border-zinc-800/40 md:border-t-0 pt-2.5 md:pt-0">
           <div className="flex items-center gap-2">
             <button
               onClick={onPause}
@@ -553,11 +553,12 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
           </div>
           {bot.phase !== 'IDLE' && (
             <button
-              onClick={bot.reEvaluate}
+              onClick={handleReEvaluate}
               id="btn-re-evaluate-status"
-              className="px-3 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 text-[10px] font-black uppercase tracking-wider transition-colors shrink-0 flex items-center gap-1.5 active:scale-[0.98]"
+              disabled={isReEvaluatingLocal || bot.isAnalyzing}
+              className="px-3 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 text-[10px] font-black uppercase tracking-wider transition-colors shrink-0 flex items-center gap-1.5 active:scale-[0.98] disabled:opacity-50"
             >
-              🔄 Re-evaluate
+              🔄 {isReEvaluatingLocal || bot.isAnalyzing ? 'Evaluating...' : 'Re-evaluate'}
             </button>
           )}
         </div>
@@ -1013,15 +1014,16 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
               <span>Waiting for signal...</span>
             </div>
             <p className="text-[10px] font-mono text-zinc-600 uppercase tracking-widest">
-              Bot is scanning {symbol || '—'} · {bot.stabilityCount}/3 signals
+              Bot is scanning {symbol || '—'}
             </p>
             {bot.phase !== 'IDLE' && (
               <button
-                onClick={bot.reEvaluate}
+                onClick={handleReEvaluate}
                 id="btn-re-evaluate-scanning"
-                className="mt-1 px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500/10 to-amber-600/10 hover:from-amber-500/20 hover:to-amber-600/20 border border-amber-500/30 text-amber-400 text-[10px] font-black uppercase tracking-widest transition-all shrink-0 flex items-center gap-1.5 active:scale-[0.98] cursor-pointer shadow-md"
+                disabled={isReEvaluatingLocal || bot.isAnalyzing}
+                className="mt-1 px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500/10 to-amber-600/10 hover:from-amber-500/20 hover:to-amber-600/20 border border-amber-500/30 text-amber-400 text-[10px] font-black uppercase tracking-widest transition-all shrink-0 flex items-center gap-1.5 active:scale-[0.98] disabled:opacity-50 cursor-pointer shadow-md"
               >
-                🔄 Re-evaluate Now
+                🔄 {isReEvaluatingLocal || bot.isAnalyzing ? 'Evaluating...' : 'Re-evaluate Now'}
               </button>
             )}
           </div>

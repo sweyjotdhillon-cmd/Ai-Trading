@@ -14,6 +14,7 @@ import { initVirtualBalance } from '../services/virtualBalanceService';
 import { loadStats, loadAllTrades, filterTradesByRange } from '../services/botTradeService';
 import { computeRoundTripCharges } from '../quant/brokerCharges';
 import { BotSessionStats, BotTradeRecord } from '../hooks/useBotLoop';
+import { useEODSettlement } from '../hooks/useEODSettlement';
 
 interface BalanceDashboardProps {
   onRefreshTriggered?: () => void;
@@ -49,6 +50,7 @@ export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) 
   const [loading, setLoading] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [uid, setUid] = useState<string | null>(auth.currentUser?.uid ?? null);
+  const { state: eodState, triggerSettlement } = useEODSettlement(uid);
   const [syncError, setSyncError] = useState<string | null>(null);
   
   // Backup / Diagnostic States
@@ -675,6 +677,110 @@ export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) 
               </ResponsiveContainer>
             </div>
           </div>
+        </div>
+
+        {/* SECTION: Open trades list and Manual Settlement */}
+        <div className="bg-zinc-950/60 border border-zinc-800/80 rounded-2xl p-5 flex flex-col gap-4 relative overflow-hidden" id="ledger-open-positions-card">
+          <div className="flex justify-between items-center border-b border-zinc-900 pb-3">
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <div className={`w-2 h-2 rounded-full absolute -top-0.5 -right-0.5 ${openTrades.length > 0 ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-650'}`} />
+                <List size={14} className="text-[#D9B382]" />
+              </div>
+              <span className="text-sm font-black text-white tracking-widest uppercase font-sans">
+                Active Positions ({openTrades.length})
+              </span>
+            </div>
+            {openTrades.length > 0 && (
+              <span className="text-[9px] font-mono text-zinc-400 font-bold uppercase">
+                Awaiting EOD Settlement
+              </span>
+            )}
+          </div>
+
+          {openTrades.length > 0 ? (
+            <div className="flex flex-col gap-3">
+              {openTrades.map((trade) => {
+                const entry = trade.entryPrice;
+                const shares = trade.plan?.positionSize ?? 1;
+                const invested = trade.plan?.investmentRupees ?? (entry * shares);
+                const tp = trade.plan?.takeProfit2 ?? entry * 1.02;
+                const sl = trade.plan?.stopLoss ?? entry * 0.99;
+                return (
+                  <div key={trade.id} className="bg-zinc-950/40 border border-zinc-900 p-3.5 rounded-xl flex flex-col sm:flex-row justify-between sm:items-center gap-3 font-mono">
+                    <div className="flex flex-col gap-1 text-left">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[9px] bg-emerald-500/15 text-emerald-400 px-1.5 py-0.5 rounded font-black font-sans">
+                          LONG
+                        </span>
+                        <span className="text-xs font-black text-white">{trade.symbol}</span>
+                      </div>
+                      <div className="text-[10px] text-zinc-500">
+                        {shares} shares · {fmt(invested)} deployed
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-4 text-center text-[10px] min-w-[180px]">
+                      <div>
+                        <div className="text-[8px] text-zinc-500 uppercase">Entry Price</div>
+                        <div className="font-extrabold text-zinc-300">{fmt(entry)}</div>
+                      </div>
+                      <div>
+                        <div className="text-[8px] text-zinc-500 uppercase">Stop Loss</div>
+                        <div className="font-extrabold text-rose-450">{fmt(sl)}</div>
+                      </div>
+                      <div>
+                        <div className="text-[8px] text-zinc-500 uppercase font-sans">Take Profit</div>
+                        <div className="font-extrabold text-emerald-400">{fmt(tp)}</div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="text-center py-6 border border-dashed border-zinc-900/80 rounded-xl bg-zinc-950/20">
+              <span className="text-zinc-500 text-xs font-mono uppercase tracking-wider">No active positions currently open.</span>
+            </div>
+          )}
+
+          {/* Settle Trades option inside Balance view */}
+          <div className="mt-2 border-t border-zinc-900 pt-3 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div className="text-[10px] text-zinc-500 leading-normal max-w-sm">
+              Settle all active positions instantly using high/low/close data. This can be run at any time in this paper portfolio.
+            </div>
+            
+            <button
+              onClick={async () => {
+                await triggerSettlement();
+                // Refresh data to show closed positions
+                fetchAllData(uid || '');
+              }}
+              disabled={eodState.isSettling || openTrades.length === 0}
+              id="ledger-settle-trades-btn"
+              className={`w-full sm:w-auto px-5 py-2.5 rounded-xl border text-[10px] font-mono font-black uppercase tracking-widest transition-all active:scale-[0.98] ${
+                eodState.isSettling
+                  ? 'bg-amber-500/10 border-amber-500/30 text-amber-500 cursor-wait animate-pulse'
+                  : openTrades.length === 0
+                  ? 'bg-zinc-900/40 border-zinc-900/40 text-zinc-650 cursor-not-allowed'
+                  : 'bg-[#D9B382] hover:bg-[#c9a171] text-zinc-950 border-transparent font-extrabold shadow-md'
+              }`}
+            >
+              {eodState.isSettling ? '⏳ Settling...' : '📋 Settle Open Trades'}
+            </button>
+          </div>
+
+          {/* EOD Banner inside Balance view */}
+          {eodState.lastResult && eodState.lastResult.settled > 0 && (
+            <div className="mt-2 text-[10.5px] font-mono text-emerald-400 bg-emerald-500/5 p-2 rounded-lg border border-emerald-500/15">
+              ✓ Successfully settled {eodState.lastResult.settled} trades! Realized P&L: {fmt(eodState.lastResult.totalNetPnL)}
+            </div>
+          )}
+
+          {eodState.error && (
+            <div className="mt-2 text-[10.5px] font-mono text-rose-455 bg-rose-500/5 p-2 rounded-lg border border-rose-500/15">
+              ✗ {eodState.error}
+            </div>
+          )}
         </div>
 
         {/* ANTI-HALLUCINATION / MATH HYPOTHESIS VALIDATOR */}
