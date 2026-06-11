@@ -2,8 +2,9 @@ import { doc, getDoc } from 'firebase/firestore';
 import { db } from './firebase';
 import { BotTradeRecord } from '../hooks/useBotLoop';
 import { TradeOutcome } from '../types';
-import { loadOpenTrades, writeTrade_Close } from './botTradeService';
+import { loadOpenTrades, writeTrade_Close, loadStats, loadAllTrades, writeStats_Update } from './botTradeService';
 import { setVirtualBalanceValue } from './virtualBalanceService';
+import { updateStats } from '../hooks/useBotLoop';
 import { parseSymbol } from './stockPriceFeed';
 
 interface ProxyConfig {
@@ -175,6 +176,18 @@ export async function settleEODTrades(uid: string): Promise<{
   let ambiguous = 0;
   const errors: string[] = [];
 
+  let currentStats = await loadStats(uid) || {
+    totalTrades: 0,
+    totalWins: 0,
+    totalLosses: 0,
+    winRate: 0,
+    totalPnL: 0,
+    avgRMultiple: 0,
+    bestTrade: 0,
+    worstTrade: 0,
+    currentStreak: 0,
+  };
+
   for (const trade of openTrades) {
     try {
       const tradeDateStr = new Date(trade.openedAt + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
@@ -205,6 +218,12 @@ export async function settleEODTrades(uid: string): Promise<{
         invested
       );
 
+      closedTrade.realizedPnL = result.realizedPnL;
+      closedTrade.realizedPnLPct = result.realizedPnLPct;
+      closedTrade.rMultiple = result.rMultiple;
+
+      currentStats = updateStats(currentStats, closedTrade);
+
       netPnLSum += result.realizedPnL;
       returnedCapitalSum += (invested + result.realizedPnL);
       settled++;
@@ -220,8 +239,18 @@ export async function settleEODTrades(uid: string): Promise<{
       const currentBalance = balSnap.exists() ? (balSnap.data().balance ?? 100000) : 100000;
       const newBalance = parseFloat((currentBalance + returnedCapitalSum).toFixed(2));
       await setVirtualBalanceValue(uid, newBalance);
+
+      const allTrades = await loadAllTrades(uid);
+      const todayPnL = allTrades
+        .filter(t => {
+          const tDate = new Date(t.openedAt + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
+          return tDate === todayStr;
+        })
+        .reduce((sum, t) => sum + (t.realizedPnL ?? 0), 0);
+
+      await writeStats_Update(uid, currentStats, todayPnL);
     } catch (err: any) {
-      errors.push(`Balance update failed: ${err?.message ?? 'Unknown'}`);
+      errors.push(`Balance/Stats update failed: ${err?.message ?? 'Unknown'}`);
     }
   }
 

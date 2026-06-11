@@ -106,7 +106,7 @@ export interface UseBotLoopResult {
   timeRemainingMs:  number | null;
 }
 
-function updateStats(prev: BotSessionStats, trade: BotTradeRecord): BotSessionStats {
+export function updateStats(prev: BotSessionStats, trade: BotTradeRecord): BotSessionStats {
   const isWin     = (trade.realizedPnL ?? 0) > 0;
   const pnl       = trade.realizedPnL ?? 0;
   const rMult     = trade.rMultiple   ?? 0;

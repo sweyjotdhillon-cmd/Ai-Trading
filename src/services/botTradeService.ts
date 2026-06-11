@@ -219,13 +219,15 @@ export async function writeTrade_Close(
   uid:       string,
   trade:     BotTradeRecord,
   exitPrice: number,
-  capital:   number
+  _capital:   number
 ): Promise<{
   realizedPnL:    number;
   realizedPnLPct: number;
   rMultiple:      number;
   brokerCharges:  number;
 }> {
+  // path is kept intentionally but TS complains if unused
+  // @ts-ignore
   const path = `tradeBot/${uid}/tr/${trade.id}`;
   const instrument  = (trade.plan.instrument ?? 'EQUITY_INTRADAY') as ScalpInstrument;
   const posSize     = trade.plan.positionSize ?? 1;
@@ -258,6 +260,9 @@ export async function writeTrade_Close(
       ...trade,
       exitPrice,
       realizedPnL,
+      realizedPnLPct,
+      rMultiple,
+      durationMinutes,
       closedAt: Date.now(),
     };
     await saveTradeToCompressedArchive(uid, updatedTrade);
