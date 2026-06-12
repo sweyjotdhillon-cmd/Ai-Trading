@@ -43,17 +43,17 @@ export function recognizeDigits(roi: ImageData): { text: string; confidence: num
       if (startX === -1) startX = x;
     } else {
       if (startX !== -1) {
-        subROIs.push({ minX: startX, maxX: x - 1, minY: h, maxY: -1 });
+        subROIs.push({ minX: startX, maxX: x - 1, minY: Infinity, maxY: -1 });
         startX = -1;
       }
     }
   }
   if (startX !== -1) {
-    subROIs.push({ minX: startX, maxX: w - 1, minY: h, maxY: -1 });
+    subROIs.push({ minX: startX, maxX: w - 1, minY: Infinity, maxY: -1 });
   }
 
   for (const roi of subROIs) {
-    let minY = h, maxY = -1;
+    let minY = Infinity, maxY = -1;
     for (let y = 0; y < h; y++) {
       for (let x = roi.minX; x <= roi.maxX; x++) {
         if (bin[y * w + x] > 0) {
@@ -66,7 +66,7 @@ export function recognizeDigits(roi: ImageData): { text: string; confidence: num
     roi.maxY = maxY;
   }
 
-  const validROIs = subROIs.filter(r => r.maxY >= r.minY && r.maxX >= r.minX);
+  const validROIs = subROIs.filter(r => r.minY !== Infinity && r.maxY >= r.minY && r.maxX >= r.minX);
   
   let text = '';
   let confSum = 0;

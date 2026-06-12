@@ -5,9 +5,12 @@ function todayIST(): string {
   return new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
+function getStorageKey(uid: string): string {
+  return `eod_settled_${uid}_${todayIST()}`;
+}
+
 function hasAlreadySettled(uid: string): boolean {
-  // Always return false to allow unlimited multi-pass testing of new positions in this mock system!
-  return false;
+  return localStorage.getItem(getStorageKey(uid)) === 'true';
 }
 
 export interface EODSettlementResult {
@@ -44,6 +47,9 @@ export function useEODSettlement(uid: string | null): {
     setState(prev => ({ ...prev, isSettling: true, error: null }));
     try {
       const result = await settleEODTrades(uid);
+      if (result.settled > 0 || result.skipped === 0) {
+        localStorage.setItem(getStorageKey(uid), 'true');
+      }
       setState(prev => ({
         ...prev,
         isSettling:     false,

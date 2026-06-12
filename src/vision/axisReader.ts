@@ -14,7 +14,7 @@ export function readYAxis(imageData: ImageData): PriceAxisTransform | null {
   const h = imageData.height;
 
   // Extract rightmost 80px strip
-  const stripW = Math.min(80, w);
+  const stripW = Math.min(120, w);
   const startX = w - stripW;
 
   const len = stripW * h;
@@ -142,10 +142,22 @@ export function readYAxis(imageData: ImageData): PriceAxisTransform | null {
   const mSlope = (N * sumYP - sumY * sumP) / denom;
   const bIntercept = (sumP - mSlope * sumY) / Math.max(1, N);
 
+  const countConf = Math.min(1.0, anchors.length / 6);
+
+  let sumResidualSq = 0;
+  for (const a of anchors) {
+    const predicted = mSlope * a.y + bIntercept;
+    const residual  = (predicted - a.price) / Math.max(1, Math.abs(a.price));
+    sumResidualSq  += residual * residual;
+  }
+  const rmse         = Math.sqrt(sumResidualSq / Math.max(1, anchors.length));
+  const residualConf = Math.max(0, 1.0 - rmse * 10);
+  const confidence   = countConf * residualConf;
+
   return {
     mSlope,
     bIntercept,
     anchors,
-    confidence: 1.0, 
+    confidence, 
   };
 }

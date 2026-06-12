@@ -71,7 +71,17 @@ export function clearCalibration() {
 }
 
 export function isCalibrated(): boolean {
-  return true; // Auto-calibrated with default bands
+  if (activeCalibration !== null) return true;
+  if (!detectPrivateModeFallback()) {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored) as CalibrationPayload;
+        if (parsed.version === '1' && parsed.bull && parsed.bear) return true;
+      }
+    } catch { /* ignore */ }
+  }
+  return false;
 }
 
 export function getBullishHSVBands(): HSVBand {

@@ -75,6 +75,7 @@ export interface UseBotLoopResult {
   virtualBalance:     number;
   tradeHistory:       BotTradeRecord[];
   sessionStats:       BotSessionStats;
+  ohlcQuality:        'REAL_PRICE' | 'NORMALIZED_FALLBACK';
   stabilityCount:     number;         // 0 | 1 | 2 | 3
   lastSignal:         string | null;  // 'LONG' | 'NO_TRADE'
   lastConfidence:     number;         // 0–100
@@ -170,6 +171,7 @@ export function useBotLoop(
   useEffect(() => {
     virtualBalanceRef.current = virtualBalance;
   }, [virtualBalance]);
+  const [ohlcQuality, setOhlcQuality] = useState<'REAL_PRICE' | 'NORMALIZED_FALLBACK'>('REAL_PRICE');
   const [tradeHistory,    setTradeHistory]    = useState<BotTradeRecord[]>([]);
   const [sessionStats,    setSessionStats]    = useState<BotSessionStats>(emptyStats());
   const [stabilityCount,  setStabilityCount]  = useState(0);
@@ -301,24 +303,17 @@ export function useBotLoop(
     setVirtualBalance(newBalance);
     setTradeHistory(h => [closed, ...h]);
 
-    setActiveTrades(prev => {
-      const filtered = prev.filter(t => t.id !== tradeId);
-      const activeSymbolTrades = filtered.filter(t => t.symbol === symbol);
-      if (activeSymbolTrades.length === 0 && trade.symbol === symbol) {
-        setPhase('COOLDOWN');
-      }
-      return filtered;
-    });
+    // Atom 8 Fix — Extract filter logic outside updater, sync plans sequentially
+    const nextTrades = activeTradesRef.current.filter(t => t.id !== tradeId);
+    const nextPlans = nextTrades.map(t => t.plan).filter(p => !!p) as ScalpingPlan[];
+    
+    setActiveTrades(nextTrades);
+    setActivePlans(nextPlans);
 
-    setActivePlans(prev => {
-      const idx = activeTradesRef.current.findIndex(t => t.id === tradeId);
-      if (idx !== -1) {
-        const nextPlans = [...prev];
-        nextPlans.splice(idx, 1);
-        return nextPlans;
-      }
-      return prev;
-    });
+    const activeSymbolTrades = nextTrades.filter(t => t.symbol === symbol);
+    if (activeSymbolTrades.length === 0 && trade.symbol === symbol) {
+      setPhase('COOLDOWN');
+    }
 
     // 3. Update session stats locally first (and write stats async)
     setSessionStats(prev => {
@@ -350,8 +345,8 @@ export function useBotLoop(
     if (uidRef.current) {
       writeTrade_Close(uidRef.current, closed, exitPrice, invested)
         .then(async () => {
-          // Write ABSOLUTE balance — avoids race conditions entirely
-          await setVirtualBalanceValue(uidRef.current!, virtualBalanceRef.current);
+          // Write ABSOLUTE balance from captured synchronous state
+          await setVirtualBalanceValue(uidRef.current!, newBalance);
           // DO NOT call setVirtualBalance here again — local state is already correct
         })
         .catch(err => {
@@ -550,11 +545,11 @@ export function useBotLoop(
       setLastBlockReason('NO_TECHNIQUES: Upload a technique file in Bot Setup for better signal quality. Continuing with J1/J2/J3 only.');
     }
 
-    analyzingRef.current = true;
     abortRef.current?.abort();
     abortRef.current = new AbortController();
 
     try {
+      analyzingRef.current = true;
       // Step 1 — Render OHLCV buffer to chart image
       const dataUrl = ohlcvToDataUrl(feed.ohlcvBuffer);
       if (!dataUrl) {
@@ -567,9 +562,19 @@ export function useBotLoop(
       setLastAnalyzedAt(Date.now());
       setIsAnalyzing(true);
 
+      const directOhlcv: import('../vision/pipeline').NumericOHLC[] = feed.ohlcvBuffer.map((c, i) => ({
+        open:    c.open,
+        high:    c.high,
+        low:     c.low,
+        close:   c.close,
+        xCenter: i,
+        isBull:  c.close >= c.open
+      }));
+
       // Step 2 — Run full analysis pipeline (vision → indicators → judges)
       const result = await runSingleAnalysis({
         imageDataUrl:     dataUrl,
+        directOhlcv,
         stock:            symbol,
         graphTimeframe:   `${timeframeMinutes}m`,
         holdingMinutes:   `${timeframeMinutes}m`,
@@ -580,6 +585,13 @@ export function useBotLoop(
       });
 
       if (!result) return;
+      
+      if (result.ohlcQuality === 'NORMALIZED_FALLBACK') {
+        setOhlcQuality('NORMALIZED_FALLBACK');
+        setLastBlockReason('AXIS_FALLBACK: Price axis unreadable — analysis running on normalized prices. Results unreliable.');
+      } else {
+        setOhlcQuality('REAL_PRICE');
+      }
 
       if (newestCandleTime !== null) {
         lastAnalyzedCandleTimeRef.current = newestCandleTime;
@@ -1064,6 +1076,7 @@ export function useBotLoop(
     virtualBalance,
     tradeHistory,
     sessionStats,
+    ohlcQuality,
     stabilityCount,
     lastSignal,
     lastConfidence,

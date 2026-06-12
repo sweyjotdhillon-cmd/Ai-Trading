@@ -1,6 +1,6 @@
 
 import { evaluateSignal } from '../quant/ruleEngine';
-import { buildPipelineResult } from '../vision/pipeline';
+import { buildPipelineResult, PipelineResult } from '../vision/pipeline';
 import { HorizonContext } from '../quant/horizon';
 import { emitStability, resetStability, emitScalpStability } from '../quant/stabilityFilter';
 import { getCalibrationBands, setCalibrationBands } from '../vision/colorCalibration';
@@ -119,8 +119,39 @@ self.onmessage = async (e: MessageEvent) => {
 
       sendOk('PROGRESS', { type: 'PROGRESS', msgId: data.msgId, step: 'EXTRACTING CANDLESTICK DATA...' });
 
-      const pipe = await buildPipelineResult(data.imageData) as any;
+      let pipe: PipelineResult;
 
+      if (data.directOhlcv && data.directOhlcv.length > 0) {
+        pipe = {
+          rawCandles: [],
+          axis: null,
+          ohlcSeries: data.directOhlcv,
+          meta: {
+            latencyMs: 0,
+            axisFallback: false,
+            ohlcQuality: 'REAL_PRICE',
+            candlesLength: data.directOhlcv.length,
+            candleCentersX: data.directOhlcv.map((_: any, i: number) => i / Math.max(1, data.directOhlcv.length - 1)),
+            mode: 'DIRECT_PASSTHROUGH',
+            stages: {}
+          }
+        } as any;
+      } else {
+        pipe = await buildPipelineResult(data.imageData) as any;
+
+        if (data.livePrice && data.livePrice > 0 && pipe.ohlcSeries.length > 0) {
+          const pipeMin  = Math.min(...pipe.ohlcSeries.map((c: any) => c.low));
+          const pipeMax  = Math.max(...pipe.ohlcSeries.map((c: any) => c.high));
+          const midRange = (pipeMin + pipeMax) / 2;
+          const deviation = Math.abs(data.livePrice - midRange) / Math.max(1, midRange);
+
+          if (deviation > 0.02 && pipe.meta.ohlcQuality === 'REAL_PRICE') {
+            console.warn(`[VISION] Live price ₹${data.livePrice} deviates ${(deviation*100).toFixed(1)}% from pipe range.`);
+            (pipe.meta as any).ohlcQuality = 'NORMALIZED_FALLBACK';
+            (pipe.meta as any).axisFallback = true;
+          }
+        }
+      }
 
       let confirmedPatterns: PatternEvidence[] = [];
       if (featureFlags.enableCandlestickRepoPatterns) {

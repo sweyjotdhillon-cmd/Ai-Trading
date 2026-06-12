@@ -184,11 +184,11 @@ export function evaluateScalpSignal(
   let sizeShares = 0;
 
   if (lotSize === 1) {
-    // Standard equity stocks: allow fractional shares down to 3 decimal places (such as 0.001 shares)
-    sizeShares = Math.floor((investmentAmount / entry) * 1000) / 1000;
+    // Standard equity stocks: Only WHOLE shares. (No fractional shares in India)
+    sizeShares = Math.floor(investmentAmount / entry);
   } else {
     // Non-equity options/futures: keep standard lot size multiples
-    sizeShares = Math.floor(investmentAmount / entry / lotSize) * lotSize;
+    sizeShares = Math.floor((investmentAmount / entry) / lotSize) * lotSize;
   }
 
   if (sizeShares <= 0 && !isForced) {
@@ -197,7 +197,7 @@ export function evaluateScalpSignal(
   }
 
   if (sizeShares <= 0) {
-    sizeShares = lotSize === 1 ? 0.001 : lotSize;
+    sizeShares = lotSize === 1 ? 1 : lotSize;
   }
 
   // Exit Targets
@@ -370,15 +370,17 @@ export function runAntiHallucinationFilter(
   checks.candleConsistency = !candleError;
   if (candleError) reasons.push('Detected inconsistent or glitched OHLCV values in historical buffer.');
 
-  // Check 3 — Entry Matching: entry matches lastBar.close perfectly
+  // Check 3 — Entry Matching: entry matches lastBar.close perfectly (or within tolerance if live)
   const lastBar = ohlc[ohlc.length - 1];
-  const entryMatch = lastBar ? Math.abs(plan.entry - lastBar.close) < 0.001 : false;
+  const currentAtr = ctx.atr14[ctx.atr14.length - 1] ?? 1;
+  const tolerance = ctx.currentPrice ? (currentAtr * 0.5) : 0.001;
+  const targetPrice = ctx.currentPrice ?? (lastBar ? lastBar.close : 0);
+  const entryMatch = lastBar ? Math.abs(plan.entry - targetPrice) <= tolerance : false;
   checks.entryMatching = entryMatch;
-  if (!entryMatch) reasons.push('Trade entry price does not align with the most recent closing price.');
+  if (!entryMatch) reasons.push(`Trade entry price does not align with the target price (tolerance ${tolerance.toFixed(4)}).`);
 
   // Check 4 — Non-zero indicators
-  const currentAtr = ctx.atr14[ctx.atr14.length - 1];
-  const indicatorsValid = currentAtr != null && currentAtr > 0;
+  const indicatorsValid = currentAtr > 0;
   checks.nonZeroIndicators = indicatorsValid;
   if (!indicatorsValid) reasons.push('Technical indicator ATR14 is zero, invalid or missing.');
 

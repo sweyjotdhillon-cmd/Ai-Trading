@@ -34,8 +34,13 @@ export function filterCandleBodies(
     const w = comp.xMax - comp.xMin + 1;
     const h = comp.yMax - comp.yMin + 1;
     const ar = h / Math.max(w, EPSILON);
-    
-    // For very small candles, allow extremely flat entries (e.g. Dojis)
+
+    const isDoji = h <= 3 && w >= 3 && w <= 40;
+    if (isDoji) {
+      bodies.push(comp);
+      continue;
+    }
+
     const minAr = comp.area < 15 ? 0.15 : 0.40;
     if (ar < minAr) {
       reject('TOO_HORIZONTAL');

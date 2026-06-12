@@ -20,8 +20,8 @@ export function findCandleComponents(
 ): Component[] {
   const total = width * height;
   const labels = new Int32Array(total);
-  // Allocate parent array a bit smaller but union-find could use up to total / 2 sets
-  const parent = new Int32Array(total);
+  // Allocate parent array a bit larger to avoid OOB write when nextLabel reaches total
+  const parent = new Int32Array(total + 2);
   let nextLabel = 1;
 
   function find(i: number): number {

@@ -51,53 +51,54 @@ export async function fetchDailyOHLC(
   symbol: string,
   dateIST: string
 ): Promise<{ open: number; high: number; low: number; close: number } | null> {
-  try {
-    const res = await fetch('/api/stock/history', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ symbol, timeframeMinutes: 1440, outputsize: 5 })
-    });
-    
-    if (!res.ok) return null;
-    const history = await res.json();
-    
-    if (!Array.isArray(history)) return null;
-    
-    const dateMatches = (ts: number) =>
-      new Date(ts + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10) === dateIST;
+  const { yahoo } = parseSymbol(symbol);
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${yahoo}?interval=1d&range=5d`;
 
-    for (const candle of history) {
-      if (dateMatches(candle.timestamp)) {
-        return {
-          open: candle.open,
-          high: candle.high,
-          low: candle.low,
-          close: candle.close
-        };
+  let lastError = '';
+  for (const proxy of PROXY_CHAIN) {
+    try {
+      const res = await fetch(proxy.wrap(url), { signal: AbortSignal.timeout(6000) });
+      if (!res.ok) continue;
+      const rawText = await proxy.extract(res);
+      const data = JSON.parse(rawText);
+      const result = data?.chart?.result?.[0];
+      if (!result) continue;
+
+      const timestamps = result.timestamp || [];
+      const quote = result.indicators?.quote?.[0] || {};
+      
+      const dateMatches = (ts: number) =>
+        new Date(ts * 1000 + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10) === dateIST;
+
+      for (let i = timestamps.length - 1; i >= 0; i--) {
+        if (dateMatches(timestamps[i])) {
+          if (quote.close[i] != null) {
+            return {
+              open: quote.open[i] ?? quote.close[i],
+              high: quote.high[i] ?? quote.close[i],
+              low: quote.low[i] ?? quote.close[i],
+              close: quote.close[i],
+            };
+          }
+        }
       }
+    } catch (err: any) {
+      lastError = err.message;
     }
-  } catch (err) {
-    console.error("fetchDailyOHLC error:", err);
   }
 
-  // Backup plan using current price api for today's fallback
+  // Backup plan using fetchLivePrice for today's fallback
   if (dateIST === todayIST()) {
     try {
-      const res = await fetch('/api/stock/price', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ symbol })
-      });
-      if (res.ok) {
-        const live = await res.json();
-        if (live.price && live.dayHigh && live.dayLow) {
-           return {
-             open: live.previousClose ?? live.price,
-             high: live.dayHigh,
-             low: live.dayLow,
-             close: live.price
-           };
-        }
+      const { fetchLivePrice } = await import('./stockPriceFeed');
+      const live = await fetchLivePrice(symbol);
+      if (live && live.price) {
+         return {
+           open: live.previousClose ?? live.price,
+           high: live.dayHigh ?? live.price,
+           low: live.dayLow ?? live.price,
+           close: live.price
+         };
       }
     } catch {}
   }
@@ -114,61 +115,55 @@ export async function determineEODOutcome(
 
   // Best effort: Get 1m intraday data via backend
   try {
-    const res = await fetch('/api/stock/history', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ symbol: trade.symbol, timeframeMinutes: 1, outputsize: 1500 }) // up to 4 days of 1-min candles
-    });
+    const { fetchTimeSeries } = await import('./stockPriceFeed');
+    const history = await fetchTimeSeries(trade.symbol, 1, 1500);
 
-    if (res.ok) {
-      const history = await res.json();
-      if (Array.isArray(history) && history.length > 0) {
-        let validSimulations = 0;
-        for (const candle of history) {
-          const tsMillis = candle.timestamp;
-          if (tsMillis + 60000 > trade.openedAt) {
-            const o = candle.open;
-            const h = candle.high;
-            const l = candle.low;
-            const c = candle.close;
-            
-            validSimulations++;
-            
-            const hitSL = l <= sl;
-            const hitTP = h >= tp;
+    if (Array.isArray(history) && history.length > 0) {
+      let validSimulations = 0;
+      for (const candle of history) {
+        const tsMillis = candle.timestamp || Date.now();
+        if (tsMillis + 60000 > trade.openedAt) {
+          const o = candle.open;
+          const h = candle.high;
+          const l = candle.low;
+          const c = candle.close;
+          
+          validSimulations++;
+          
+          const hitSL = l <= sl;
+          const hitTP = h >= tp;
 
-            if (hitSL && hitTP) {
-              const distToSL = Math.abs(o - sl);
-              const distToTP = Math.abs(tp - o);
-              if (distToSL <= distToTP) {
-                 return { exitPrice: sl, outcome: 'SL_HIT', isAmbiguous: false };
-              } else {
-                 return { exitPrice: tp, outcome: 'TP2_HIT', isAmbiguous: false };
-              }
-            } else if (hitSL) {
-              return { exitPrice: sl, outcome: 'SL_HIT', isAmbiguous: false };
-            } else if (hitTP) {
-              return { exitPrice: tp, outcome: 'TP2_HIT', isAmbiguous: false };
+          if (hitSL && hitTP) {
+            const distToSL = Math.abs(o - sl);
+            const distToTP = Math.abs(tp - o);
+            if (distToSL <= distToTP) {
+               return { exitPrice: sl, outcome: 'SL_HIT', isAmbiguous: false };
+            } else {
+               return { exitPrice: tp, outcome: 'TP2_HIT', isAmbiguous: false };
             }
+          } else if (hitSL) {
+            return { exitPrice: sl, outcome: 'SL_HIT', isAmbiguous: false };
+          } else if (hitTP) {
+            return { exitPrice: tp, outcome: 'TP2_HIT', isAmbiguous: false };
+          }
 
-            const elapsedMin = (tsMillis - trade.openedAt) / 60_000;
-            const maxHold = trade.plan?.maxHoldingMinutes ?? 15;
-            if (elapsedMin >= maxHold) {
-              return { exitPrice: c, outcome: 'TIME_EXIT', isAmbiguous: false };
-            }
+          const elapsedMin = (tsMillis - trade.openedAt) / 60_000;
+          const maxHold = trade.plan?.maxHoldingMinutes ?? 15;
+          if (elapsedMin >= maxHold) {
+            return { exitPrice: c, outcome: 'TIME_EXIT', isAmbiguous: false };
+          }
 
-            const istTime = new Date(tsMillis + 5.5 * 60 * 60 * 1000);
-            const istHours = istTime.getUTCHours();
-            const istMinutes = istTime.getUTCMinutes();
-            if (istHours > 15 || (istHours === 15 && istMinutes >= 15)) {
-              return { exitPrice: c, outcome: 'TIME_EXIT', isAmbiguous: false };
-            }
+          const istTime = new Date(tsMillis + 5.5 * 60 * 60 * 1000);
+          const istHours = istTime.getUTCHours();
+          const istMinutes = istTime.getUTCMinutes();
+          if (istHours > 15 || (istHours === 15 && istMinutes >= 15)) {
+            return { exitPrice: c, outcome: 'TIME_EXIT', isAmbiguous: false };
           }
         }
+      }
 
-        if (validSimulations > 0) {
-           return { exitPrice: ohlc.close, outcome: 'TIME_EXIT', isAmbiguous: false };
-        }
+      if (validSimulations > 0) {
+         return { exitPrice: ohlc.close, outcome: 'TIME_EXIT', isAmbiguous: false };
       }
     }
   } catch (err) {
@@ -199,6 +194,7 @@ export async function settleEODTrades(uid: string): Promise<{
   totalNetPnL: number;
   errors: string[];
   ambiguous: number;
+  details: { symbol: string; pnl: number; outcome: string }[];
 }> {
   const todayStr = todayIST();
   const lockKey = `eod_settled_${uid}_${todayStr}`;
@@ -207,7 +203,7 @@ export async function settleEODTrades(uid: string): Promise<{
   
   const openTrades = await loadOpenTrades(uid);
   if (openTrades.length === 0) {
-    return { settled: 0, skipped: 0, totalNetPnL: 0, errors: [], ambiguous: 0 };
+    return { settled: 0, skipped: 0, totalNetPnL: 0, errors: [], ambiguous: 0, details: [] };
   }
 
   let netPnLSum = 0;
@@ -216,13 +212,14 @@ export async function settleEODTrades(uid: string): Promise<{
   let skipped = 0;
   let ambiguous = 0;
   const errors: string[] = [];
+  const details: { symbol: string; pnl: number; outcome: string }[] = [];
 
   const settlePromises = openTrades.map(async (trade) => {
     try {
       const tradeDateStr = new Date(trade.openedAt + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
       const ohlc = await fetchDailyOHLC(trade.symbol, tradeDateStr);
       if (!ohlc) {
-        return { success: false, error: `${trade.symbol}: OHLC fetch failed for date ${tradeDateStr}` };
+        return { success: false, error: `${trade.symbol}: OHLC fetch failed for date ${tradeDateStr}`, symbol: trade.symbol };
       }
 
       const { exitPrice, outcome, isAmbiguous } = await determineEODOutcome(trade, ohlc);
@@ -243,9 +240,9 @@ export async function settleEODTrades(uid: string): Promise<{
         invested
       );
 
-      return { success: true, result, invested, estCharges, isAmbiguous };
+      return { success: true, result, invested, estCharges, isAmbiguous, symbol: trade.symbol, outcome };
     } catch (err: any) {
-      return { success: false, error: `${trade.symbol}: ${err?.message ?? 'Unknown error'}` };
+      return { success: false, error: `${trade.symbol}: ${err?.message ?? 'Unknown error'}`, symbol: trade.symbol };
     }
   });
 
@@ -257,6 +254,7 @@ export async function settleEODTrades(uid: string): Promise<{
       returnedCapitalSum += (res.invested! + res.estCharges! + res.result!.realizedPnL);
       settled++;
       if (res.isAmbiguous) ambiguous++;
+      details.push({ symbol: res.symbol!, pnl: res.result!.realizedPnL, outcome: res.outcome! });
     } else {
       errors.push(res.error!);
       skipped++;
@@ -329,5 +327,6 @@ export async function settleEODTrades(uid: string): Promise<{
     totalNetPnL: parseFloat(netPnLSum.toFixed(2)),
     errors,
     ambiguous,
+    details,
   };
 }

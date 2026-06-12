@@ -1,6 +1,5 @@
 import { extractOHLCFromPixels, RawCandle } from './pixelScanner';
 import { readYAxis, PriceAxisTransform } from './axisReader';
-import { rectifyOrCenterCrop } from './homography';
 import { EPSILON } from './colorSpace';
 
 export interface NumericOHLC {
@@ -29,10 +28,13 @@ export interface PipelineResult {
   };
 }
 
-let sessionBudgetExceeded = false;
+let budgetExceededUntil = 0;
+const BUDGET_COOLDOWN_MS = 30_000;
 
 export function buildPipelineResult(imageData: ImageData): PipelineResult {
   const t0 = performance.now();
+  const nowMs = Date.now();
+  const sessionBudgetExceeded = nowMs < budgetExceededUntil;
   let workingData = imageData;
 
   if (sessionBudgetExceeded && imageData.width >= 1280 && imageData.height >= 720) {
@@ -56,8 +58,12 @@ export function buildPipelineResult(imageData: ImageData): PipelineResult {
     workingData = new ImageData(dstData, dstW, dstH);
   }
 
-  const rectifyRes = rectifyOrCenterCrop(workingData);
-  const rectifiedFrame = rectifyRes.rect;
+  const rectifiedFrame = workingData;
+  const rectifyRes = {
+    rect: workingData,
+    mode: 'CENTER_CROP' as const,
+    timings: { preprocess: 0, sobel: 0, canny: 0, hough: 0, homography: 0 }
+  };
   const t1 = performance.now();
   
   const ohlcRes = extractOHLCFromPixels(rectifiedFrame);
@@ -68,7 +74,8 @@ export function buildPipelineResult(imageData: ImageData): PipelineResult {
   const t3 = performance.now();
   
   const ohlcSeries: NumericOHLC[] = [];
-  const axisFallback = axis === null;
+  const axisFallback = axis === null || axis.confidence < 0.25;
+  const effectiveAxis = axisFallback ? null : axis;
   
   for (const rc of rawCandles) {
     let o, h, l, c;
@@ -79,7 +86,7 @@ export function buildPipelineResult(imageData: ImageData): PipelineResult {
       l = 100.0 * (rectifiedFrame.height - rc.lowY) / height + 10.0;
       c = 100.0 * (rectifiedFrame.height - rc.closeY) / height + 10.0;
     } else {
-      const transform = axis as PriceAxisTransform;
+      const transform = effectiveAxis as PriceAxisTransform;
       o = transform.mSlope * rc.openY + transform.bIntercept;
       h = transform.mSlope * rc.highY + transform.bIntercept;
       l = transform.mSlope * rc.lowY + transform.bIntercept;
@@ -99,8 +106,8 @@ export function buildPipelineResult(imageData: ImageData): PipelineResult {
   const t4 = performance.now();
   const totalLatencyMs = t4 - t0;
   
-  if (!sessionBudgetExceeded && workingData.width >= 1280 && workingData.height >= 720 && totalLatencyMs > 250) {
-    sessionBudgetExceeded = true;
+  if (workingData.width >= 1280 && workingData.height >= 720 && totalLatencyMs > 250) {
+    budgetExceededUntil = Date.now() + BUDGET_COOLDOWN_MS;
   }
   
   return {
@@ -128,4 +135,8 @@ export function buildPipelineResult(imageData: ImageData): PipelineResult {
       }
     }
   };
+}
+
+export function resetPipelineBudget(): void {
+  budgetExceededUntil = 0;
 }

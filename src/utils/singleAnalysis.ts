@@ -134,9 +134,12 @@ import {
   buildAutoGradeGeometry,
   AutoGradeGeometry,
 } from "../quant/autoGradeGeometry";
+import { NumericOHLC } from "../vision/pipeline";
 
 export async function runSingleAnalysis(params: {
   imageDataUrl: string;
+  directOhlcv?: NumericOHLC[];
+  livePrice?: number;
   stock: string;
   graphTimeframe: string;
   holdingMinutes?: string;
@@ -170,6 +173,7 @@ export async function runSingleAnalysis(params: {
   splitXPercent?: number | null;
   absoluteMin?: number | null;
   absoluteMax?: number | null;
+  ohlcQuality?: "REAL_PRICE" | "NORMALIZED_FALLBACK";
 }> {
   const t0 = performance.now();
   const { imageDataUrl, onJudgeLogs, isTestMode, onDirectionFound } = params;
@@ -185,19 +189,21 @@ export async function runSingleAnalysis(params: {
   }
   const w = getWorker();
 
-  let imgData: ImageData;
-  try {
-    imgData = await dataUrlToImageData(imageDataUrl);
-  } catch (err: any) {
-    if (onJudgeLogs) {
-      onJudgeLogs({
-        system: {
-          text: `Error decoding image: ${err.message}`,
-          status: "error",
-        },
-      });
+  let imgData: ImageData | undefined;
+  if (!params.directOhlcv || params.isTestMode || params.isManifestCheck) {
+    try {
+      imgData = await dataUrlToImageData(imageDataUrl);
+    } catch (err: any) {
+      if (onJudgeLogs) {
+        onJudgeLogs({
+          system: {
+            text: `Error decoding image: ${err.message}`,
+            status: "error",
+          },
+        });
+      }
+      throw err;
     }
-    throw err;
   }
 
   const tfM = parseDurationToMinutes(params.graphTimeframe);
@@ -205,7 +211,7 @@ export async function runSingleAnalysis(params: {
 
   if (params.isManifestCheck) {
     try {
-      const pipe = buildPipelineResult(imgData);
+      const pipe = buildPipelineResult(imgData!);
       const ohlc = pipe.ohlcSeries || [];
 
       let actualDir: "UP" | "DOWN" | "FLAT" | null = null;
@@ -251,14 +257,14 @@ export async function runSingleAnalysis(params: {
             if (leftWidth > 20 && leftWidth < imgData.width - 20) {
               const rightWidth = imgData.width - leftWidth;
               const canvas = document.createElement("canvas");
-              canvas.width = imgData.width;
-              canvas.height = imgData.height;
+              canvas.width = imgData!.width;
+              canvas.height = imgData!.height;
               const ctx = canvas.getContext("2d")!;
-              ctx.putImageData(imgData, 0, 0);
+              ctx.putImageData(imgData!, 0, 0);
 
               const rightCanvas = document.createElement("canvas");
               rightCanvas.width = rightWidth;
-              rightCanvas.height = imgData.height;
+              rightCanvas.height = imgData!.height;
               rightCanvas
                 .getContext("2d")!
                 .drawImage(
@@ -266,11 +272,11 @@ export async function runSingleAnalysis(params: {
                   leftWidth,
                   0,
                   rightWidth,
-                  imgData.height,
+                  imgData!.height,
                   0,
                   0,
                   rightWidth,
-                  imgData.height,
+                  imgData!.height,
                 );
 
               const rightDataUrl = rightCanvas.toDataURL("image/jpeg", 0.5);
@@ -347,7 +353,9 @@ export async function runSingleAnalysis(params: {
       w.postMessage({
         type: "ANALYZE",
         msgId,
-        imageData: imgData,
+        ...(params.directOhlcv && !params.isTestMode && !params.isManifestCheck
+          ? { directOhlcv: params.directOhlcv }
+          : { imageData: imgData, livePrice: params.livePrice }),
         graphTimeframeMinutes: tfM,
         graphTimeframe: params.graphTimeframe,
         holdingMinutesVal: durM,
@@ -618,6 +626,7 @@ export async function runSingleAnalysis(params: {
             type: "ANALYZE",
             msgId,
             imageData: leftImgData,
+            livePrice: params.livePrice,
             graphTimeframeMinutes: tfM,
             holdingMinutesVal: durM,
             techniquesList: params.techniquesList,
@@ -889,6 +898,7 @@ export async function runSingleAnalysis(params: {
       debugTrace?.absoluteMin !== undefined ? debugTrace.absoluteMin : null,
     absoluteMax:
       debugTrace?.absoluteMax !== undefined ? debugTrace.absoluteMax : null,
+    ohlcQuality: debugTrace?.meta?.ohlcQuality ?? 'REAL_PRICE',
     autoGradeGeometry,
   };
 }

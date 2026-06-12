@@ -224,10 +224,16 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
       setEodBanner({ type: 'success', message: 'No open trades to settle' });
     } else if (r.settled > 0) {
       const sign = r.totalNetPnL >= 0 ? '+' : '';
+      const parts: string[] = [];
+      if (r.ambiguous > 0) parts.push(`${r.ambiguous} ambiguous.`);
+      if (r.details && r.details.length > 0) {
+        parts.push(r.details.map(d => `${d.symbol}: ${d.pnl >= 0 ? '+' : ''}${d.pnl.toFixed(2)} (${d.outcome.replace('_', ' ')})`).join(' · '));
+      }
+
       setEodBanner({
         type: 'success',
         message: `Settlement done — ${r.settled} trade${r.settled > 1 ? 's' : ''} · Net P&L: ${sign}₹${Math.abs(r.totalNetPnL).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
-        sub: r.ambiguous > 0 ? `${r.ambiguous} ambiguous (both TP & SL hit same day).` : '',
+        sub: parts.join(' | ')
       });
       // Automatically refresh logs and balance after EOD settlement
       bot.syncFromCloud().catch(err => console.error("Failed to sync after EOD settlement", err));
@@ -544,6 +550,13 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
             ? '⏳ Settling Trades...'
             : '📋 Settle Today\'s Trades'}
         </button>
+      )}
+
+      {bot.ohlcQuality === 'NORMALIZED_FALLBACK' && (
+        <div className="bg-amber-900/60 border border-amber-500 text-amber-200 text-xs px-3 py-2 rounded-xl flex items-center gap-2">
+          <span className="text-amber-400">⚠</span>
+          Price axis unreadable — analysis running on normalized prices, not real ₹ values. Signals may be unreliable.
+        </div>
       )}
 
       {/* Feed error */}

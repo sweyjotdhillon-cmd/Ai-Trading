@@ -269,7 +269,9 @@ export function evaluateSignal(
   });
 
   techCache.closes = Array.from(closes);
-  techCache.rsiVals = rsi(Array.from(closes), 14);
+  const tfMins = typeof horizonArg?.tfMinutes === 'number' ? horizonArg.tfMinutes : 30;
+  const rsiPeriod = tfMins <= 5 ? 9 : 14;
+  techCache.rsiVals = rsi(Array.from(closes), rsiPeriod);
   techCache.macdVals = macd(Array.from(closes), 12, 26, 9);
   techCache.bollVals = bollinger(Array.from(closes), 20, 2);
   techCache.stochVals = ohlcSeries.length >= 14
@@ -862,7 +864,7 @@ export function evaluateSignal(
   let bullJ3Final = bullJ3;
   let bearJ3Final = bearJ3;
 
-  const H_exp = rescaledRangeHurst(Array.from(closes).slice(-32));
+  const H_exp = rescaledRangeHurst(Array.from(closes).slice(-64));
   const activeADX = !isNaN(techCache.adxVals?.adx?.[last]) ? techCache.adxVals.adx[last] : 0;
   let hurstExplanation = "Neutral range_balanced";
 

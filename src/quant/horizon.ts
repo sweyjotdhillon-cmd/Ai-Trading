@@ -49,7 +49,7 @@ export const PATTERN_WEIGHTS_BY_HORIZON = {
 // R5: Hurst-flavored J1/J3 balancer using R/S method
 // Reference: Macrosynergy Hurst study
 export function rescaledRangeHurst(closes: number[]): number {
-  if (closes.length < 16) return NaN;
+  if (closes.length < 64) return NaN;
 
   // Calculate log returns
   const returns = [];

@@ -40,7 +40,7 @@ interface ProxyConfig {
   extract:  (res: Response) => Promise<string>; // returns raw JSON string
 }
 
-const PROXY_CHAIN: ProxyConfig[] = [
+export const PROXY_CHAIN: ProxyConfig[] = [
   {
     name:    'allorigins',
     wrap:    (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
