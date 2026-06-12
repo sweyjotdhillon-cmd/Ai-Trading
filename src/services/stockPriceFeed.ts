@@ -231,6 +231,28 @@ export async function fetchLivePrice(symbol: string): Promise<PriceResult> {
   else if (parsed.ticker === 'BHARTIARTL') basePrice = 1380.00;
   else if (parsed.ticker === 'ITC') basePrice = 432.50;
   else if (parsed.ticker === 'LT') basePrice = 3490.00;
+  else if (parsed.ticker === 'MARUTI') basePrice = 11150.00;
+  else if (parsed.ticker === 'BAJFINANCE') basePrice = 7100.00;
+  else if (parsed.ticker === 'TITAN') basePrice = 3300.20;
+  else if (parsed.ticker === 'HINDUNILVR') basePrice = 2490.50;
+  else if (parsed.ticker === 'WIPRO') basePrice = 470.80;
+  else if (parsed.ticker === 'ADANIENT') basePrice = 2800.00;
+  else if (parsed.ticker === 'TATAMOTORS') basePrice = 980.50;
+  else if (parsed.ticker === 'TATASTEEL') basePrice = 155.40;
+  else if (parsed.ticker === 'ASIANPAINT') basePrice = 2950.00;
+  else if (parsed.ticker === 'AXISBANK') basePrice = 1180.00;
+  else if (parsed.ticker === 'KOTAKBANK') basePrice = 1750.00;
+  else if (parsed.ticker === 'ONGC') basePrice = 275.00;
+  else if (parsed.ticker === 'NTPC') basePrice = 365.50;
+  else if (parsed.ticker === 'SUNPHARMA') basePrice = 1580.00;
+  else if (parsed.ticker === 'M&M') basePrice = 2540.00;
+  else if (parsed.ticker === 'ULTRACEMCO') basePrice = 10500.00;
+  else if (parsed.ticker === 'HCLTECH') basePrice = 1420.00;
+  else if (parsed.ticker === 'POWERGRID') basePrice = 310.00;
+  else if (parsed.ticker === 'BAJAJFINSV') basePrice = 1620.00;
+  else if (parsed.ticker === 'NESTLEIND') basePrice = 2540.00;
+  else if (parsed.ticker === 'ZOMATO') basePrice = 195.00;
+  else if (parsed.ticker === 'JSWSTEEL') basePrice = 880.00;
 
   // Track prices sequentially in-memory so they don't jump erratically
   const cacheKey = `mock_price_val_${parsed.ticker}`;

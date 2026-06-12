@@ -390,7 +390,7 @@ export async function loadOpenTrades(
     });
     // Sort in memory by openedAt descending
     trades.sort((a, b) => b.openedAt - a.openedAt);
-    return trades.slice(0, 3);
+    return trades;
   } catch (error) {
     console.warn('[botTradeService] loadOpenTrades direct query failed, falling back to compressed archive:', error);
     try {
@@ -577,7 +577,8 @@ export async function loadTodayTrades(
   const all = await loadAllTrades(uid);
   const todayStr = todayIST();
   return all.filter(t => {
-    const tDate = new Date(t.openedAt + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const effTime = t.closedAt ?? t.openedAt;
+    const tDate = new Date(effTime + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
     return tDate === todayStr;
   });
 }
@@ -690,15 +691,17 @@ export function filterTradesByRange(trades: BotTradeRecord[], range: string): Bo
   const tempYesterday = new Date(now - dayMs + istOffset);
   const yesterdayStr = tempYesterday.toISOString().slice(0, 10);
 
+  const getEffectiveTime = (t: BotTradeRecord) => t.closedAt ?? t.openedAt;
+
   switch (range) {
     case 'TODAY':
-      return trades.filter(t => getISTDateString(t.openedAt) === todayStr);
+      return trades.filter(t => getISTDateString(getEffectiveTime(t)) === todayStr);
     case 'YESTERDAY':
-      return trades.filter(t => getISTDateString(t.openedAt) === yesterdayStr);
+      return trades.filter(t => getISTDateString(getEffectiveTime(t)) === yesterdayStr);
     case '7D':
-      return trades.filter(t => t.openedAt >= now - 7 * dayMs);
+      return trades.filter(t => getEffectiveTime(t) >= now - 7 * dayMs);
     case '30D':
-      return trades.filter(t => t.openedAt >= now - 30 * dayMs);
+      return trades.filter(t => getEffectiveTime(t) >= now - 30 * dayMs);
     case 'ALL':
     default:
       return trades;

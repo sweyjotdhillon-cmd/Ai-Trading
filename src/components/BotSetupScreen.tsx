@@ -121,6 +121,22 @@ const POPULAR_STOCKS: StockSearchResult[] = [
   { symbol: 'HINDUNILVR:NSE', name: 'Hindustan Unilever',        exchange: 'NSE' },
   { symbol: 'WIPRO:NSE',      name: 'Wipro',                     exchange: 'NSE' },
   { symbol: 'ADANIENT:NSE',   name: 'Adani Enterprises',         exchange: 'NSE' },
+  { symbol: 'TATAMOTORS:NSE', name: 'Tata Motors',               exchange: 'NSE' },
+  { symbol: 'TATASTEEL:NSE',  name: 'Tata Steel',                exchange: 'NSE' },
+  { symbol: 'ASIANPAINT:NSE', name: 'Asian Paints',              exchange: 'NSE' },
+  { symbol: 'AXISBANK:NSE',   name: 'Axis Bank',                 exchange: 'NSE' },
+  { symbol: 'KOTAKBANK:NSE',  name: 'Kotak Mahindra Bank',       exchange: 'NSE' },
+  { symbol: 'ONGC:NSE',       name: 'ONGC',                      exchange: 'NSE' },
+  { symbol: 'NTPC:NSE',       name: 'NTPC',                      exchange: 'NSE' },
+  { symbol: 'SUNPHARMA:NSE',  name: 'Sun Pharma',                exchange: 'NSE' },
+  { symbol: 'M&M:NSE',        name: 'Mahindra & Mahindra',       exchange: 'NSE' },
+  { symbol: 'ULTRACEMCO:NSE', name: 'UltraTech Cement',          exchange: 'NSE' },
+  { symbol: 'HCLTECH:NSE',    name: 'HCL Technologies',          exchange: 'NSE' },
+  { symbol: 'POWERGRID:NSE',  name: 'Power Grid Corp',           exchange: 'NSE' },
+  { symbol: 'BAJAJFINSV:NSE', name: 'Bajaj Finserv',             exchange: 'NSE' },
+  { symbol: 'NESTLEIND:NSE',  name: 'Nestle India',              exchange: 'NSE' },
+  { symbol: 'ZOMATO:NSE',     name: 'Zomato',                    exchange: 'NSE' },
+  { symbol: 'JSWSTEEL:NSE',   name: 'JSW Steel',                 exchange: 'NSE' },
 ];
 
 export function BotSetupScreen({ onStart }: BotSetupScreenProps) {

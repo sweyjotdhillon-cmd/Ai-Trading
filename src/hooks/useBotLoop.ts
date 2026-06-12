@@ -291,10 +291,10 @@ export function useBotLoop(
       durationMinutes: Math.round((Date.now() - trade.openedAt) / 60_000),
     };
 
-    // creditBack = what we return to the balance: invested capital back + the net PnL
-    // Note: at open we deducted (invested + estimatedCharges). At close we credit back
-    // (invested + grossPnL - actualCharges). The difference accounts for the charge correction.
-    const creditBack = parseFloat((invested + grossPnL - actualCharges).toFixed(2));
+    // creditBack = what we return to the balance: originally deducted + the net PnL
+    // Note: at open we deducted (invested + estimatedCharges). So we return that plus realizedPnL to correctly apply exact PnL.
+    const estCharges = trade.plan?.brokerCharges ?? 0;
+    const creditBack = parseFloat((invested + estCharges + realizedPnL).toFixed(2));
 
     // Optimistic local update — do this immediately (synchronous)
     const newBalance = parseFloat((virtualBalanceRef.current + creditBack).toFixed(2));
@@ -326,7 +326,8 @@ export function useBotLoop(
       if (uidRef.current) {
         const todayPnL = [closed, ...tradeHistoryRef.current]
           .filter(t => {
-            const tDate = new Date(t.openedAt + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
+            const effTime = t.closedAt ?? t.openedAt;
+            const tDate = new Date(effTime + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
             const today = new Date(Date.now()  + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
             return tDate === today;
           })
@@ -467,6 +468,7 @@ export function useBotLoop(
       nowMsEpoch: Date.now(),
       nowISTMinutesSinceMidnight: mm,
       currentBarIndex: ohlc.length - 1,
+      currentPrice: entryPrice,
     };
 
     const decision = evaluateScalpSignal(
@@ -626,7 +628,7 @@ export function useBotLoop(
         stabilityRef.current = 0;
         setStabilityCount(0);
         setLastBlockReason(`RISK_CAP: ${capCheck.reason}`);
-        setPhase(capCheck.reason?.includes('cooldown') ? 'COOLDOWN' : 'HALTED');
+        setPhase(capCheck.reason?.toLowerCase().includes('cooldown') ? 'COOLDOWN' : 'HALTED');
         return;
       }
 
@@ -695,6 +697,7 @@ export function useBotLoop(
         nowMsEpoch:                 Date.now(),
         nowISTMinutesSinceMidnight: mm,
         currentBarIndex:            ohlc.length - 1,
+        currentPrice:               entryPrice,
       };
 
       const decision = evaluateScalpSignal(ohlc, { winner: result.analysis?.judge?.winner || 'NO_TRADE' }, ctx as any);
@@ -904,7 +907,16 @@ export function useBotLoop(
       const elapsedMin = (Date.now() - trade.openedAt) / 60_000;
       const maxHold = trade.plan.maxHoldingMinutes ?? 15;
       if (elapsedMin >= maxHold) {
-        closeTradeByIdRef.current(trade.id, price, 'TIME_EXPIRED');
+        closeTradeByIdRef.current(trade.id, price, 'TIME_EXIT');
+        return;
+      }
+
+      // Auto-close 15 minutes before market close (15:15 IST)
+      const istTime = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+      const istHours = istTime.getUTCHours();
+      const istMinutes = istTime.getUTCMinutes();
+      if (istHours > 15 || (istHours === 15 && istMinutes >= 15)) {
+        closeTradeByIdRef.current(trade.id, price, 'TIME_EXIT');
         return;
       }
     });

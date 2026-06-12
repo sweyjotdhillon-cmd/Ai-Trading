@@ -227,10 +227,12 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
       setEodBanner({
         type: 'success',
         message: `Settlement done — ${r.settled} trade${r.settled > 1 ? 's' : ''} · Net P&L: ${sign}₹${Math.abs(r.totalNetPnL).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
-        sub: r.ambiguous > 0 ? `${r.ambiguous} ambiguous (both TP & SL hit same day — closed at day's close price). Restart bot to see trades in log.` : 'Restart bot to see settled trades in trade log.',
+        sub: r.ambiguous > 0 ? `${r.ambiguous} ambiguous (both TP & SL hit same day).` : '',
       });
+      // Automatically refresh logs and balance after EOD settlement
+      bot.syncFromCloud().catch(err => console.error("Failed to sync after EOD settlement", err));
     } else {
-      setEodBanner({ type: 'error', message: `Settlement failed for ${r.skipped} trade(s)` });
+      setEodBanner({ type: 'error', message: `Settlement failed: ${r.errors.join(' | ')}` });
     }
   }, [eodState.lastResult]);
 

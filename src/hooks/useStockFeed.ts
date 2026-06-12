@@ -248,7 +248,7 @@ export function useStockFeed(
         if (simOffsetRef.current === 0) {
           simOffsetRef.current = price;
         }
-        const change = (Math.random() - 0.5) * 0.0016; // up to +/- 0.08% change per tick
+        const change = (Math.random() - 0.5) * 0.0002; // up to +/- 0.01% change per tick
         simOffsetRef.current = simOffsetRef.current * (1 + change);
 
         // Maintain simulated price within 2.0% deviation from the actual close price

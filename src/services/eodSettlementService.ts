@@ -2,9 +2,14 @@ import { doc, getDoc } from 'firebase/firestore';
 import { db } from './firebase';
 import { BotTradeRecord } from '../hooks/useBotLoop';
 import { TradeOutcome } from '../types';
-import { loadOpenTrades, writeTrade_Close } from './botTradeService';
+import { loadOpenTrades, writeTrade_Close, loadStats, writeStats_Update, loadAllTrades } from './botTradeService';
 import { setVirtualBalanceValue } from './virtualBalanceService';
 import { parseSymbol } from './stockPriceFeed';
+
+// Extract IST helper locally if not exported, but we need it.
+function getISTDateString(ms: number): string {
+  return new Date(ms + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
 
 interface ProxyConfig {
   name: string;
@@ -46,96 +51,133 @@ export async function fetchDailyOHLC(
   symbol: string,
   dateIST: string
 ): Promise<{ open: number; high: number; low: number; close: number } | null> {
-  const { yahoo } = parseSymbol(symbol);
-  const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahoo)}?interval=1d&range=5d&includePrePost=false`;
+  try {
+    const res = await fetch('/api/stock/history', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ symbol, timeframeMinutes: 1440, outputsize: 5 })
+    });
+    
+    if (!res.ok) return null;
+    const history = await res.json();
+    
+    if (!Array.isArray(history)) return null;
+    
+    const dateMatches = (ts: number) =>
+      new Date(ts + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10) === dateIST;
 
-  for (const proxy of PROXY_CHAIN) {
-    try {
-      const proxyUrl = proxy.wrap(targetUrl);
-      const res = await fetch(proxyUrl, {
-        signal: AbortSignal.timeout(12000),
-        headers: { 'Accept': 'application/json' },
-      });
-
-      if (!res.ok) {
-        continue;
+    for (const candle of history) {
+      if (dateMatches(candle.timestamp)) {
+        return {
+          open: candle.open,
+          high: candle.high,
+          low: candle.low,
+          close: candle.close
+        };
       }
-
-      const text = await proxy.extract(res);
-      if (!text) {
-        continue;
-      }
-
-      const json = JSON.parse(text);
-      const result = json?.chart?.result?.[0];
-      if (!result) {
-        continue;
-      }
-
-      const timestamps: number[] = result.timestamp ?? [];
-      const quote = result.indicators?.quote?.[0];
-
-      if (quote && timestamps.length > 0) {
-        const opens = quote.open as (number | null)[];
-        const highs = quote.high as (number | null)[];
-        const lows = quote.low as (number | null)[];
-        const closes = quote.close as (number | null)[];
-
-        const dateMatches = (ts: number) =>
-          new Date((ts * 1000) + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10) === dateIST;
-
-        for (let j = 0; j < timestamps.length; j++) {
-          const o = opens[j];
-          const h = highs[j];
-          const l = lows[j];
-          const c = closes[j];
-
-          if (o == null || h == null || l == null || c == null) {
-            continue;
-          }
-          if (!isFinite(o) || !isFinite(h) || !isFinite(l) || !isFinite(c)) {
-            continue;
-          }
-          if (o <= 0 || h <= 0 || l <= 0 || c <= 0) {
-            continue;
-          }
-
-          if (dateMatches(timestamps[j])) {
-            return {
-              open: Number(o.toFixed(2)),
-              high: Number(h.toFixed(2)),
-              low: Number(l.toFixed(2)),
-              close: Number(c.toFixed(2)),
-            };
-          }
-        }
-      }
-
-      // Meta fallback — only if no candle matched but it IS today's date
-      if (result.meta && dateIST === todayIST()) {
-        const meta = result.meta;
-        const h = Number(meta.regularMarketDayHigh);
-        const l = Number(meta.regularMarketDayLow);
-        const o = Number(meta.regularMarketOpen ?? meta.chartPreviousClose);
-        const c = Number(meta.regularMarketPrice);
-        if (isFinite(h) && isFinite(l) && isFinite(o) && isFinite(c) && h > 0 && l > 0 && o > 0 && c > 0) {
-          return { open: o, high: h, low: l, close: c };
-        }
-      }
-    } catch {
-      continue;
     }
+  } catch (err) {
+    console.error("fetchDailyOHLC error:", err);
+  }
+
+  // Backup plan using current price api for today's fallback
+  if (dateIST === todayIST()) {
+    try {
+      const res = await fetch('/api/stock/price', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ symbol })
+      });
+      if (res.ok) {
+        const live = await res.json();
+        if (live.price && live.dayHigh && live.dayLow) {
+           return {
+             open: live.previousClose ?? live.price,
+             high: live.dayHigh,
+             low: live.dayLow,
+             close: live.price
+           };
+        }
+      }
+    } catch {}
   }
 
   return null;
 }
 
-export function determineEODOutcome(
+export async function determineEODOutcome(
   trade: BotTradeRecord,
   ohlc: { open: number; high: number; low: number; close: number }
-): { exitPrice: number; outcome: TradeOutcome; isAmbiguous: boolean } {
+): Promise<{ exitPrice: number; outcome: TradeOutcome; isAmbiguous: boolean }> {
   const tp = trade.plan?.takeProfit2 ?? (trade.entryPrice * 1.01);
   const sl = trade.plan?.stopLoss ?? (trade.entryPrice * 0.99);
+
+  // Best effort: Get 1m intraday data via backend
+  try {
+    const res = await fetch('/api/stock/history', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ symbol: trade.symbol, timeframeMinutes: 1, outputsize: 1500 }) // up to 4 days of 1-min candles
+    });
+
+    if (res.ok) {
+      const history = await res.json();
+      if (Array.isArray(history) && history.length > 0) {
+        let validSimulations = 0;
+        for (const candle of history) {
+          const tsMillis = candle.timestamp;
+          if (tsMillis + 60000 > trade.openedAt) {
+            const o = candle.open;
+            const h = candle.high;
+            const l = candle.low;
+            const c = candle.close;
+            
+            validSimulations++;
+            
+            const hitSL = l <= sl;
+            const hitTP = h >= tp;
+
+            if (hitSL && hitTP) {
+              const distToSL = Math.abs(o - sl);
+              const distToTP = Math.abs(tp - o);
+              if (distToSL <= distToTP) {
+                 return { exitPrice: sl, outcome: 'SL_HIT', isAmbiguous: false };
+              } else {
+                 return { exitPrice: tp, outcome: 'TP2_HIT', isAmbiguous: false };
+              }
+            } else if (hitSL) {
+              return { exitPrice: sl, outcome: 'SL_HIT', isAmbiguous: false };
+            } else if (hitTP) {
+              return { exitPrice: tp, outcome: 'TP2_HIT', isAmbiguous: false };
+            }
+
+            const elapsedMin = (tsMillis - trade.openedAt) / 60_000;
+            const maxHold = trade.plan?.maxHoldingMinutes ?? 15;
+            if (elapsedMin >= maxHold) {
+              return { exitPrice: c, outcome: 'TIME_EXIT', isAmbiguous: false };
+            }
+
+            const istTime = new Date(tsMillis + 5.5 * 60 * 60 * 1000);
+            const istHours = istTime.getUTCHours();
+            const istMinutes = istTime.getUTCMinutes();
+            if (istHours > 15 || (istHours === 15 && istMinutes >= 15)) {
+              return { exitPrice: c, outcome: 'TIME_EXIT', isAmbiguous: false };
+            }
+          }
+        }
+
+        if (validSimulations > 0) {
+           return { exitPrice: ohlc.close, outcome: 'TIME_EXIT', isAmbiguous: false };
+        }
+      }
+    }
+  } catch (err) {
+    console.error("fetch intraday error:", err);
+  }
+
+  // Fallback to purely daily OHLC (isAmbiguous if both hit, because we don't know which came first without intraday)
+  // BUT we also restrict the Daily High / Daily Low conceptually because we only care about AFTER order was placed.
+  // Since we don't have intraday to prove it, we just use the daily OHLC as best-effort.
   const tpHit = ohlc.high >= tp;
   const slHit = ohlc.low <= sl;
 
@@ -175,20 +217,15 @@ export async function settleEODTrades(uid: string): Promise<{
   let ambiguous = 0;
   const errors: string[] = [];
 
-  for (const trade of openTrades) {
+  const settlePromises = openTrades.map(async (trade) => {
     try {
       const tradeDateStr = new Date(trade.openedAt + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
       const ohlc = await fetchDailyOHLC(trade.symbol, tradeDateStr);
       if (!ohlc) {
-        errors.push(`${trade.symbol}: OHLC fetch failed for date ${tradeDateStr}`);
-        skipped++;
-        continue;
+        return { success: false, error: `${trade.symbol}: OHLC fetch failed for date ${tradeDateStr}` };
       }
 
-      const { exitPrice, outcome, isAmbiguous } = determineEODOutcome(trade, ohlc);
-      if (isAmbiguous) {
-        ambiguous++;
-      }
+      const { exitPrice, outcome, isAmbiguous } = await determineEODOutcome(trade, ohlc);
 
       const closedTrade: BotTradeRecord = {
         ...trade,
@@ -198,6 +235,7 @@ export async function settleEODTrades(uid: string): Promise<{
       };
 
       const invested = trade.plan?.investmentRupees ?? ((trade.plan?.positionSize || 1) * trade.entryPrice);
+      const estCharges = trade.plan?.brokerCharges ?? 0;
       const result = await writeTrade_Close(
         uid,
         closedTrade,
@@ -205,11 +243,22 @@ export async function settleEODTrades(uid: string): Promise<{
         invested
       );
 
-      netPnLSum += result.realizedPnL;
-      returnedCapitalSum += (invested + result.realizedPnL);
-      settled++;
+      return { success: true, result, invested, estCharges, isAmbiguous };
     } catch (err: any) {
-      errors.push(`${trade.symbol}: ${err?.message ?? 'Unknown error'}`);
+      return { success: false, error: `${trade.symbol}: ${err?.message ?? 'Unknown error'}` };
+    }
+  });
+
+  const results = await Promise.all(settlePromises);
+
+  for (const res of results) {
+    if (res.success) {
+      netPnLSum += res.result!.realizedPnL;
+      returnedCapitalSum += (res.invested! + res.estCharges! + res.result!.realizedPnL);
+      settled++;
+      if (res.isAmbiguous) ambiguous++;
+    } else {
+      errors.push(res.error!);
       skipped++;
     }
   }
@@ -220,8 +269,51 @@ export async function settleEODTrades(uid: string): Promise<{
       const currentBalance = balSnap.exists() ? (balSnap.data().balance ?? 100000) : 100000;
       const newBalance = parseFloat((currentBalance + returnedCapitalSum).toFixed(2));
       await setVirtualBalanceValue(uid, newBalance);
+
+      // Update global session stats
+      let currentStats = await loadStats(uid) || {
+        totalTrades: 0, totalWins: 0, totalLosses: 0,
+        winRate: 0, totalPnL: 0, avgRMultiple: 0,
+        bestTrade: 0, worstTrade: 0, currentStreak: 0,
+      };
+
+      for (const res of results) {
+        if (res.success) {
+          const pnl = res.result!.realizedPnL;
+          const isWin = pnl > 0;
+          const rMult = res.result!.rMultiple;
+          
+          const total = currentStats.totalTrades + 1;
+          const wins = currentStats.totalWins + (isWin ? 1 : 0);
+          const streak = isWin
+            ? (currentStats.currentStreak >= 0 ? currentStats.currentStreak + 1 : 1)
+            : (currentStats.currentStreak <= 0 ? currentStats.currentStreak - 1 : -1);
+
+          currentStats = {
+            totalTrades: total,
+            totalWins: wins,
+            totalLosses: currentStats.totalLosses + (isWin ? 0 : 1),
+            winRate: wins / total,
+            totalPnL: currentStats.totalPnL + pnl,
+            avgRMultiple: (currentStats.avgRMultiple * currentStats.totalTrades + rMult) / total,
+            bestTrade: Math.max(currentStats.bestTrade, pnl),
+            worstTrade: Math.min(currentStats.worstTrade, pnl),
+            currentStreak: streak
+          };
+        }
+      }
+      
+      // Calculate daily PnL from trades
+      const allTrades = await loadAllTrades(uid);
+      const todayStr = getISTDateString(Date.now());
+      const todayPnL = allTrades
+        .filter(t => t.exitPrice != null && getISTDateString(t.closedAt ?? t.openedAt) === todayStr)
+        .reduce((sum, t) => sum + (t.realizedPnL ?? 0), 0);
+
+      await writeStats_Update(uid, currentStats, todayPnL);
+
     } catch (err: any) {
-      errors.push(`Balance update failed: ${err?.message ?? 'Unknown'}`);
+      errors.push(`Update failed: ${err?.message ?? 'Unknown'}`);
     }
   }
 

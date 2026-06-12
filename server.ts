@@ -169,7 +169,7 @@ async function startServer() {
       
       if (tfVal === 1) {
         interval = '1m';
-        range = '1d';
+        range = '5d';
       } else if (tfVal === 5) {
         interval = '5m';
         range = '5d';

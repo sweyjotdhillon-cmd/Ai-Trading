@@ -17,6 +17,7 @@ export interface ScalpContext {
   nowMsEpoch: number;
   nowISTMinutesSinceMidnight: number;
   currentBarIndex: number;
+  currentPrice?: number;
 }
 
 export interface ScalpDecision {
@@ -55,8 +56,8 @@ export function calculateStopLoss(entry: number, mode: SLMode, ctx: ScalpContext
   } else if (mode === 'STRUCTURE') {
     const swing = findRecentSwingLow(ctx.pivots, ctx.currentBarIndex);
     const limit = 2 * atrMultiplierSL * atr14;
-    if (swing !== undefined) {
-      if (entry - swing <= limit) {
+    if (swing !== undefined && swing < entry) {
+      if (Math.abs(entry - swing) <= limit) {
         sl = swing - 0.3 * atr14;
       } else {
         sl = entry - atrMultiplierSL * atr14;
@@ -68,14 +69,14 @@ export function calculateStopLoss(entry: number, mode: SLMode, ctx: ScalpContext
     // AUTO mode
     const swing = findRecentSwingLow(ctx.pivots, ctx.currentBarIndex);
     const limit = 2 * atrMultiplierSL * atr14;
-    if (swing !== undefined) {
-      if (entry - swing <= limit) {
+    if (swing !== undefined && swing < entry) {
+      if (Math.abs(entry - swing) <= limit) {
         sl = swing - 0.3 * atr14;
       } else {
         sl = entry - atrMultiplierSL * atr14;
       }
     } else {
-      sl = entry - 0.3 * atr14;
+      sl = entry - atrMultiplierSL * atr14;
     }
   }
 
@@ -143,7 +144,7 @@ export function evaluateScalpSignal(
 ): ScalpDecision {
   const rawWinner = isForced ? 'BULL' : legacyDecision.winner;
   const lastBar = ohlc[ohlc.length - 1];
-  const entry = lastBar ? lastBar.close : 0;
+  const entry = ctx.currentPrice ?? (lastBar ? lastBar.close : 0);
   
   // LAYER 1 & 2 - Filters & Long-Only Constraints
   const features = buildScalpFeatures(ohlc, ctx.pivots, ctx.atr14, ctx.vwapProxy, ctx.nowMsEpoch);
