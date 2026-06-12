@@ -134,25 +134,30 @@ export function detectStructureSignal(
 
 export function detectDoubleTopBottom(
   pivots: SwingPivot[],
-  tolerancePct = 0.005
+  tolerancePct = 0.015
 ): 'DOUBLE_TOP' | 'DOUBLE_BOTTOM' | 'NONE' {
   const highs = pivots.filter(p => p.kind === 'HIGH');
-  const lows = pivots.filter(p => p.kind === 'LOW');
+  const lows  = pivots.filter(p => p.kind === 'LOW');
 
   if (highs.length >= 2) {
-    const h1 = highs[highs.length - 2].price;
-    const h2 = highs[highs.length - 1].price;
-    const diffPct = Math.abs(h1 - h2) / Math.max(h1, h2);
-    if (diffPct <= tolerancePct) {
+    const ph1 = highs[highs.length - 2];
+    const ph2 = highs[highs.length - 1];
+    const diffPct = Math.abs(ph1.price - ph2.price) / Math.max(ph1.price, ph2.price);
+    const barSeparation = ph2.index - ph1.index;
+    // Require: within price tolerance AND at least 5 bars apart
+    // (prevents adjacent-candle noise from qualifying as a double top)
+    if (diffPct <= tolerancePct && barSeparation >= 5) {
       return 'DOUBLE_TOP';
     }
   }
 
   if (lows.length >= 2) {
-    const l1 = lows[lows.length - 2].price;
-    const l2 = lows[lows.length - 1].price;
-    const diffPct = Math.abs(l1 - l2) / Math.max(l1, l2);
-    if (diffPct <= tolerancePct) {
+    const pl1 = lows[lows.length - 2];
+    const pl2 = lows[lows.length - 1];
+    const diffPct = Math.abs(pl1.price - pl2.price) / Math.max(pl1.price, pl2.price);
+    const barSeparation = pl2.index - pl1.index;
+    // Require: within price tolerance AND at least 5 bars apart
+    if (diffPct <= tolerancePct && barSeparation >= 5) {
       return 'DOUBLE_BOTTOM';
     }
   }

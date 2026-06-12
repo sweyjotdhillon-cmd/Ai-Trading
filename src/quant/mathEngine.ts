@@ -264,9 +264,6 @@ export function calculateZScoreSignificance(
   }
 
   // B. Wick rejection evidence (Upper wick rejects UP -> BEAR, Lower rejects down -> BULL)
-  const totalR = currMetrics.totalRange || 1e-9;
-  bullVotes += (currMetrics.lowerWick / totalR) * 1.5;
-  bearVotes += (currMetrics.upperWick / totalR) * 1.5;
 
   // C. Pinbar structure indicators
   if (isPinBarBull) bullVotes += 2.0;
@@ -407,7 +404,6 @@ export function calculateBoundaryReversal(
   let effectiveY = yPercent;
   let momentumMultiplier = 1.0;
   let wickMultiplier = 1.0;
-  let stateDesc = "";
 
   if (ohlc && ohlc.length >= 3) {
     const highs = ohlc.map(c => c.high);
@@ -434,10 +430,10 @@ export function calculateBoundaryReversal(
 
     if (avgBody > 0 && recentBody > avgBody * 2.0) {
       momentumMultiplier = 1.5; // Exhaustion spike
-      stateDesc += " (Exhaustion Spike)";
+      label += " (Exhaustion Spike)";
     } else if (avgBody > 0 && recentBody < avgBody * 0.5) {
       momentumMultiplier = 0.5; // Slow drift has lower reversal chance
-      stateDesc += " (Slow Drift)";
+      label += " (Slow Drift)";
     }
 
     // 3. Wick Rejection Evidence
@@ -447,18 +443,18 @@ export function calculateBoundaryReversal(
     if (effectiveY >= 70) {
       if (upperWick > recentBody * 1.5) {
         wickMultiplier = 1.5;
-        stateDesc += " [Heavy Upper Rejection]";
+        label += " [Heavy Upper Rejection]";
       } else if (recentCandle.close >= recentCandle.open && upperWick <= recentBody * 0.2) {
         wickMultiplier = 0.0; // Clean close at the top implies continuation, block the reversal setup
-        stateDesc += " [Clean Bullish Close -> Continuation Breakout Blocked]";
+        label += " [Clean Bullish Close — Continuation Breakout Blocked]";
       }
     } else if (effectiveY <= 30) {
       if (lowerWick > recentBody * 1.5) {
         wickMultiplier = 1.5;
-        stateDesc += " [Heavy Lower Rejection]";
+        label += " [Heavy Lower Rejection]";
       } else if (recentCandle.open >= recentCandle.close && lowerWick <= recentBody * 0.2) {
         wickMultiplier = 0.0; // Clean close at bottom implies continuation
-        stateDesc += " [Clean Bearish Close -> Continuation Breakdown Blocked]";
+        label += " [Clean Bearish Close — Continuation Breakdown Blocked]";
       }
     }
   }
@@ -499,12 +495,10 @@ export function calculateBoundaryReversal(
       label = "EXTREME HIGH (Continuation — Reversal Blocked)";
     } else if (effectiveY <= 15) {
       label = "EXTREME LOW (Continuation — Reversal Blocked)";
-    } else if (stateDesc) {
-      label += stateDesc;
     }
-  } else if (stateDesc) {
-    label += stateDesc;
+    // label already has all state descriptions appended inline above
   }
+  // No else needed — all state was appended to label at each branch point
 
   return { bullPoints, bearPoints, label, yPercent: effectiveY };
 }

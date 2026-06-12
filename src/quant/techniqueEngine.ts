@@ -38,19 +38,19 @@ export interface TechniqueBreakdown {
   id: number | string;
   name: string;
   status: "EVALUATED" | "SKIPPED";
-  callScore: number;
-  putScore: number;
-  callResult: "SIGNAL_FULL" | "SIGNAL_HALF" | "NEUTRAL";
-  putResult: "SIGNAL_FULL" | "SIGNAL_HALF" | "NEUTRAL";
+  bullScore: number;
+  bearScore: number;
+  bullResult: "SIGNAL_FULL" | "SIGNAL_HALF" | "NEUTRAL";
+  bearResult: "SIGNAL_FULL" | "SIGNAL_HALF" | "NEUTRAL";
 }
 
 export interface EngineResult {
   verdict: "LONG" | "NO_TRADE";
-  callTotal: number;
-  putTotal: number;
+  bullTotal: number;
+  bearTotal: number;
   margin: number;
-  callConfidence: number;
-  putConfidence: number;
+  bullConfidence: number;
+  bearConfidence: number;
   maxPossible: number;
   processed: number;
   skipped: number;
@@ -222,8 +222,8 @@ function evaluateCondition(fieldValue: any, operator: string, threshold: any, cu
 }
 
 export function evaluateTechniques(window: ChartAnalysisWindow, techniques: TechniqueDef[]): EngineResult {
-  let callTotal = 0;
-  let putTotal = 0;
+  let bullTotal = 0;
+  let bearTotal = 0;
   let processed = 0;
   let skipped = 0;
   let maxPossible = 0;
@@ -252,25 +252,8 @@ export function evaluateTechniques(window: ChartAnalysisWindow, techniques: Tech
         // We look for required fields in the current candle and window context by default
         let val = getFieldValue(current, fieldPath) ?? getFieldValue(window, fieldPath);
         if (val === null || val === undefined || Number.isNaN(val)) {
-          const lp = fieldPath.toLowerCase();
-          if (lp.includes('rsi')) {
-            val = 50.0;
-          } else if (lp.includes('macd') || lp.includes('slope') || lp.includes('divergence')) {
-            val = 0.0;
-          } else if (lp.includes('stoch')) {
-            val = 50.0;
-          } else if (lp.includes('ema') || lp.includes('bollinger') || lp.includes('price') || lp.includes('close') || lp.includes('open') || lp.includes('high') || lp.includes('low')) {
-            val = current?.yContext?.priceValue ?? current?.ohlc?.close ?? current?.close ?? 1.0;
-          } else if (lp.includes('atr') || lp.includes('width')) {
-            val = 0.01;
-          } else {
-            val = 0;
-          }
-          
-          if (val === null || val === undefined || Number.isNaN(val)) {
-            skip = true;
-            break;
-          }
+          skip = true;
+          break;
         }
       }
     }
@@ -281,16 +264,16 @@ export function evaluateTechniques(window: ChartAnalysisWindow, techniques: Tech
         id: technique.id,
         name: technique.name,
         status: "SKIPPED",
-        callScore: 0,
-        putScore: 0,
-        callResult: "NEUTRAL",
-        putResult: "NEUTRAL"
+        bullScore: 0,
+        bearScore: 0,
+        bullResult: "NEUTRAL",
+        bearResult: "NEUTRAL"
       });
       continue;
     }
 
-    let callScore = 0;
-    let callConditionsMet = 0;
+    let bullScore = 0;
+    let bullConditionsMet = 0;
     for (const cond of (technique.callConditions || [])) {
       let passed = false;
       
@@ -327,13 +310,13 @@ export function evaluateTechniques(window: ChartAnalysisWindow, techniques: Tech
       }
 
       if (passed) {
-        callScore += cond.weight || 0;
-        callConditionsMet++;
+        bullScore += cond.weight || 0;
+        bullConditionsMet++;
       }
     }
 
-    let putScore = 0;
-    let putConditionsMet = 0;
+    let bearScore = 0;
+    let bearConditionsMet = 0;
     for (const cond of (technique.putConditions || [])) {
       let passed = false;
       
@@ -367,79 +350,78 @@ export function evaluateTechniques(window: ChartAnalysisWindow, techniques: Tech
       }
 
       if (passed) {
-        putScore += cond.weight || 0;
-        putConditionsMet++;
+        bearScore += cond.weight || 0;
+        bearConditionsMet++;
       }
     }
 
     // CLASSIFY RESULT
-    let callResult: "SIGNAL_FULL" | "SIGNAL_HALF" | "NEUTRAL" = "NEUTRAL";
+    let bullResult: "SIGNAL_FULL" | "SIGNAL_HALF" | "NEUTRAL" = "NEUTRAL";
     if (technique.scoring) {
-      if (callScore >= technique.scoring.fullSignalThreshold && callConditionsMet >= technique.scoring.minConditionsForSignal) {
-        callResult = "SIGNAL_FULL";
-        callTotal += callScore;
-      } else if (callScore >= technique.scoring.halfSignalThreshold) {
-        callResult = "SIGNAL_HALF";
-        callTotal += callScore * 0.5;
+      if (bullScore >= technique.scoring.fullSignalThreshold && bullConditionsMet >= technique.scoring.minConditionsForSignal) {
+        bullResult = "SIGNAL_FULL";
+        bullTotal += bullScore;
+      } else if (bullScore >= technique.scoring.halfSignalThreshold) {
+        bullResult = "SIGNAL_HALF";
+        bullTotal += bullScore * 0.5;
       }
     }
 
-    let putResult: "SIGNAL_FULL" | "SIGNAL_HALF" | "NEUTRAL" = "NEUTRAL";
+    let bearResult: "SIGNAL_FULL" | "SIGNAL_HALF" | "NEUTRAL" = "NEUTRAL";
     if (technique.scoring) {
-      if (putScore >= technique.scoring.fullSignalThreshold && putConditionsMet >= technique.scoring.minConditionsForSignal) {
-        putResult = "SIGNAL_FULL";
-        putTotal += putScore;
-      } else if (putScore >= technique.scoring.halfSignalThreshold) {
-        putResult = "SIGNAL_HALF";
-        putTotal += putScore * 0.5;
+      if (bearScore >= technique.scoring.fullSignalThreshold && bearConditionsMet >= technique.scoring.minConditionsForSignal) {
+        bearResult = "SIGNAL_FULL";
+        bearTotal += bearScore;
+      } else if (bearScore >= technique.scoring.halfSignalThreshold) {
+        bearResult = "SIGNAL_HALF";
+        bearTotal += bearScore * 0.5;
       }
     }
 
-    maxPossible += technique.scoring?.maxScore ?? 1;
+    if (bullResult !== "NEUTRAL" || bearResult !== "NEUTRAL") {
+      maxPossible += technique.scoring?.maxScore ?? 1;
+    }
     processed++;
     
     breakdown.push({
       id: technique.id,
       name: technique.name,
       status: "EVALUATED",
-      callScore,
-      putScore,
-      callResult,
-      putResult
+      bullScore,
+      bearScore,
+      bullResult,
+      bearResult
     });
   }
 
-  const callConfidence = maxPossible > 0 ? (callTotal / maxPossible) * 100 : 0;
-  const putConfidence = maxPossible > 0 ? (putTotal / maxPossible) * 100 : 0;
-  const margin = callTotal - putTotal;
+  const volatilityRegime = window.marketContext?.volatilityState || "NORMAL";
+  
+  if (volatilityRegime === "HIGH") {
+    bullTotal *= 0.75;
+    bearTotal *= 0.75;
+    breakdown.forEach(b => {
+      b.bullScore *= 0.75;
+      b.bearScore *= 0.75;
+    });
+  }
+
+  const bullConfidence = maxPossible > 0 ? (bullTotal / maxPossible) * 100 : 0;
+  const bearConfidence = maxPossible > 0 ? (bearTotal / maxPossible) * 100 : 0;
+  const margin = bullTotal - bearTotal;
 
   let verdict: "LONG" | "NO_TRADE" = "NO_TRADE";
   let noTradeReason: "INSUFFICIENT_TECHNIQUES" | "VOLATILE" | "EXACT_TIE" | null = null;
 
-  const volatilityRegime = window.marketContext?.volatilityState || "NORMAL";
-
   if (processed < 1) {
     verdict = "NO_TRADE";
     noTradeReason = "INSUFFICIENT_TECHNIQUES";
-  } else if (volatilityRegime === "EXPLOSIVE" || volatilityRegime === "HIGH") {
-    // Wait, the specification says:
-    // else if window.volatilityRegime == "EXPLOSIVE":
-    // -> verdict = "NO_TRADE"
-    if (volatilityRegime === "EXPLOSIVE") {
-      verdict = "NO_TRADE";
-      noTradeReason = "VOLATILE";
-    } else if (callTotal > putTotal) {
-      verdict = "LONG";
-    } else if (putTotal > callTotal) {
-      verdict = "NO_TRADE";
-    } else {
-      verdict = "NO_TRADE";
-      noTradeReason = "EXACT_TIE";
-    }
+  } else if (volatilityRegime === "EXPLOSIVE") {
+    verdict = "NO_TRADE";
+    noTradeReason = "VOLATILE";
   } else {
-    if (callTotal > putTotal) {
+    if (bullTotal > bearTotal) {
       verdict = "LONG";
-    } else if (putTotal > callTotal) {
+    } else if (bearTotal > bullTotal) {
       verdict = "NO_TRADE";
     } else {
       verdict = "NO_TRADE";
@@ -449,11 +431,11 @@ export function evaluateTechniques(window: ChartAnalysisWindow, techniques: Tech
 
   return {
     verdict,
-    callTotal,
-    putTotal,
+    bullTotal,
+    bearTotal,
     margin,
-    callConfidence,
-    putConfidence,
+    bullConfidence,
+    bearConfidence,
     maxPossible,
     processed,
     skipped,

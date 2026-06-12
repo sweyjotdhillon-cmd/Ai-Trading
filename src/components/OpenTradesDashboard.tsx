@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, Pressable, ScrollView, ActivityIndicator } from 'react-native';
+import { motion, AnimatePresence } from 'motion/react';
 import { 
   RefreshCw, List, Clock, Info, ShieldAlert, ChevronDown, ChevronRight, 
   TrendingUp, TrendingDown, Award, Percent, Database, ShieldCheck 
@@ -247,17 +248,26 @@ export function OpenTradesDashboard() {
 
           {openTrades.length > 0 ? (
             <div className="flex flex-col gap-3">
-              {openTrades.map((trade) => {
-                const entry = trade.entryPrice;
-                const shares = trade.plan?.positionSize ?? 1;
-                const invested = trade.plan?.investmentRupees ?? (entry * shares);
-                const tp = trade.plan?.takeProfit2 ?? entry * 1.02;
-                const sl = trade.plan?.stopLoss ?? entry * 0.99;
-                const isExpanded = expandedTradeId === trade.id;
-                
-                return (
-                  <div key={trade.id} className="bg-zinc-950/60 border border-zinc-900 rounded-xl overflow-hidden shadow-lg">
-                    {/* Header Item Card */}
+              <AnimatePresence mode="popLayout">
+                {openTrades.map((trade) => {
+                  const entry = trade.entryPrice;
+                  const shares = trade.plan?.positionSize ?? 1;
+                  const invested = trade.plan?.investmentRupees ?? (entry * shares);
+                  const tp = trade.plan?.takeProfit2 ?? entry * 1.02;
+                  const sl = trade.plan?.stopLoss ?? entry * 0.99;
+                  const isExpanded = expandedTradeId === trade.id;
+                  
+                  return (
+                    <motion.div 
+                      key={trade.id} 
+                      layout
+                      initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.95, x: -20 }}
+                      transition={{ duration: 0.3 }}
+                      className="bg-zinc-950/60 border border-zinc-900 rounded-xl overflow-hidden shadow-lg"
+                    >
+                      {/* Header Item Card */}
                     <Pressable
                       onClick={() => toggleExpandTrade(trade.id)}
                       className="p-4 flex flex-col sm:flex-row justify-between sm:items-center gap-3 font-mono relative cursor-pointer hover:bg-zinc-900/40 transition-colors"
@@ -361,9 +371,10 @@ export function OpenTradesDashboard() {
                         </div>
                       </div>
                     )}
-                  </div>
+                  </motion.div>
                 );
               })}
+              </AnimatePresence>
             </div>
           ) : (
             <div className="text-center py-10 border border-dashed border-zinc-900/85 rounded-xl bg-zinc-950/25">

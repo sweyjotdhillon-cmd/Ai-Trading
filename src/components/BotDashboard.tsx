@@ -821,64 +821,74 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
             </div>
 
             {/* Technique Scoring Panel */}
-            {techEval && (
+            {bot.lastAnalysisResult?.techniqueVotes && (
               <div className="bg-black/20 rounded-xl border border-dashed border-[#D9B382]/30 overflow-hidden">
                 <button
                   type="button"
                   onClick={() => setShowTech(!showTech)}
                   className="w-full flex flex-row items-center justify-between p-3"
                 >
-                  <div className="flex flex-row items-center gap-2">
+                  <div className="flex flex-col items-start gap-1">
                     <span className="text-[9px] font-black text-white uppercase tracking-wider">
-                      Verification Engine — {techEval.totalTechniques} Techniques
+                      Techniques
+                    </span>
+                    <span className="text-[8px] text-zinc-500 font-mono">
+                      {bot.lastAnalysisResult.techniqueVotes.reduce((acc: any, v: any) => { acc[v.vote] = (acc[v.vote] || 0) + 1; return acc; }, {} as any)['BULL'] || 0} BULL · {' '}
+                      {bot.lastAnalysisResult.techniqueVotes.reduce((acc: any, v: any) => { acc[v.vote] = (acc[v.vote] || 0) + 1; return acc; }, {} as any)['BEAR'] || 0} BEAR · {' '}
+                      {bot.lastAnalysisResult.techniqueVotes.reduce((acc: any, v: any) => { acc[v.vote] = (acc[v.vote] || 0) + 1; return acc; }, {} as any)['NEUTRAL'] || 0} NEUTRAL · {' '}
+                      {bot.lastAnalysisResult.techniqueVotes.reduce((acc: any, v: any) => { acc[v.vote] = (acc[v.vote] || 0) + 1; return acc; }, {} as any)['SKIP'] || 0} SKIP
                     </span>
                   </div>
-                  <div className="flex flex-row items-center gap-2">
-                    <span className="text-[8px] font-black text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded">
-                      🐂 +{(techEval.bulldogPoints ?? 0).toFixed(1)} Bull
-                    </span>
-                    <span className="text-[8px] font-black text-red-400 bg-red-500/10 px-2 py-0.5 rounded">
-                      🐻 +{(techEval.peerPoints ?? 0).toFixed(1)} Bear
-                    </span>
-                    <span className="text-[8px] text-zinc-400">{showTech ? '▲' : '▼'}</span>
+                  <div className="flex flex-row items-center gap-2 shrink-0">
+                     <span className="text-[8px] text-zinc-400">{showTech ? '▲' : '▼'}</span>
                   </div>
                 </button>
 
                 {showTech && (
-                  <div className="px-3 pb-3 border-t border-white/10">
-                    {/* Bull techniques */}
-                    <p className="text-[8px] font-black text-emerald-400 uppercase mt-3 mb-2">🐂 Bullish Techniques</p>
-                    {(techEval.bullList || []).map((tech: any, i: number) => (
-                      <div key={i} className="flex flex-row items-start justify-between mb-2">
-                        <div className="flex-1 mr-2">
-                          <p className={`text-[9px] font-bold ${tech.matched ? 'text-white' : 'text-zinc-500'}`}>• {tech.name}</p>
-                          <p className={`text-[7px] leading-3 pl-2 ${tech.matched ? 'text-zinc-300' : 'text-zinc-600'}`}>{tech.process}</p>
-                        </div>
-                        <div className="flex flex-row items-center gap-1 shrink-0">
-                          <span className={`text-[9px] font-black ${tech.matched ? 'text-emerald-400' : 'text-zinc-600'}`}>
-                            {tech.matched ? `+${tech.pointsEarned.toFixed(1)}` : '0.0'}
-                          </span>
-                          <span className="text-[9px]">{tech.matched ? '✅' : '⚪'}</span>
-                        </div>
-                      </div>
-                    ))}
+                  <div className="px-3 pb-3 border-t border-white/10 space-y-1.5 pt-2">
+                    {bot.lastAnalysisResult.techniqueVotes.map((v: any, i: number) => {
+                       const badgeColor = 
+                         v.vote === 'BULL' ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20' :
+                         v.vote === 'BEAR' ? 'bg-red-500/15 text-red-400 border-red-500/20' :
+                         v.vote === 'SKIP' ? 'bg-amber-500/15 text-amber-400 border-amber-500/20' :
+                         'bg-zinc-500/15 text-zinc-400 border-zinc-500/20';
+                         
+                       return (
+                         <div key={i} className="flex flex-row items-start justify-between bg-black/40 rounded p-1.5">
+                           <div className="flex-1 mr-2 flex flex-col gap-1">
+                             <div className="flex items-center gap-1.5">
+                               <span className="text-[9px] font-bold text-white font-mono w-40 truncate" title={v.name}>{v.name}</span>
+                               <span className={`text-[7px] font-black uppercase px-1 py-0.2 rounded border ${badgeColor}`}>
+                                 {v.vote}
+                               </span>
+                             </div>
+                             <p className="text-[7px] text-zinc-500 font-mono leading-none truncate w-60" title={v.reason}>
+                               {v.reason}
+                             </p>
+                           </div>
+                           <div className="shrink-0 flex items-center justify-end">
+                              <span className="text-[9px] font-mono text-zinc-300">
+                                {Number(v.score).toFixed(1)}
+                              </span>
+                           </div>
+                         </div>
+                       );
+                    })}
 
-                    {/* Bear techniques */}
-                    <p className="text-[8px] font-black text-red-400 uppercase mt-3 mb-2">🐻 Bearish Techniques</p>
-                    {(techEval.bearList || []).map((tech: any, i: number) => (
-                      <div key={i} className="flex flex-row items-start justify-between mb-2">
-                        <div className="flex-1 mr-2">
-                          <p className={`text-[9px] font-bold ${tech.matched ? 'text-white' : 'text-zinc-500'}`}>• {tech.name}</p>
-                          <p className={`text-[7px] leading-3 pl-2 ${tech.matched ? 'text-zinc-300' : 'text-zinc-600'}`}>{tech.process}</p>
-                        </div>
-                        <div className="flex flex-row items-center gap-1 shrink-0">
-                          <span className={`text-[9px] font-black ${tech.matched ? 'text-red-400' : 'text-zinc-600'}`}>
-                            {tech.matched ? `+${tech.pointsEarned.toFixed(1)}` : '0.0'}
-                          </span>
-                          <span className="text-[9px]">{tech.matched ? '✅' : '⚪'}</span>
-                        </div>
+                    {/* Dead techniques warning */}
+                    {bot.lastAnalysisResult?.deadTechniques?.length > 0 && (
+                      <div className="mt-3 p-2 rounded bg-amber-500/10 border border-amber-500/20">
+                        <p className="text-[8px] font-black text-amber-500 uppercase mb-1 flex items-center gap-1">
+                          <AlertTriangle size={10} /> Dead Techniques
+                        </p>
+                        <p className="text-[8px] text-amber-500/80 mb-1">These techniques have no executable conditions or code and were skipped:</p>
+                        <ul className="list-disc pl-4 text-[8px] text-amber-400">
+                          {bot.lastAnalysisResult.deadTechniques.map((name: string, i: number) => (
+                            <li key={i}>{name}</li>
+                          ))}
+                        </ul>
                       </div>
-                    ))}
+                    )}
                   </div>
                 )}
               </div>
@@ -1180,7 +1190,7 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
                               <strong className="text-zinc-300 text-sm font-bold font-sans">{trade.symbol}</strong>
                             </div>
                             <div className="text-[10px] text-zinc-500 mt-1">
-                              Duration: {durationStr}
+                              Duration: {durationStr} • {shares} Shares
                             </div>
                           </div>
                           <div className="flex flex-col items-end gap-1">
@@ -1338,7 +1348,10 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
                     <span className="text-[10px] font-mono text-zinc-500">
                       {dateStr}
                     </span>
-                    <span className="text-xs font-mono font-bold text-zinc-300">{trade.symbol}</span>
+                    <div className="flex flex-col">
+                      <span className="text-xs font-mono font-bold text-zinc-300">{trade.symbol} <span className="text-[10px] text-zinc-500 normal-case ml-1 font-normal">({trade.plan?.positionSize ?? 1} shares)</span></span>
+                      <span className="text-[9px] text-zinc-500">In: ₹{trade.entryPrice.toFixed(2)} → Out: ₹{(trade.exitPrice ?? trade.entryPrice).toFixed(2)}</span>
+                    </div>
                     <span className={`text-[8px] px-1.5 py-0.5 rounded font-mono font-extrabold ${oc.bg} ${oc.color}`}>
                       {oc.label}
                     </span>

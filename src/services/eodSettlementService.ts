@@ -100,7 +100,9 @@ export async function fetchDailyOHLC(
            close: live.price
          };
       }
-    } catch {}
+    } catch (err: any) {
+      console.warn('Live price fallback failed:', err.message);
+    }
   }
 
   return null;

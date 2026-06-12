@@ -29,16 +29,18 @@ export function shardTechniques(list: any[], shardSize = 15): any[][] {
   return shards;
 }
 
-export interface IndicatorCache {
-  rsiVals?: number[];
-  stochVals?: { k: number[], d: number[] };
-  macdVals?: { macd: number[], signal: number[], hist: number[] };
-  emaSlope?: number[];
-  emaCurvature?: number[];
-  atrVals?: number[];
-  bollVals?: { upper: number[], lower: number[], middle: number[] };
-  closes?: number[];
-}
+  export interface IndicatorCache {
+    rsiPeriod?: number;
+    stochPeriod?: number;
+    rsiVals?: number[];
+    stochVals?: { k: number[], d: number[] };
+    macdVals?: { macd: number[], signal: number[], hist: number[] };
+    emaSlope?: number[];
+    emaCurvature?: number[];
+    atrVals?: number[];
+    bollVals?: { upper: number[], lower: number[], middle: number[] };
+    closes?: number[];
+  }
 
 function evaluateConditions(
   conditions: any[],
@@ -58,6 +60,7 @@ function evaluateConditions(
     if (ref === 'current' || !ref || ref === 'any') return ohlc[last] ?? null;
     if (ref === 'prev')           return ohlc[last - 1] ?? null;
     if (ref === 'prev2')          return ohlc[last - 2] ?? null;
+    if (ref === 'prev3')          return ohlc[last - 3] ?? null;
     return null;
   }
 
@@ -88,6 +91,26 @@ function evaluateConditions(
       case 'lowerWick':       return Math.min(c.open, c.close) - c.low;
       case 'upperWickRatio':  return (c.high - Math.max(c.open, c.close)) / totalRange;
       case 'lowerWickRatio':  return (Math.min(c.open, c.close) - c.low) / totalRange;
+      case 'isDoji':          return (bodySize / totalRange) < 0.05 ? 1 : 0;
+      case 'isHammer': {
+        const lw = Math.min(c.open, c.close) - c.low;
+        const uw = c.high - Math.max(c.open, c.close);
+        return (lw > bodySize * 2 && uw < bodySize * 0.5) ? 1 : 0;
+      }
+      case 'isShootingStar': {
+        const lw = Math.min(c.open, c.close) - c.low;
+        const uw = c.high - Math.max(c.open, c.close);
+        return (uw > bodySize * 2 && lw < bodySize * 0.5) ? 1 : 0;
+      }
+      case 'isBullCandle':    return c.close > c.open ? 1 : 0;
+      case 'isBearCandle':    return c.close < c.open ? 1 : 0;
+      case 'isMarubozu':      return (bodySize / totalRange) > 0.90 ? 1 : 0;
+      case 'volume':          return (c as any).volume ?? null; // volume and volumeSpike will return null until stockPriceFeed.ts passes volume in OHLCV — fields are ready for when feed supports it
+      case 'volumeSpike': {
+        const volumes = ohlc.map(x => (x as any).volume ?? 0);
+        const avgVol = volumes.slice(-20).reduce((a, b) => a + b, 0) / 20;
+        return avgVol > 0 ? ((c as any).volume ?? 0) / avgVol : null;
+      }
       case 'direction':
         if (bodySize / totalRange < 0.05) return 'DOJI';
         return c.close > c.open ? 'BULL' : 'BEAR';
@@ -103,9 +126,17 @@ function evaluateConditions(
       // EMAs
       case 'ema9': {
         const e = ema(closes, 9);
-        return closes[last] - (e[last] ?? NaN);  // approximate: return close vs ema
+        return e[last] ?? null;
       }
       case 'ema21': {
+        const e = ema(closes, 21);
+        return e[last] ?? null;
+      }
+      case 'ema9Delta': {
+        const e = ema(closes, 9);
+        return closes[last] - (e[last] ?? NaN);
+      }
+      case 'ema21Delta': {
         const e = ema(closes, 21);
         return closes[last] - (e[last] ?? NaN);
       }
@@ -193,15 +224,16 @@ function evaluateConditions(
       case '==':  return v === t;
       case '!=':  return v !== t;
       case 'CROSS_UP': {
-        // current[field] > threshold AND prev[field] <= threshold
-        const cur  = getFieldValue(field, 'current') as number;
-        const prev = getFieldValue(field, 'prev')    as number;
+        const cur  = getFieldValue(field, candleRef) as number;
+        const prevRef = candleRef === 'current' ? 'prev' : candleRef === 'prev' ? 'prev2' : candleRef === 'prev2' ? 'prev3' : 'prev';
+        const prev = getFieldValue(field, prevRef)    as number;
         if (cur === null || prev === null) return false;
         return cur > t && prev <= t;
       }
       case 'CROSS_DOWN': {
-        const cur  = getFieldValue(field, 'current') as number;
-        const prev = getFieldValue(field, 'prev')    as number;
+        const cur  = getFieldValue(field, candleRef) as number;
+        const prevRef = candleRef === 'current' ? 'prev' : candleRef === 'prev' ? 'prev2' : candleRef === 'prev2' ? 'prev3' : 'prev';
+        const prev = getFieldValue(field, prevRef)    as number;
         if (cur === null || prev === null) return false;
         return cur < t && prev >= t;
       }
@@ -235,15 +267,16 @@ export function evaluateShard(
   ohlc: NumericOHLC[],
   shardOffset: number,
   cache: IndicatorCache
-): TechniqueVote[] {
+): { votes: TechniqueVote[], deadTechniques: string[] } {
   const votes: TechniqueVote[] = [];
+  const deadTechniques: string[] = [];
 
   const closes = cache.closes || (cache.closes = ohlc.map(c => c.close));
   const last = closes.length - 1;
 
   // Memoize indicators globally across shards
-  const getRSI = () => cache.rsiVals || (cache.rsiVals = rsi(closes, 14));
-  const getStoch = () => cache.stochVals || (cache.stochVals = stochastic(ohlc, 14, 3));
+  const getRSI = () => cache.rsiVals || (cache.rsiVals = rsi(closes, cache.rsiPeriod ?? 14));
+  const getStoch = () => cache.stochVals || (cache.stochVals = stochastic(ohlc, cache.stochPeriod ?? 14, 3));
   const getMACD = () => cache.macdVals || (cache.macdVals = macd(closes, 12, 26, 9));
   const getEmaSlope = () => cache.emaSlope || (cache.emaSlope = emaSlope(closes, 20));
   const getEmaCurvature = () => cache.emaCurvature || (cache.emaCurvature = emaCurvature(closes, 20));
@@ -264,14 +297,14 @@ export function evaluateShard(
 
     if (typeof techItem === 'object' && techItem.callConditions) {
       // Evaluate CALL side
-      const callResult = evaluateConditions(
+      const bullResult = evaluateConditions(
         techItem.callConditions || [], ohlc, closes, last,
         getRSI, getStoch, getMACD, getATR, getBollinger,
         cache
       );
       
-      // Evaluate PUT side
-      const putResult = evaluateConditions(
+      // Evaluate BEAR side
+      const bearResult = evaluateConditions(
         techItem.putConditions || [], ohlc, closes, last,
         getRSI, getStoch, getMACD, getATR, getBollinger,
         cache
@@ -279,52 +312,57 @@ export function evaluateShard(
 
       const scoring = techItem.scoring || { minConditionsForSignal: 0, fullSignalThreshold: 0, halfSignalThreshold: 0, maxScore: 0 };
 
-      // Determine CALL signal level
-      let callVote: VoteResult = 'NEUTRAL';
-      let callScore = 0;
-      if (callResult.matched >= scoring.minConditionsForSignal &&
-          callResult.score  >= scoring.fullSignalThreshold) {
-        callVote  = 'BULL';
-        callScore = callResult.score;
-      } else if (callResult.score >= scoring.halfSignalThreshold) {
-        callVote  = 'BULL';
-        callScore = callResult.score * 0.5;
+      // Determine BULL signal level
+      let bullVote: VoteResult = 'NEUTRAL';
+      let bullScore = 0;
+      if (bullResult.matched >= scoring.minConditionsForSignal &&
+          bullResult.score  >= scoring.fullSignalThreshold) {
+        bullVote  = 'BULL';
+        bullScore = bullResult.score;
+      } else if (bullResult.score >= scoring.halfSignalThreshold && bullResult.matched >= Math.ceil((scoring.minConditionsForSignal || 1) * 0.5)) {
+        bullVote  = 'BULL';
+        bullScore = bullResult.score * 0.5;
       }
 
-      // Determine PUT signal level
-      let putVote: VoteResult = 'NEUTRAL';
-      let putScore = 0;
-      if (putResult.matched >= scoring.minConditionsForSignal &&
-          putResult.score   >= scoring.fullSignalThreshold) {
-        putVote  = 'BEAR';
-        putScore = putResult.score;
-      } else if (putResult.score >= scoring.halfSignalThreshold) {
-        putVote  = 'BEAR';
-        putScore = putResult.score * 0.5;
+      // Determine BEAR signal level
+      let bearVote: VoteResult = 'NEUTRAL';
+      let bearScore = 0;
+      if (bearResult.matched >= scoring.minConditionsForSignal &&
+          bearResult.score   >= scoring.fullSignalThreshold) {
+        bearVote  = 'BEAR';
+        bearScore = bearResult.score;
+      } else if (bearResult.score >= scoring.halfSignalThreshold && bearResult.matched >= Math.ceil((scoring.minConditionsForSignal || 1) * 0.5)) {
+        bearVote  = 'BEAR';
+        bearScore = bearResult.score * 0.5;
       }
 
       // Winning direction
-      if (callScore > putScore) {
+      if (bullScore > bearScore) {
         vote   = 'BULL';
-        score  = callScore;
-        reason = `CALL: ${callResult.reasons.filter(r => r.includes('✓')).join(' | ')}`;
-      } else if (putScore > callScore) {
+        score  = bullScore;
+        reason = `BULL: ${bullResult.reasons.filter(r => r.includes('✓')).join(' | ')}`;
+      } else if (bearScore > bullScore) {
         vote   = 'BEAR';
-        score  = putScore;
-        reason = `PUT: ${putResult.reasons.filter(r => r.includes('✓')).join(' | ')}`;
+        score  = bearScore;
+        reason = `BEAR: ${bearResult.reasons.filter(r => r.includes('✓')).join(' | ')}`;
       } else {
         vote   = 'NEUTRAL';
         score  = 0;
-        reason = `CALL=${callResult.score.toFixed(2)} PUT=${putResult.score.toFixed(2)} — tied`;
+        reason = `BULL=${bullResult.score.toFixed(2)} BEAR=${bearResult.score.toFixed(2)} — tied`;
       }
 
       bullPoints = vote === 'BULL' ? score : 0;
       bearPoints = vote === 'BEAR' ? score : 0;
     } else if (typeof techItem === 'object' && techItem.code) {
+      let timedOut = false;
+      const timeoutId = setTimeout(() => { timedOut = true; }, 200); // TODO: replace with SharedArrayBuffer interrupt for true infinite-loop protection
       try {
         const func = new Function('ohlc', 'closes', 'last', 'getRSI', 'getStoch', 'getMACD', 'getEmaSlope', 'getEmaCurvature', 'getATR', 'getBollinger', techItem.code);
         const res = func(ohlc, closes, last, getRSI, getStoch, getMACD, getEmaSlope, getEmaCurvature, getATR, getBollinger);
         
+        clearTimeout(timeoutId);
+        if (timedOut) throw new Error('Execution timeout exceeded 200ms');
+
         if (res && typeof res === 'object') {
            vote = res.vote || 'NEUTRAL';
            score = res.score || 0;
@@ -333,6 +371,9 @@ export function evaluateShard(
            bearPoints = res.bearPoints ?? (vote === 'BEAR' ? score : 0);
         }
       } catch (err: any) {
+        clearTimeout(timeoutId);
+        vote = 'NEUTRAL';
+        score = 0;
         reason = `Code Exec Error: ${err.message}`;
       }
     } else {
@@ -346,11 +387,14 @@ export function evaluateShard(
         bullPoints = res.bullPoints;
         bearPoints = res.bearPoints;
       } else {
-        vote = 'NEUTRAL';
+        vote = 'SKIP';
         score = 0;
         reason = typeof techItem === 'object' 
           ? 'Technique has no executable conditions or code field.' 
           : `unknown technique "${rawName}"`;
+        if (reason.includes('no executable conditions')) {
+          deadTechniques.push(rawName);
+        }
       }
     }
 
@@ -365,89 +409,5 @@ export function evaluateShard(
     });
   }
 
-  return votes;
-}
-
-export async function evaluateAllShards(
-  techniquesList: string[],
-  ohlcSeries: NumericOHLC[],
-  _context?: any
-): Promise<{
-  votes: TechniqueVote[];
-  proofTokens: string;
-  bullVotes: number;
-  bearVotes: number;
-  neutralVotes: number;
-  totalEvaluated: number;
-  earlyExit: boolean;
-}> {
-  const shards = shardTechniques(techniquesList, 5);
-
-  const cache: IndicatorCache = {};
-
-  let bullVotes = 0;
-  let bearVotes = 0;
-  let neutralVotes = 0;
-  const proofTokensArr: string[] = [];
-  const votes: TechniqueVote[] = [];
-  let earlyExit = false;
-
-  for (let i = 0; i < shards.length; i++) {
-    const shard = shards[i];
-    const shardVotes = await new Promise<TechniqueVote[]>((resolve) => {
-      resolve(evaluateShard(shard, ohlcSeries, i * 5, cache));
-    });
-
-    votes.push(...shardVotes);
-
-    for (const v of shardVotes) {
-      if (v.vote === 'BULL' && v.score > 0) bullVotes++;
-      else if (v.vote === 'BEAR' && v.score > 0) bearVotes++;
-      else neutralVotes++;
-
-      proofTokensArr.push(`${v.id}:${v.vote}:${v.score.toFixed(2)}`);
-    }
-
-    const totalEvaluated = bullVotes + bearVotes + neutralVotes;
-    const runningConfidence = (bullVotes - bearVotes) / Math.max(1, totalEvaluated);
-  }
-
-  return {
-    votes,
-    proofTokens: proofTokensArr.join(' '),
-    bullVotes,
-    bearVotes,
-    neutralVotes,
-    totalEvaluated: votes.length,
-    earlyExit
-  };
-}
-
-export function validateProofTokens(tokens: string, expectedCount: number): {
-  valid: boolean;
-  found: number;
-  missing: number[];
-} {
-  const parts = tokens.trim().split(/\s+/).filter(Boolean);
-  const foundIds = new Set<number>();
-
-  for (const part of parts) {
-      const match = part.match(/^T(\d{3}):/);
-      if (match) {
-          foundIds.add(parseInt(match[1], 10));
-      }
-  }
-
-  const missing: number[] = [];
-  for (let i = 1; i <= expectedCount; i++) {
-      if (!foundIds.has(i)) {
-          missing.push(i);
-      }
-  }
-
-  return {
-      valid: missing.length === 0 && parts.length === expectedCount,
-      found: parts.length,
-      missing
-  };
+  return { votes, deadTechniques };
 }

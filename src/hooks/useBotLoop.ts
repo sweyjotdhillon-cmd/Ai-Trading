@@ -90,6 +90,7 @@ export interface UseBotLoopResult {
   cooldownRemainsMs: number | null;    // ms until cooldown ends, null if not cooling
   techniqueCount:    number;           // how many techniques are active
   lastAnalysisResult: any | null;
+  techniqueWarning:  string | null;
 
   // Actions
   startBot:   () => void;
@@ -1103,6 +1104,9 @@ export function useBotLoop(
     lastAnalyzedAt,
     isAnalyzing,
     lastAnalysisResult,
+    techniqueWarning: lastAnalysisResult?.deadTechniques?.length > 0 
+      ? `⚠ ${lastAnalysisResult.deadTechniques.length} technique(s) have no conditions and are inactive: ${lastAnalysisResult.deadTechniques.join(', ')}`
+      : null,
     cooldownRemainsMs,
     techniqueCount:    techniquesList.length,
   };

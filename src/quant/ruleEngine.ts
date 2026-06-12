@@ -1,4 +1,6 @@
 import { HorizonContext } from './horizon';
+import { extractChartJSON } from './dataExtractor';
+import { ChartAnalysisWindow, evaluateTechniques } from './techniqueEngine';
 import { evaluateShard } from './techniqueShardEngine';
 import { enforceNeutrality, recordDecision } from './neutralityGuard';
 import { rsi, macd, bollinger, atr, stochastic, adx } from './indicators';
@@ -69,6 +71,8 @@ export interface DecisionResult extends JudgeVerdict {
   techniquesEvaluation?: any;
   repoPatternCount?: number;
   noTechniquesUploaded?: boolean;
+  techniqueVotes?: any[];
+  deadTechniques?: string[];
 }
 
 export function evaluateSignal(
@@ -234,26 +238,29 @@ export function evaluateSignal(
   // Define Category Classifications for Judges
   function getTechniqueJudgeCategory(name: string, code?: string): 'J1' | 'J2' | 'J3' {
     const k = name.toLowerCase().replace(/[\s_-]/g, '');
-    const c = (code || '').toLowerCase();
+    const c = (code || '').toLowerCase().replace(/[\s_-]/g, '');
 
-    // J2 — Oscillators
-    if (k.includes('rsi') || k.includes('stoch') || k.includes('oscillator')
-        || k.includes('cci') || k.includes('williamsr') || k.includes('macd')
-        || c.includes('getrsi') || c.includes('getstoch') || c.includes('getmacd')) return 'J2';
+    // J2 — Oscillators (check first, highest specificity)
+    const J2_KEYS = ['rsi','stoch','oscillator','cci','williamsr','momentum',
+                     'obv','mfi','cmf','getrsi','getstoch','getmacd','divergence'];
+    if (J2_KEYS.some(key => k.includes(key) || c.includes(key))) return 'J2';
 
-    // J3 — Reversal / Boundary / Pattern reversals / Divergences / Structure
-    const J3_KEYS = [
-      'boll','reversal','hammer','invertedhammer','shootingstar','doji',
+    // J3 — Reversal / Pattern / Structure
+    const J3_KEYS = ['boll','reversal','hammer','invertedhammer','shootingstar','doji',
       'engulfing','morningstar','eveningstar','piercing','piercingline',
-      'darkcloud','darkcloudcover','harami','tweezer','tweezertop',
-      'tweezerbottom','pinbar','abandonedbaby','support','resistance',
-      'boundary','wick','shadow','divergence','choch','changeofcharacter',
-      'doubletop','doublebottom','headandshoulders','hns','exhaustion',
-      'blowoff','climactic','adxpeak','adxdivergence'
-    ];
+      'tweezer','tweezertop','tweezerbottom','pinbar','abandonedbaby',
+      'support','resistance','boundary','wick','shadow','choch',
+      'changeofcharacter','bos','breakofstructure','blowoff','climactic',
+      'adxpeak','adxdivergence','outsidebar','insidebar','harami'];
     if (J3_KEYS.some(key => k.includes(key))) return 'J3';
 
-    // J1 — Trend / Momentum / Continuation (default)
+    // J1 — Trend / Momentum / Continuation (explicit, not fallback)
+    const J1_KEYS = ['ema','macd','adx','trend','momentum','continuation',
+      'breakout','pullback','crossover','cross','slope','acceleration',
+      'vwap','sma','ichimoku','supertrend','parabolic'];
+    if (J1_KEYS.some(key => k.includes(key) || c.includes(key))) return 'J1';
+
+    // True fallback — uncategorised → J1
     return 'J1';
   }
 
@@ -269,13 +276,18 @@ export function evaluateSignal(
   });
 
   techCache.closes = Array.from(closes);
-  const tfMins = typeof horizonArg?.tfMinutes === 'number' ? horizonArg.tfMinutes : 30;
-  const rsiPeriod = tfMins <= 5 ? 9 : 14;
+  const tfMins = typeof horizonArg?.tfMinutes === 'number' ? horizonArg.tfMinutes : 5;
+  const rsiPeriod = tfMins <= 5 ? 9 : tfMins <= 15 ? 11 : 14;
+  const stochPeriod = tfMins <= 5 ? 9 : tfMins <= 15 ? 11 : 14;
+  
+  techCache.rsiPeriod = rsiPeriod;
+  techCache.stochPeriod = stochPeriod;
+  
   techCache.rsiVals = rsi(Array.from(closes), rsiPeriod);
   techCache.macdVals = macd(Array.from(closes), 12, 26, 9);
   techCache.bollVals = bollinger(Array.from(closes), 20, 2);
-  techCache.stochVals = ohlcSeries.length >= 14
-    ? stochastic(ohlcSeries, 14, 3)
+  techCache.stochVals = ohlcSeries.length >= stochPeriod
+    ? stochastic(ohlcSeries, stochPeriod, 3)
     : { k: Array(ohlcSeries.length).fill(null), d: Array(ohlcSeries.length).fill(null) };
   techCache.atrVals = atr(ohlcSeries, 14);
   techCache.adxVals = adx(ohlcSeries, 14);
@@ -318,26 +330,41 @@ export function evaluateSignal(
   }
 
   const evaluationVotes: any[] = [];
+  const deadTechniques: string[] = [];
   for (let i = 0; i < shards.length; i++) {
     const shard = shards[i];
-    const shardVotes = evaluateShard(shard, ohlcSeries, i * shardSize, techCache);
-    evaluationVotes.push(...shardVotes);
+    const shardResult = evaluateShard(shard, ohlcSeries, i * shardSize, techCache);
+    evaluationVotes.push(...shardResult.votes);
+    if (shardResult.deadTechniques) {
+      deadTechniques.push(...shardResult.deadTechniques);
+    }
   }
+
+  // FIX 1: Run contextual analysis pass via techniqueEngine.ts
+  const extractedJSON = extractChartJSON(ohlcSeries.map(c => ({
+    timestamp: c.timestamp, open: c.open, high: c.high, low: c.low, close: c.close
+  })), `${tfMin}m`, tfMin);
+  const chartWindow = extractedJSON as any as ChartAnalysisWindow;
+  const tcResult = evaluateTechniques(chartWindow, activeList.filter(t => typeof t === "object"));
 
   let bulldogPoints = 0;
   let peerPoints = 0;
   let bullList: any[] = [];
   let bearList: any[] = [];
-  let processedCount = 0;
+  let processedCount = 0; // Confidence denominator (non-neutral only)
+  let evaluatedCount = 0; // Total diagnostic count
 
   let techBullJ1 = 0, techBearJ1 = 0;
   let techBullJ2 = 0, techBearJ2 = 0;
   let techBullJ3 = 0, techBearJ3 = 0;
 
   evaluationVotes.forEach(v => {
-    processedCount++;
+    evaluatedCount++;
     const isBull = v.vote === 'BULL';
     const isBear = v.vote === 'BEAR';
+    if ((isBull || isBear) && (v.score || 0) > 0) {
+      processedCount++;
+    }
     const pointsEarned = v.score || 0;
     const isMatched = isBull || isBear;
 
@@ -398,12 +425,42 @@ export function evaluateSignal(
     }
   });
 
-  if (processedCount < 10 && !isNoTech && !isCustomList) {
+  // Integrate the TechniqueEngine pass as a bounded secondary check
+  tcResult.techniqueBreakdown.forEach(br => {
+    const matchedItem = activeList.find((t: any) => t.name === br.name);
+    const code = matchedItem && typeof matchedItem === 'object' ? matchedItem.code : '';
+    const cat = getTechniqueJudgeCategory(br.name, code);
+    
+    // Add up to 1.0 per technique per direction
+    const addBull = Math.min(br.bullScore, 1.0);
+    const addBear = Math.min(br.bearScore, 1.0);
+
+    if (cat === 'J1') { techBullJ1 += addBull; techBearJ1 += addBear; }
+    else if (cat === 'J2') { techBullJ2 += addBull; techBearJ2 += addBear; }
+    else if (cat === 'J3') { techBullJ3 += addBull; techBearJ3 += addBear; }
+    
+    if (br.status === "SKIPPED") deadTechniques.push(br.name);
+    
+    evaluationVotes.push({
+      id: br.id,
+      name: br.name,
+      vote: br.status === "SKIPPED" ? "SKIP" : (br.bullScore > br.bearScore ? 'BULL' : (br.bearScore > br.bullScore ? 'BEAR' : 'NEUTRAL')),
+      score: Math.max(br.bullScore, br.bearScore),
+      bullPoints: br.bullScore,
+      bearPoints: br.bearScore,
+      reason: br.status === "SKIPPED" ? "No executable conditions" : `BULL=${br.bullScore.toFixed(1)} BEAR=${br.bearScore.toFixed(1)}`
+    });
+    
+    evaluatedCount++;
+    if (br.bullScore > 0 || br.bearScore > 0) processedCount++;
+  });
+
+  if (processedCount < 10 && !isNoTech && !isCustomList && evaluatedCount < 10) {
     return getEmptyNoTradeResult('INSUFFICIENT_TECHNIQUES');
   }
 
   const techniquesEvaluation = {
-    totalTechniques: processedCount,
+    totalTechniques: evaluatedCount,
     bulldogPoints,
     peerPoints,
     bullList,
@@ -411,7 +468,6 @@ export function evaluateSignal(
   };
 
   // --- Step 2: 3-Judge Score Formulations (Accumulating separates) ---
-  const last = closes.length - 1;
   const slopeSeries = emaSlope(Array.from(closes), 9);
   const lastSlope = slopeSeries.length > 0 ? slopeSeries[slopeSeries.length - 1] : 0;
 
@@ -684,23 +740,43 @@ export function evaluateSignal(
                           : 50;
   const boundaryRes   = calculateBoundaryReversal(yPercent, visibleSeries);
 
+  // IMPROVE-1: Directionally-split boundary detection for scalp precision
+  // Bear boundary uses last bar's HIGH — where did price actually test resistance?
+  // Bull boundary uses last bar's LOW  — where did price actually test support?
+  const visibleHighs   = visibleSeries.map(c => c.high);
+  const visibleLows    = visibleSeries.map(c => c.low);
+  const minVisual      = Math.min(...visibleLows);
+  const maxVisual      = Math.max(...visibleHighs);
+  const lastBarHigh    = ohlcSeries[last].high;
+  const lastBarLow     = ohlcSeries[last].low;
+
+  const yPercentHigh   = maxVisual !== minVisual
+    ? ((lastBarHigh - minVisual) / (maxVisual - minVisual)) * 100 : 50;
+  const yPercentLow    = maxVisual !== minVisual
+    ? ((lastBarLow  - minVisual) / (maxVisual - minVisual)) * 100 : 50;
+
+  const boundaryResBear = calculateBoundaryReversal(yPercentHigh, visibleSeries);
+  const boundaryResBull = calculateBoundaryReversal(yPercentLow,  visibleSeries);
+
   let bullJ3Intrinsic = 0;
   let bearJ3Intrinsic = 0;
   let bullBlowOffSurplus = 0;
   let bearBlowOffSurplus = 0;
   {
-    // Boundary reversal contribution
-    if (boundaryRes.bullPoints !== 0) {
-      bullJ3Intrinsic += boundaryRes.bullPoints;
+    // Boundary reversal contribution (IMPROVE-1: split bull/bear to use bar extremes)
+    // Bull boundary: how low did the last bar reach? Uses yPercentLow (bar.low based)
+    if (boundaryResBull.bullPoints !== 0) {
+      bullJ3Intrinsic += boundaryResBull.bullPoints;
       auditPush('J3', 'BULL', 'intrinsic.boundary_reversal',
-        boundaryRes.bullPoints,
-        `${boundaryRes.label}, yPercent=${yPercent.toFixed(1)}`);
+        boundaryResBull.bullPoints,
+        `${boundaryResBull.label}, yPercentLow=${yPercentLow.toFixed(1)} (bar low used for bull boundary)`);
     }
-    if (boundaryRes.bearPoints !== 0) {
-      bearJ3Intrinsic += boundaryRes.bearPoints;
+    // Bear boundary: how high did the last bar reach? Uses yPercentHigh (bar.high based)
+    if (boundaryResBear.bearPoints !== 0) {
+      bearJ3Intrinsic += boundaryResBear.bearPoints;
       auditPush('J3', 'BEAR', 'intrinsic.boundary_reversal',
-        boundaryRes.bearPoints,
-        `${boundaryRes.label}, yPercent=${yPercent.toFixed(1)}`);
+        boundaryResBear.bearPoints,
+        `${boundaryResBear.label}, yPercentHigh=${yPercentHigh.toFixed(1)} (bar high used for bear boundary)`);
     }
 
     // Z-score significance (allow negative penalties to be subtracted - Invariant I-4)
@@ -753,10 +829,23 @@ export function evaluateSignal(
         (v.name === 'shootingstar' || v.name === 'invertedhammer') && (v.vote === 'BULL' || v.vote === 'BEAR')
       );
 
+      // Gate: Z-score significance already scored this candle's wick geometry.
+      // BULL_PINBAR = lower wick > 50% of range — already awarded in zScoreData.bullPoints.
+      // BEAR_PINBAR = upper wick > 50% of range — already awarded in zScoreData.bearPoints.
+      // Adding intrinsic wick on top would double-reward the same geometry.
+      const zScoreClaimedLowerWick = zScoreData.signalType === 'BULL_PINBAR';
+      const zScoreClaimedUpperWick = zScoreData.signalType === 'BEAR_PINBAR';
+
       if (lW > body * 1.8 && lW > 0) {
-        if (hammerTechMatched) {
-          auditPush('J3', 'BULL', 'intrinsic.lower_wick_rejection_skipped',
-            0, `Lower wick skipped — hammer/hangingman technique already owns this geometry`);
+        if (hammerTechMatched || zScoreClaimedLowerWick) {
+          judgeContribs.push({
+            judge: 'J3', side: 'BULL',
+            contributor: 'intrinsic.lower_wick_rejection_skipped',
+            value: 0,
+            reason: `Lower wick skipped — ${hammerTechMatched
+              ? 'hammer/hangingman technique owns geometry'
+              : 'zScoreData signalType=BULL_PINBAR already scored this wick'}`
+          });
         } else {
           const ratio = lW / Math.max(1e-9, body);
           const pts = parseFloat((0.55 + Math.log(1 + ratio - 1.8)).toFixed(3));
@@ -769,9 +858,15 @@ export function evaluateSignal(
         }
       }
       if (uW > body * 1.8 && uW > 0) {
-        if (shootingStarTechMatched) {
-          auditPush('J3', 'BEAR', 'intrinsic.upper_wick_rejection_skipped',
-            0, `Upper wick skipped — shootingstar/invertedhammer technique already owns this geometry`);
+        if (shootingStarTechMatched || zScoreClaimedUpperWick) {
+          judgeContribs.push({
+            judge: 'J3', side: 'BEAR',
+            contributor: 'intrinsic.upper_wick_rejection_skipped',
+            value: 0,
+            reason: `Upper wick skipped — ${shootingStarTechMatched
+              ? 'shootingstar/invertedhammer technique owns geometry'
+              : 'zScoreData signalType=BEAR_PINBAR already scored this wick'}`
+          });
         } else {
           const ratio = uW / Math.max(1e-9, body);
           const pts = parseFloat((0.55 + Math.log(1 + ratio - 1.8)).toFixed(3));
@@ -796,27 +891,58 @@ export function evaluateSignal(
         auditPush('J3', 'BULL', 'intrinsic.adx_exhaustion', 0.75, `ADX=${lastAD6Val.toFixed(1)} > 40 indicates strong floor trend exhaustion`);
       }
     } else if (lastAD6Val < 15) {
-      bullJ3Intrinsic += 0.50;
-      bearJ3Intrinsic += 0.50;
-      auditPush('J3', 'BULL', 'intrinsic.adx_flat_range', 0.50, `ADX=${lastAD6Val.toFixed(1)} < 15 indicates high reversion probability`);
-      auditPush('J3', 'BEAR', 'intrinsic.adx_flat_range', 0.50, `ADX=${lastAD6Val.toFixed(1)} < 15 indicates high reversion probability`);
+      // In a flat-ADX market, mean reversion probability is high — but the direction
+      // of that reversion depends on where price currently sits within its range.
+      // Applying +0.5 to both sides unconditionally risks pushing a tied market into
+      // a false signal. Gate the bonus to the boundary-favoured side only.
+      if (yPercent > 52.5) {
+        // Price in upper half → statistical reversion favours bear
+        bearJ3Intrinsic += 0.50;
+        auditPush('J3', 'BEAR', 'intrinsic.adx_flat_range', 0.50,
+          `ADX=${lastAD6Val.toFixed(1)} < 15 flat market — price at ${yPercent.toFixed(1)}% of range, bear reversion probable`);
+      } else if (yPercent < 47.5) {
+        // Price in lower half → statistical reversion favours bull
+        bullJ3Intrinsic += 0.50;
+        auditPush('J3', 'BULL', 'intrinsic.adx_flat_range', 0.50,
+          `ADX=${lastAD6Val.toFixed(1)} < 15 flat market — price at ${yPercent.toFixed(1)}% of range, bull reversion probable`);
+      } else {
+        // Price in central 47.5–52.5% band — genuine uncertainty, apply muted symmetric bonus
+        bullJ3Intrinsic += 0.25;
+        bearJ3Intrinsic += 0.25;
+        auditPush('J3', 'BULL', 'intrinsic.adx_flat_range', 0.25,
+          `ADX=${lastAD6Val.toFixed(1)} < 15 flat market — price centered at ${yPercent.toFixed(1)}%, symmetric muted bonus`);
+        auditPush('J3', 'BEAR', 'intrinsic.adx_flat_range', 0.25,
+          `ADX=${lastAD6Val.toFixed(1)} < 15 flat market — price centered at ${yPercent.toFixed(1)}%, symmetric muted bonus`);
+      }
     }
 
     // Market Structure Reversion & Continuity (BUG #8 Component)
     let structSignal = { type: 'NONE' };
     try {
-      structSignal = detectStructureSignal(highs, lows, pivots);
+      structSignal = detectStructureSignal(closes, highs, lows);
     } catch {
       // safe bypass
     }
-    const doubleTopBottom = detectDoubleTopBottom(closes, pivots);
+    const doubleTopBottom = detectDoubleTopBottom(pivots, 0.015);
+
+    // IMPROVE-2: ADX-scaled CHoCH weight
+    // Linear interpolation from 1.0× at ADX=20 to 1.5× at ADX=60, capped at both ends.
+    // ADX 20 → scale 1.00 → chochScore 1.500
+    // ADX 30 → scale 1.10 → chochScore 1.650
+    // ADX 40 → scale 1.25 → chochScore 1.875
+    // ADX 50 → scale 1.38 → chochScore 2.063
+    // ADX 60 → scale 1.50 → chochScore 2.250 (cap)
+    const chochADXScale = Math.min(1.5, Math.max(1.0, 1.0 + (lastAD6Val - 20) / 40));
+    const chochScore    = parseFloat((1.5 * chochADXScale).toFixed(3));
 
     if (structSignal.type === 'CHOCH_BULL') {
-      bullJ3Intrinsic += 1.50;
-      auditPush('J3', 'BULL', 'intrinsic.choch_rejection', 1.50, `CHoCH Bullish breakout indicates major reversion`);
+      bullJ3Intrinsic += chochScore;
+      auditPush('J3', 'BULL', 'intrinsic.choch_rejection', chochScore,
+        `CHoCH Bullish — prior trend ADX=${lastAD6Val.toFixed(1)}, adxScale=${chochADXScale.toFixed(2)}, score=${chochScore}`);
     } else if (structSignal.type === 'CHOCH_BEAR') {
-      bearJ3Intrinsic += 1.50;
-      auditPush('J3', 'BEAR', 'intrinsic.choch_rejection', 1.50, `CHoCH Bearish breakout indicates major reversion`);
+      bearJ3Intrinsic += chochScore;
+      auditPush('J3', 'BEAR', 'intrinsic.choch_rejection', chochScore,
+        `CHoCH Bearish — prior trend ADX=${lastAD6Val.toFixed(1)}, adxScale=${chochADXScale.toFixed(2)}, score=${chochScore}`);
     } else if (structSignal.type === 'BOS_BULL') {
       bearJ3Intrinsic = Math.max(0, bearJ3Intrinsic - 1.00);
       auditPush('J3', 'BEAR', 'intrinsic.bos_continuity_penalty', -1.00, `BOS Bullish trend continuity penalizes counter-trend bear reversal`);
@@ -832,6 +958,155 @@ export function evaluateSignal(
       bullJ3Intrinsic += 1.00;
       auditPush('J3', 'BULL', 'intrinsic.double_bottom', 1.00, `Reversion from floor support (Double Bottom)`);
     }
+
+    // ── NEW-1: Engulfing Candle Detection ──────────────────────────────────
+    // Bullish engulfing: prior bearish, current bullish, current body wraps prior body.
+    // Bearish engulfing: prior bullish, current bearish, current body wraps prior body.
+    // Score scales: base 0.75, +0.25 per extra body-ratio, capped at 1.0.
+    if (ohlcSeries.length >= 2) {
+      const prevBar = ohlcSeries[last - 1];
+      const currBar = ohlcSeries[last];
+      const prevBody = Math.abs(prevBar.close - prevBar.open);
+      const currBody = Math.abs(currBar.close - currBar.open);
+
+      const isBullishEngulf =
+        prevBar.close < prevBar.open &&              // prior candle: bearish body
+        currBar.close > currBar.open &&              // current candle: bullish body
+        currBar.open  <= prevBar.close &&            // opens at or below prior close (gap allowed)
+        currBar.close >= prevBar.open  &&            // closes at or above prior open
+        currBody > prevBody * 0.90;                  // body substantial (90% size minimum)
+
+      const isBearishEngulf =
+        prevBar.close > prevBar.open &&              // prior candle: bullish body
+        currBar.close < currBar.open &&              // current candle: bearish body
+        currBar.open  >= prevBar.close &&            // opens at or above prior close
+        currBar.close <= prevBar.open  &&            // closes at or below prior open
+        currBody > prevBody * 0.90;
+
+      if (isBullishEngulf) {
+        const sizeRatio   = currBody / Math.max(prevBody, 1e-9);
+        const engulfScore = Math.min(1.0, parseFloat((0.75 + (sizeRatio - 1.0) * 0.25).toFixed(3)));
+        bullJ3Intrinsic += engulfScore;
+        auditPush('J3', 'BULL', 'intrinsic.bull_engulfing', engulfScore,
+          `Bullish engulfing — curr body ${currBody.toFixed(2)} wraps prev body ${prevBody.toFixed(2)}, sizeRatio=${sizeRatio.toFixed(2)}, score=${engulfScore}`);
+      }
+
+      if (isBearishEngulf) {
+        const sizeRatio   = currBody / Math.max(prevBody, 1e-9);
+        const engulfScore = Math.min(1.0, parseFloat((0.75 + (sizeRatio - 1.0) * 0.25).toFixed(3)));
+        bearJ3Intrinsic += engulfScore;
+        auditPush('J3', 'BEAR', 'intrinsic.bear_engulfing', engulfScore,
+          `Bearish engulfing — curr body ${currBody.toFixed(2)} wraps prev body ${prevBody.toFixed(2)}, sizeRatio=${sizeRatio.toFixed(2)}, score=${engulfScore}`);
+      }
+    }
+
+    // ── NEW-2: Three-bar consecutive close pressure at boundaries ──────────
+    // Confirms the reversal is in progress, not just a single-candle reaction.
+    // Only fires when yPercent confirms we are in a boundary zone.
+    if (ohlcSeries.length >= 3) {
+      const barC1 = ohlcSeries[last - 2];
+      const barC2 = ohlcSeries[last - 1];
+      const barC3 = ohlcSeries[last];
+
+      const threeBearClose =
+        barC1.close < barC1.open &&
+        barC2.close < barC2.open &&
+        barC3.close < barC3.open;
+
+      const threeBullClose =
+        barC1.close > barC1.open &&
+        barC2.close > barC2.open &&
+        barC3.close > barC3.open;
+
+      if (threeBearClose && yPercent >= 65) {
+        bearJ3Intrinsic += 0.60;
+        auditPush('J3', 'BEAR', 'intrinsic.three_bar_bear_pressure', 0.60,
+          `3 consecutive bearish closes at high boundary (yPercent=${yPercent.toFixed(1)}%)`);
+      }
+      if (threeBullClose && yPercent <= 35) {
+        bullJ3Intrinsic += 0.60;
+        auditPush('J3', 'BULL', 'intrinsic.three_bar_bull_pressure', 0.60,
+          `3 consecutive bullish closes at low boundary (yPercent=${yPercent.toFixed(1)}%)`);
+      }
+    }
+
+    // ── NEW-3: Fair Value Gap (FVG) — 3-candle imbalance zone detection ────
+    // FVG forms when there is a gap between C1 and C3 that C2 did not trade through.
+    // Score is proportional to gap size in ATR units. Only fires in boundary zones.
+    if (ohlcSeries.length >= 3) {
+      const fvgBar1    = ohlcSeries[last - 2];   // C1
+      const fvgBar3    = ohlcSeries[last];        // C3
+      const atrNow     = techCache.atrVals?.[last] ?? 0;
+      const fvgMinSize = atrNow * 0.30;           // Minimum 0.3×ATR for significance
+
+      // Bearish FVG: C3.low is ABOVE C1.high → unfilled gap above current bar
+      const bearFVGSize = fvgBar3.low - fvgBar1.high;   // positive = gap exists above
+
+      // Bullish FVG: C3.high is BELOW C1.low → unfilled gap below current bar
+      const bullFVGSize = fvgBar1.low - fvgBar3.high;   // positive = gap exists below
+
+      if (bearFVGSize > fvgMinSize && yPercent >= 60) {
+        const atrRatio = atrNow > 0 ? bearFVGSize / atrNow : 0;
+        const fvgScore = Math.min(0.75, parseFloat((0.40 + atrRatio * 0.10).toFixed(3)));
+        bearJ3Intrinsic += fvgScore;
+        auditPush('J3', 'BEAR', 'intrinsic.fvg_resistance', fvgScore,
+          `Bearish FVG: gap=${bearFVGSize.toFixed(2)} (${atrRatio.toFixed(1)}×ATR) at high boundary yPercent=${yPercent.toFixed(1)}%`);
+      }
+
+      if (bullFVGSize > fvgMinSize && yPercent <= 40) {
+        const atrRatio = atrNow > 0 ? bullFVGSize / atrNow : 0;
+        const fvgScore = Math.min(0.75, parseFloat((0.40 + atrRatio * 0.10).toFixed(3)));
+        bullJ3Intrinsic += fvgScore;
+        auditPush('J3', 'BULL', 'intrinsic.fvg_support', fvgScore,
+          `Bullish FVG: gap=${bullFVGSize.toFixed(2)} (${atrRatio.toFixed(1)}×ATR) at low boundary yPercent=${yPercent.toFixed(1)}%`);
+      }
+    }
+
+    // ── NEW-4: Triple boundary wick rejection ──────────────────────────────
+    // 3 consecutive candles with highs within 0.3% = triple resistance cluster.
+    // 3 consecutive candles with lows within 0.3%  = triple support cluster.
+    // Adds to rejection side, penalises counter-trend side.
+    if (ohlcSeries.length >= 3) {
+      const triBar1  = ohlcSeries[last - 2];
+      const triBar2  = ohlcSeries[last - 1];
+      const triBar3  = ohlcSeries[last];
+      const midPrice = lastClose > 0 ? lastClose : 1;
+
+      const triHighs    = [triBar1.high, triBar2.high, triBar3.high];
+      const triLows     = [triBar1.low,  triBar2.low,  triBar3.low];
+      const highSpread  = (Math.max(...triHighs) - Math.min(...triHighs)) / midPrice;
+      const lowSpread   = (Math.max(...triLows)  - Math.min(...triLows))  / midPrice;
+
+      // Triple resistance: all 3 highs within 0.3% of each other, price in high zone
+      if (highSpread < 0.003 && yPercent >= 65) {
+        bearJ3Intrinsic += 0.80;
+        bullJ3Intrinsic  = Math.max(0, bullJ3Intrinsic - 0.50);
+        auditPush('J3', 'BEAR', 'intrinsic.triple_wick_resistance', 0.80,
+          `Triple upper wick cluster — 3-bar high spread=${( highSpread * 100).toFixed(3)}% < 0.3%, yPercent=${yPercent.toFixed(1)}%`);
+        auditPush('J3', 'BULL', 'intrinsic.triple_wick_resistance_penalty', -0.50,
+          `Bull J3 penalised −0.50 — triple resistance reduces breakout probability`);
+      }
+
+      // Triple support: all 3 lows within 0.3% of each other, price in low zone
+      if (lowSpread < 0.003 && yPercent <= 35) {
+        bullJ3Intrinsic += 0.80;
+        bearJ3Intrinsic  = Math.max(0, bearJ3Intrinsic - 0.50);
+        auditPush('J3', 'BULL', 'intrinsic.triple_wick_support', 0.80,
+          `Triple lower wick cluster — 3-bar low spread=${(lowSpread * 100).toFixed(3)}% < 0.3%, yPercent=${yPercent.toFixed(1)}%`);
+        auditPush('J3', 'BEAR', 'intrinsic.triple_wick_support_penalty', -0.50,
+          `Bear J3 penalised −0.50 — triple support reduces breakdown probability`);
+      }
+    }
+
+    // ╔══════════════════════════════════════════════════════════════════════╗
+    // ║  FUTURE J3 IMPROVEMENTS — Scaffolding (not active code)             ║
+    // ╚══════════════════════════════════════════════════════════════════════╝
+
+    // ── FUTURE-1: Orderblock Detection ─────────────────────────────────────
+    // An orderblock is the last bearish candle before a strong impulsive bull move
+    // (demand block) or the last bullish candle before a strong bear move (supply block).
+    // Plan: findOrderBlocks(series, atrMultiplier=1.5) → {demand[], supply[]}
+    //   A "strong
   }
 
   if (isCustomList) {
@@ -1372,6 +1647,8 @@ ${rulingStr}
     j4Score: skepticPenalty,       // legacy
     j4PenaltyPct: skepticPenalty,  // Skeptic stripped X% confidence — not a judge score
     techniquesEvaluation,
+    techniqueVotes: evaluationVotes,
+    deadTechniques,
     auditTrail,
     noTechniquesUploaded: isNoTech,
 
