@@ -530,10 +530,7 @@ export function useBotLoop(
 
   const runAnalysisCycle = useCallback(async (isForced: boolean = false) => {
     if (!symbol) return;
-    if (isInTradeRef.current) {
-      setLastBlockReason('IN_TRADE: actively managing open scalp position');
-      return;
-    }
+    
     // Need at least 15 candles: 14 for ATR14 + 1 current
     if (feed.ohlcvBuffer.length < 15) {
       setLastBlockReason(`WARMUP: ${feed.ohlcvBuffer.length}/15 candles loaded. Waiting...`);
@@ -597,6 +594,20 @@ export function useBotLoop(
       setLastSignal(direction);
       setLastConfidence(confidence);
       setLastAnalysisResult(result.analysis);
+
+      // IN_TRADE Auto-Exit Check
+      if (isInTradeRef.current) {
+        if (winner === 'BEAR' && confidence >= minConfidence) {
+          const tId = activeTradesRef.current[0]?.id;
+          if (tId && feed.currentPrice) {
+            await closeTradeById(tId, feed.currentPrice, 'BEAR_SIGNAL_EXIT');
+            setLastBlockReason(`CLOSED: strong BEAR signal detected (${confidence.toFixed(1)}% confidence)`);
+          }
+        } else {
+          setLastBlockReason('IN_TRADE: actively managing open scalp position (last candle analyzed)');
+        }
+        return; // Always return so we do not attempt to open a duplicate trade!
+      }
 
       // Step 3 — Stability filter (REMOVED - enter immediately on first LONG signal)
       if (direction !== 'LONG') {
@@ -700,7 +711,8 @@ export function useBotLoop(
         currentPrice:               entryPrice,
       };
 
-      const decision = evaluateScalpSignal(ohlc, { winner: result.analysis?.judge?.winner || 'NO_TRADE' }, ctx as any);
+      const isAiConfident = result.analysis?.judge?.winner === 'BULL';
+      const decision = evaluateScalpSignal(ohlc, { winner: result.analysis?.judge?.winner || 'NO_TRADE' }, ctx as any, isAiConfident);
       const plan = decision.plan;
       if (!plan) {
         setLastBlockReason('PLAN_FAIL: evaluateScalpSignal returned no plan');

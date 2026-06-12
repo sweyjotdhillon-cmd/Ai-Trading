@@ -875,19 +875,10 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
         );
       })()}
 
-      {/* ── Buy Now button ────────────────────────────────────────── */}
+      {/* ── Force Buy button ────────────────────────────────────────── */}
       {bot.phase !== 'IDLE' && bot.phase !== 'IN_TRADE' && bot.phase !== 'HALTED' && bot.currentPrice != null && (
         <div className="flex flex-col gap-2 w-full">
           <div className="flex gap-3">
-            <button
-              onClick={() => bot.manualBuy(false)}
-              id="btn-manual-buy"
-              className="flex-1 py-3 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25
-                         border border-emerald-500/40 text-emerald-400 text-xs font-black
-                         uppercase tracking-widest transition-all shadow-lg active:scale-[0.98]"
-            >
-              ⚡ Buy Now
-            </button>
             <button
               onClick={() => bot.manualBuy(true)}
               id="btn-force-buy"
@@ -966,174 +957,255 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
           </div>
         </div>
 
-        {bot.activeTrades && bot.activeTrades.length > 0 ? (
-          <div className="flex flex-col gap-4">
-            {bot.activeTrades.map(trade => {
-              if (!trade.plan) return null;
-              const entry = trade.plan.entry;
-              const tp = trade.plan.takeProfit2;
-              const sl = trade.symbol === bot.symbol ? (bot.trailSL || trade.plan.stopLoss) : trade.plan.stopLoss;
-              
-              let currentPrice = activeTradesPrices[trade.symbol];
-              if (trade.symbol === bot.symbol && bot.currentPrice) {
-                currentPrice = bot.currentPrice;
-              }
-              if (!currentPrice) {
-                currentPrice = entry;
-              }
-
-              const shares = trade.plan.positionSize ?? 1;
-              const invested = trade.plan.investmentRupees ?? (shares * entry);
-              
-              const unrealizedPnL = (currentPrice - entry) * shares;
-              const pnlPct = invested > 0 ? (unrealizedPnL / invested) * 100 : 0;
-              const isPnLPos = unrealizedPnL >= 0;
-              
-              const progressPct = (tp - entry) !== 0
-                ? Math.max(0, Math.min(100, ((currentPrice - entry) / (tp - entry)) * 100))
-                : 0;
-              
-              const barColor = isPnLPos ? 'bg-emerald-500' : 'bg-rose-500';
-              const textColor = isPnLPos ? 'text-emerald-400' : 'text-rose-400';
-              const borderPnlColor = isPnLPos ? 'border-emerald-500/20 bg-emerald-950/20' : 'border-rose-500/20 bg-rose-950/20';
-
-              const estCharges = trade.plan.brokerCharges ?? (invested * 0.0005);
-              const elapsedSec = Math.max(0, Math.floor((Date.now() - trade.openedAt) / 1000));
-              const durationStr = elapsedSec < 60 ? `${elapsedSec}s ago` : `${Math.floor(elapsedSec / 60)}m ago`;
-
-              return (
-                <div key={trade.id} className="bg-zinc-950/60 border border-zinc-850 rounded-xl overflow-hidden font-mono text-zinc-300 relative">
-                  <div className="absolute top-0 left-0 w-1.5 h-full bg-[#D9B382]" />
-                  
-                  {/* Card Header */}
-                  <div className="p-4 flex items-center justify-between border-b border-zinc-900 bg-zinc-950/40 pl-5">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[9px] bg-emerald-500/15 text-emerald-400 px-1.5 py-0.5 rounded font-black uppercase tracking-wider font-sans">
-                          LONG
-                        </span>
-                        <strong className="text-white text-sm font-bold font-sans">{trade.symbol}</strong>
-                        <span className="text-[8px] text-zinc-500 bg-zinc-900 border border-zinc-800 px-1 py-0.2 rounded">
-                          ID: {trade.id}
-                        </span>
-                      </div>
-                      <div className="text-[10px] text-zinc-400 mt-1">
-                        {shares} shares · {fmt(invested)} deployed capital
-                      </div>
-                    </div>
-
-                    <div className="flex flex-col items-end gap-1">
-                      <div className="flex items-center gap-1.5">
-                        <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-                        <span className="text-[10px] text-emerald-400 font-extrabold tracking-widest uppercase">LIVE ON CLOUD</span>
-                      </div>
-                      <span className="text-[9px] text-zinc-500">Opened {durationStr}</span>
-                    </div>
-                  </div>
-
-                  {/* Grid details */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 p-4 border-b border-zinc-900/60 text-center">
-                    <div className="bg-zinc-900/20 border border-zinc-900 p-2 rounded">
-                      <span className="text-[8px] text-zinc-500 uppercase block mb-1 font-bold">Entry Price</span>
-                      <strong className="text-zinc-200 text-xs">{fmt(entry)}</strong>
-                    </div>
-                    <div className="bg-zinc-900/20 border border-zinc-900 p-2 rounded">
-                      <span className="text-[8px] text-zinc-500 uppercase block mb-1 font-bold">Current Price</span>
-                      <strong className="text-zinc-200 text-xs">{fmt(currentPrice)}</strong>
-                    </div>
-                    <div className="bg-rose-950/15 border border-rose-950/30 p-2 rounded">
-                      <span className="text-[8px] text-rose-400 uppercase block mb-1 font-black">Stop Loss Target</span>
-                      <strong className="text-rose-400 text-xs">{fmt(sl)}</strong>
-                    </div>
-                    <div className="bg-emerald-950/15 border border-emerald-950/30 p-2 rounded">
-                      <span className="text-[8px] text-emerald-400 uppercase block mb-1 font-black">Take Profit Target</span>
-                      <strong className="text-emerald-400 text-xs">{fmt(tp)}</strong>
-                    </div>
-                  </div>
-
-                  {/* Profit bar & details */}
-                  <div className="p-4 border-b border-zinc-900/60 flex flex-col gap-3">
-                    <div className="flex justify-between items-center text-[9px] font-bold uppercase">
-                      <span className="text-zinc-400">Profit Target Limit Progress</span>
-                      <span className={textColor}>{progressPct.toFixed(1)}% to Target</span>
-                    </div>
-                    <div className="h-2 bg-zinc-900 border border-zinc-850 rounded-full overflow-hidden relative">
-                      <div
-                        className={`h-full rounded-full transition-all duration-300 ${barColor}`}
-                        style={{ width: `${progressPct}%` }}
-                      />
-                    </div>
-                    <div className="flex justify-between items-center text-[10px] text-zinc-500">
-                      <span className="text-rose-400 font-bold flex items-center gap-1">
-                        🔴 STOP LOSS LIMIT: {fmt(sl)} 
-                        <span className="text-[8px] font-normal text-zinc-650">({(((sl - entry)/entry)*100).toFixed(1)}%)</span>
-                      </span>
-                      <span className="text-emerald-400 font-bold flex items-center gap-1">
-                        🟢 TAKE PROFIT LIMIT: {fmt(tp)}
-                        <span className="text-[8px] font-normal text-zinc-650">(+{(((tp - entry)/entry)*100).toFixed(1)}%)</span>
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Live calculations */}
-                  <div className="p-4 grid grid-cols-2 gap-4 text-xs bg-zinc-950/30">
-                    <div className="flex flex-col gap-1 border-r border-zinc-900 pr-2 text-left">
-                      <span className="text-[8px] uppercase font-bold text-zinc-400 mb-0.5">LIVE UNREALIZED RETURN</span>
-                      <div className="flex items-baseline gap-2">
-                        <strong className={`text-sm font-sans font-black ${textColor}`}>
-                          {isPnLPos ? '+' : ''}{fmt(unrealizedPnL)}
-                        </strong>
-                        <span className={`text-[9px] font-bold ${textColor}`}>
-                          ({isPnLPos ? '+' : ''}{pnlPct.toFixed(2)}%)
-                        </span>
-                      </div>
-                      <span className="text-[8px] text-zinc-500">Includes leverage calculations. charges approx {fmt(estCharges)}</span>
-                    </div>
-                    <div className="flex flex-col gap-1 text-right justify-between">
-                      <div>
-                        <span className="text-[8px] uppercase font-bold text-rose-500 mb-0.5 block">MAX RISK AT SL</span>
-                        <strong className="text-rose-400 font-mono text-xs font-black">-{fmt(Math.abs((entry - sl) * shares))}</strong>
-                      </div>
-                      <div>
-                        <span className="text-[8px] uppercase font-bold text-emerald-400 mb-0.5 block">MAX PROFIT AT TP</span>
-                        <strong className="text-emerald-400 font-mono text-xs font-black">+{fmt(Math.abs((tp - entry) * shares))}</strong>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="p-3 bg-zinc-950/50 flex gap-2 border-t border-zinc-900">
-                    <button
-                      onClick={() => bot.forceExit(trade.id)}
-                      className="flex-1 py-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 text-xs font-black uppercase tracking-widest transition-all shadow-md active:scale-[0.98]"
-                    >
-                      Force Exit position at Market
-                    </button>
-                  </div>
+        {(() => {
+          const hasActiveTrades = bot.activeTrades && bot.activeTrades.length > 0;
+          const recentClosedTrades = (bot.tradeHistory || []).filter(t => Date.now() - (t.closedAt ?? Date.now()) <= 24 * 60 * 60 * 1000);
+          
+          if (!hasActiveTrades && recentClosedTrades.length === 0) {
+            return (
+              <div className="border border-dashed border-zinc-800/80 rounded-xl p-8 text-center text-zinc-500 bg-zinc-950/20 flex flex-col items-center justify-center gap-3">
+                <div className="flex items-center justify-center gap-2 text-[#D9B382] font-black font-sans text-xs uppercase tracking-widest">
+                  <span className="w-2 h-2 rounded-full bg-[#D9B382] animate-ping" />
+                  <span>ACTIVE CLOUD TABLE INERT</span>
                 </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="border border-dashed border-zinc-800/80 rounded-xl p-8 text-center text-zinc-500 bg-zinc-950/20 flex flex-col items-center justify-center gap-3">
-            <div className="flex items-center justify-center gap-2 text-[#D9B382] font-black font-sans text-xs uppercase tracking-widest">
-              <span className="w-2 h-2 rounded-full bg-[#D9B382] animate-ping" />
-              <span>ACTIVE CLOUD TABLE INERT</span>
+                <p className="text-[9.5px] font-mono text-zinc-400 uppercase tracking-wider max-w-md">
+                  No live positions are currently open on the cloud database. Verify that the trading bot has been started and is scanning {symbol || '—'}.
+                </p>
+                {bot.phase !== 'IDLE' && (
+                  <button
+                    onClick={handleReEvaluate}
+                    id="btn-re-evaluate-scanning"
+                    disabled={isReEvaluatingLocal || bot.isAnalyzing}
+                    className="mt-1 px-4 py-2 rounded-xl bg-[#D9B382] hover:bg-[#c9a171] text-zinc-950 text-[10px] font-black uppercase tracking-widest transition-all shrink-0 flex items-center gap-1.5 active:scale-[0.98] disabled:opacity-50 cursor-pointer shadow-md"
+                  >
+                    🔄 {isReEvaluatingLocal || bot.isAnalyzing ? 'Evaluating System...' : 'Trigger Immediate Signal Scan'}
+                  </button>
+                )}
+              </div>
+            );
+          }
+          
+          return (
+            <div className="flex flex-col gap-4">
+              {hasActiveTrades && bot.activeTrades.map(trade => {
+                if (!trade.plan) return null;
+                const entry = trade.plan.entry;
+                const tp = trade.plan.takeProfit2;
+                const sl = trade.symbol === bot.symbol ? (bot.trailSL || trade.plan.stopLoss) : trade.plan.stopLoss;
+                
+                let currentPrice = activeTradesPrices[trade.symbol];
+                if (trade.symbol === bot.symbol && bot.currentPrice) {
+                  currentPrice = bot.currentPrice;
+                }
+                if (!currentPrice) {
+                  currentPrice = entry;
+                }
+
+                const shares = trade.plan.positionSize ?? 1;
+                const invested = trade.plan.investmentRupees ?? (shares * entry);
+                
+                const unrealizedPnL = (currentPrice - entry) * shares;
+                const pnlPct = invested > 0 ? (unrealizedPnL / invested) * 100 : 0;
+                const isPnLPos = unrealizedPnL >= 0;
+                
+                const progressPct = (tp - entry) !== 0
+                  ? Math.max(0, Math.min(100, ((currentPrice - entry) / (tp - entry)) * 100))
+                  : 0;
+                
+                const barColor = isPnLPos ? 'bg-emerald-500' : 'bg-rose-500';
+                const textColor = isPnLPos ? 'text-emerald-400' : 'text-rose-400';
+                const borderPnlColor = isPnLPos ? 'border-emerald-500/20 bg-emerald-950/20' : 'border-rose-500/20 bg-rose-950/20';
+
+                const estCharges = trade.plan.brokerCharges ?? (invested * 0.0005);
+                const elapsedSec = Math.max(0, Math.floor((Date.now() - trade.openedAt) / 1000));
+                const durationStr = elapsedSec < 60 ? `${elapsedSec}s ago` : `${Math.floor(elapsedSec / 60)}m ago`;
+
+                return (
+                  <div key={trade.id} className="bg-zinc-950/60 border border-zinc-850 rounded-xl overflow-hidden font-mono text-zinc-300 relative">
+                    <div className="absolute top-0 left-0 w-1.5 h-full bg-[#D9B382]" />
+                    
+                    {/* Card Header */}
+                    <div className="p-4 flex items-center justify-between border-b border-zinc-900 bg-zinc-950/40 pl-5">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[9px] bg-emerald-500/15 text-emerald-400 px-1.5 py-0.5 rounded font-black uppercase tracking-wider font-sans">
+                            LONG
+                          </span>
+                          <strong className="text-white text-sm font-bold font-sans">{trade.symbol}</strong>
+                          <span className="text-[8px] text-zinc-500 bg-zinc-900 border border-zinc-800 px-1 py-0.2 rounded">
+                            ID: {trade.id}
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-zinc-400 mt-1">
+                          {shares} shares · {fmt(invested)} deployed capital
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col items-end gap-1">
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                          <span className="text-[10px] text-emerald-400 font-extrabold tracking-widest uppercase">LIVE ON CLOUD</span>
+                        </div>
+                        <span className="text-[9px] text-zinc-500">Opened {durationStr}</span>
+                      </div>
+                    </div>
+
+                    {/* Grid details */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 p-4 border-b border-zinc-900/60 text-center">
+                      <div className="bg-zinc-900/20 border border-zinc-900 p-2 rounded">
+                        <span className="text-[8px] text-zinc-500 uppercase block mb-1 font-bold">Entry Price</span>
+                        <strong className="text-zinc-200 text-xs">{fmt(entry)}</strong>
+                      </div>
+                      <div className="bg-zinc-900/20 border border-zinc-900 p-2 rounded">
+                        <span className="text-[8px] text-zinc-500 uppercase block mb-1 font-bold">Current Price</span>
+                        <strong className="text-zinc-200 text-xs">{fmt(currentPrice)}</strong>
+                      </div>
+                      <div className="bg-rose-950/15 border border-rose-950/30 p-2 rounded">
+                        <span className="text-[8px] text-rose-400 uppercase block mb-1 font-black">Stop Loss Target</span>
+                        <strong className="text-rose-400 text-xs">{fmt(sl)}</strong>
+                      </div>
+                      <div className="bg-emerald-950/15 border border-emerald-950/30 p-2 rounded">
+                        <span className="text-[8px] text-emerald-400 uppercase block mb-1 font-black">Take Profit Target</span>
+                        <strong className="text-emerald-400 text-xs">{fmt(tp)}</strong>
+                      </div>
+                    </div>
+
+                    {/* Profit bar & details */}
+                    <div className="p-4 border-b border-zinc-900/60 flex flex-col gap-3">
+                      <div className="flex justify-between items-center text-[9px] font-bold uppercase">
+                        <span className="text-zinc-400">Profit Target Limit Progress</span>
+                        <span className={textColor}>{progressPct.toFixed(1)}% to Target</span>
+                      </div>
+                      <div className="h-2 bg-zinc-900 border border-zinc-850 rounded-full overflow-hidden relative">
+                        <div
+                          className={`h-full rounded-full transition-all duration-300 ${barColor}`}
+                          style={{ width: `${progressPct}%` }}
+                        />
+                      </div>
+                      <div className="flex justify-between items-center text-[10px] text-zinc-500">
+                        <span className="text-rose-400 font-bold flex items-center gap-1">
+                          🔴 STOP LOSS LIMIT: {fmt(sl)} 
+                          <span className="text-[8px] font-normal text-zinc-650">({(((sl - entry)/entry)*100).toFixed(1)}%)</span>
+                        </span>
+                        <span className="text-emerald-400 font-bold flex items-center gap-1">
+                          🟢 TAKE PROFIT LIMIT: {fmt(tp)}
+                          <span className="text-[8px] font-normal text-zinc-650">(+{(((tp - entry)/entry)*100).toFixed(1)}%)</span>
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Live calculations */}
+                    <div className="p-4 grid grid-cols-2 gap-4 text-xs bg-zinc-950/30">
+                      <div className="flex flex-col gap-1 border-r border-zinc-900 pr-2 text-left">
+                        <span className="text-[8px] uppercase font-bold text-zinc-400 mb-0.5">LIVE UNREALIZED RETURN</span>
+                        <div className="flex items-baseline gap-2">
+                          <strong className={`text-sm font-sans font-black ${textColor}`}>
+                            {isPnLPos ? '+' : ''}{fmt(unrealizedPnL)}
+                          </strong>
+                          <span className={`text-[9px] font-bold ${textColor}`}>
+                            ({isPnLPos ? '+' : ''}{pnlPct.toFixed(2)}%)
+                          </span>
+                        </div>
+                        <span className="text-[8px] text-zinc-500">Includes leverage calculations. charges approx {fmt(estCharges)}</span>
+                      </div>
+                      <div className="flex flex-col gap-1 text-right justify-between">
+                        <div>
+                          <span className="text-[8px] uppercase font-bold text-rose-500 mb-0.5 block">MAX RISK AT SL</span>
+                          <strong className="text-rose-400 font-mono text-xs font-black">-{fmt(Math.abs((entry - sl) * shares))}</strong>
+                        </div>
+                        <div>
+                          <span className="text-[8px] uppercase font-bold text-emerald-400 mb-0.5 block">MAX PROFIT AT TP</span>
+                          <strong className="text-emerald-400 font-mono text-xs font-black">+{fmt(Math.abs((tp - entry) * shares))}</strong>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="p-3 bg-zinc-950/50 flex gap-2 border-t border-zinc-900">
+                      <button
+                        onClick={() => bot.forceExit(trade.id)}
+                        className="flex-1 py-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 text-xs font-black uppercase tracking-widest transition-all shadow-md active:scale-[0.98]"
+                      >
+                        Force Exit position at Market
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {recentClosedTrades.length > 0 && (
+                <>
+                  <div className="mt-4 mb-1 flex items-center justify-center gap-3">
+                    <div className="h-px bg-zinc-800 flex-1"></div>
+                    <span className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">Settled Today (Last 24h)</span>
+                    <div className="h-px bg-zinc-800 flex-1"></div>
+                  </div>
+                  
+                  {recentClosedTrades.map(trade => {
+                    const entry = trade.entryPrice;
+                    const exitPrice = trade.exitPrice || entry;
+                    const realizedPnL = trade.realizedPnL || 0;
+                    const isPnLPos = realizedPnL >= 0;
+                    const pnlColor = isPnLPos ? 'text-emerald-400' : 'text-rose-400';
+                    const icon = isPnLPos ? '🟢' : '🔴';
+                    const shares = trade.plan?.positionSize ?? 1;
+                    const invested = trade.plan?.investmentRupees ?? (shares * entry);
+                    const outcomeText = trade.outcome?.replace('_', ' ') || 'CLOSED';
+
+                    const elapsedOpenedSec = Math.max(0, Math.floor((Date.now() - trade.openedAt) / 1000));
+                    const durationStr = trade.durationMinutes ? `${trade.durationMinutes.toFixed(1)}m` : (elapsedOpenedSec < 60 ? `${elapsedOpenedSec}s` : `${Math.floor(elapsedOpenedSec / 60)}m`);
+                    
+                    return (
+                      <div key={trade.id} className="bg-zinc-950/30 border border-zinc-800/60 rounded-xl overflow-hidden font-mono text-zinc-400 relative">
+                        <div className={`absolute top-0 left-0 w-1 h-full ${isPnLPos ? 'bg-emerald-500/50' : 'bg-rose-500/50'}`} />
+                        
+                        <div className="p-3.5 flex items-center justify-between border-b border-zinc-900/50 bg-zinc-950/20 pl-4">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[9px] bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded font-black uppercase tracking-wider font-sans">
+                                SETTLED
+                              </span>
+                              <strong className="text-zinc-300 text-sm font-bold font-sans">{trade.symbol}</strong>
+                            </div>
+                            <div className="text-[10px] text-zinc-500 mt-1">
+                              Duration: {durationStr}
+                            </div>
+                          </div>
+                          <div className="flex flex-col items-end gap-1">
+                            <span className={`text-[10px] font-extrabold tracking-widest uppercase ${trade.outcome?.includes('TP') ? 'text-emerald-500' : trade.outcome?.includes('SL') ? 'text-rose-500' : 'text-amber-500'}`}>
+                              {outcomeText}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="p-4 grid grid-cols-2 gap-4 text-xs">
+                          <div className="flex flex-col gap-1 border-r border-zinc-900 pr-2 text-left">
+                            <span className="text-[8px] uppercase font-bold text-zinc-500 mb-0.5">FINAL REALIZED RETURN</span>
+                            <div className="flex items-baseline gap-2">
+                              <strong className={`text-sm font-sans font-black ${pnlColor}`}>
+                                {isPnLPos ? '+' : ''}{fmt(realizedPnL)}
+                              </strong>
+                            </div>
+                            <span className="text-[8px] text-zinc-600">Invested: {fmt(invested)}</span>
+                          </div>
+                          <div className="flex flex-col gap-1 text-right justify-between pt-1">
+                            <div>
+                                <span className="text-[8px] text-zinc-500 uppercase block font-bold">Entry</span>
+                                <strong className="text-zinc-300 text-[11px]">{fmt(entry)}</strong>
+                            </div>
+                            <div>
+                                <span className="text-[8px] text-zinc-500 uppercase block font-bold">Exit</span>
+                                <strong className="text-zinc-300 text-[11px]">{fmt(exitPrice)}</strong>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </>
+              )}
             </div>
-            <p className="text-[9.5px] font-mono text-zinc-400 uppercase tracking-wider max-w-md">
-              No live positions are currently open on the cloud database. Verify that the trading bot has been started and is scanning {symbol || '—'}.
-            </p>
-            {bot.phase !== 'IDLE' && (
-              <button
-                onClick={handleReEvaluate}
-                id="btn-re-evaluate-scanning"
-                disabled={isReEvaluatingLocal || bot.isAnalyzing}
-                className="mt-1 px-4 py-2 rounded-xl bg-[#D9B382] hover:bg-[#c9a171] text-zinc-950 text-[10px] font-black uppercase tracking-widest transition-all shrink-0 flex items-center gap-1.5 active:scale-[0.98] disabled:opacity-50 cursor-pointer shadow-md"
-              >
-                🔄 {isReEvaluatingLocal || bot.isAnalyzing ? 'Evaluating System...' : 'Trigger Immediate Signal Scan'}
-              </button>
-            )}
-          </div>
-        )}
+          );
+        })()}
       </div>
 
       {/* ── SECTION 4: Session Stats ──────────────────────────────────── */}
