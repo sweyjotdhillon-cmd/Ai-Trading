@@ -4,6 +4,38 @@ ChartLens is a highly specialized, 100% offline, local browser-based platform en
 
 ---
 
+## 0. Quick Start & Prerequisites
+
+To begin working with the ChartLens codebase, ensure your local development environment is correctly configured.
+
+### Prerequisites
+- **Node.js**: Requires a modern LTS version of Node.
+- **Package Manager**: Strictly use `pnpm` (version 10.x+). Do not use `npm` or `yarn` in this repository.
+
+### Installation
+Clone the repository and install the dependencies:
+```bash
+git clone <repository_url>
+cd chartlens
+pnpm install
+```
+*Note: If running `pnpm install` alters `pnpm-lock.yaml`, always revert the lockfile (`git restore pnpm-lock.yaml`) unless dependency updates are explicitly in scope.*
+
+### Quick Commands
+- **Start Development Server**: `pnpm dev` (Starts Vite server on http://localhost:5173 or 3001)
+- **Type Checking**: `npx tsc --noEmit`
+- **Linting**: `pnpm lint`
+- **Run Tests**: `npx vitest run` (Executes the model harness including deterministic guards)
+- **Build Production**: `pnpm build`
+- **Preview Production Build**: `npx vite preview` (Served on http://localhost:4173)
+
+### Deployment
+ChartLens is configured to deploy via **Cloudflare Pages** (using `wrangler.jsonc`) and **Render**.
+- **Render Web Service**: Vite's `preview` server must be configured to bind to host `0.0.0.0` (`host: true`) and allow hosts dynamically (`allowedHosts: true`) to pass Render's health checks.
+
+---
+
+
 ## 1. System Architecture & Tech Stack
 
 *   **100% Offline Execution**: Runs entirely inside the client browser without external API services or network requests to ensure deterministic performance and privacy.
@@ -141,3 +173,24 @@ ChartLens is designed and built in compliance with SEBI regulatory guidelines an
 
 
 
+
+
+---
+
+## 12. Complete Detailed Feature Breakdown
+
+### A. The 3D Component Rendering Engine
+ChartLens uses `@react-three/fiber` and `three.js` to provide a highly interactive, 3D visualization layer. The system renders floating diagnostic layers over charts to visualize the deterministic decisions.
+- **Isolating Thread Memory**: A robust state-isolation architecture ensures that no cross-image signal/memory pollution occurs during backtesting. Web Workers are completely stateless per iteration.
+
+### B. Fallback OCR and Normalize Data
+The machine vision pipeline employs a fallback mechanism (`NORMALIZED_FALLBACK`) using percentage-based calculations if exact absolute price numbers cannot be reliably extracted via OCR. This ensures continuous operation in extremely noisy graphical charts.
+
+### C. The Epsilon Guard and Determinism Checks
+To guarantee strict determinism across different hardware, the application executes an `runEpsilonGuard()` verification at startup inside `analysisWorker.ts`. This validates that native floating-point math libraries on the current environment match the expected standard deviation parameters.
+
+### D. Silent Audio Wake Lock
+When bulk processing large backtests in background tabs, modern browsers heavily throttle or suspend Web Worker execution. ChartLens uses a "silent audio hack" via a continuously looping, silent base64 `Audio` element in `src/hooks/useWakeLock.ts` to maintain maximum CPU thread allocation.
+
+### E. Frontend Interception of Errors
+To ensure the highest reliability during operations, all uncaught exceptions, promise rejections, and Web Worker faults are globally intercepted in `src/main.tsx` and broadcast via `app-console-error` custom events to the main `App` component, displaying a scrollable global error overlay instead of silent failures.
