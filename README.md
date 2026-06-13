@@ -141,3 +141,44 @@ ChartLens is designed and built in compliance with SEBI regulatory guidelines an
 
 
 
+
+---
+
+## 12. Deployment Environments (Render & Cloudflare)
+
+ChartLens supports multiple modern edge and container deployment environments with specific networking constraints:
+
+*   **Cloudflare Pages**: SPA routing is seamlessly managed via the `wrangler.jsonc` file, utilizing standard Vite build output and asset delivery through the global edge network.
+*   **Render Web Services**: The application relies on a bespoke Express backend (`server.ts`) compiled to CommonJS via esbuild (`dist/server.cjs`) during the Vite build process.
+    *   **Port Binding**: Render injects a `PORT` environment variable. The production server must dynamically bind to `process.env.PORT` rather than relying on a hardcoded port. Avoid checking `process.env.PORT` to start servers exclusively during the build phase (e.g., `pnpm build`), as this can lead to pre-mature starts and build timeouts.
+    *   **Vite Preview Configuration**: If served natively via Vite's preview server on Render, the `vite.config.ts` must be explicitly configured with a `preview` block to bind to host `0.0.0.0` (`host: true`), set `allowedHosts: true`, and actively listen to `process.env.PORT` to satisfy Render health checks and avoid 502 Bad Gateway responses.
+    *   **Dashboard Overrides**: Build Command and Start Command settings configured inside the Render Dashboard explicitly override `render.yaml` specifications.
+
+---
+
+## 13. Autonomous Bot Mode & Scalping Engine
+
+ChartLens incorporates a localized autonomous 'bot mode' powered by a sophisticated Scalping Engine (`evaluateScalpSignal`). This mode transitions away from previous binary options paradigms to a dedicated long-only scalping methodology:
+
+*   **Long-Only Output Matrix**: The engine explicitly emits only `LONG` or `NO_TRADE` signals. Bearish trajectory indications act strictly as mathematical invalidations and filtering weights, never resulting in naked short-sell recommendations.
+*   **Core Scalping Primitives**: Built on top of dynamic localized structural markers, leveraging functions such as `findSwingPivots`, Average True Range (`atr`), and Volume Weighted Average Price Proxy (`vwapProxy`).
+*   **Temporal Stability Filtration**: Incorporates dedicated state managers (like `PatternStabilityManager` and `GapStabilityManager`) nested within the signal loop to enforce required confirmation windows across tick streams.
+
+---
+
+## 14. Feature Flags, Web Workers, & Application Resiliency
+
+### A. Feature Flag Controls
+Experimental and incomplete capabilities are explicitly gated behind centralized toggles situated inside `src/config/featureFlags.ts`. Variables such as `enableCandlestickRepoPatterns` and `enableGapDetection` allow researchers to toggle sophisticated pipeline nodes safely without manually excising code blocks.
+
+### B. Background Process Wake-Locks
+Due to the intense computational weight of the concurrent Web Worker pools analyzing high-volume batch backtests, the browser's native resource throttling (suspending tabs in the background) poses a critical risk to data consistency. The application mitigates this using a `useWakeLock` hook (`src/hooks/useWakeLock.ts`), implementing a 'silent audio' hack. It embeds and continuously loops a silent base64 `Audio` element to force the browser to classify the background tab as actively processing media, preventing suspension.
+
+### C. Global Error Capture & UI Overlays
+ChartLens enforces a strict "No Silent Failure" mandate. Rather than logging errors exclusively to standard browser dev tools, `src/main.tsx` actively intercepts all global unhandled rejections, application faults, and Web Worker panic states via a global `console.error` patch. These exceptions dispatch custom `app-console-error` DOM events which render detailed, scrollable diagnostic stack-trace overlays directly onto the primary UI canvas.
+
+---
+
+## 15. Extended Architectural Documentation
+
+For a comprehensive dissection of the offline, client-side static image parsing matrices, coordinate projection homography, and the strict sequence mapping from OCR ingestion to quantitative verdict, refer to the dedicated `IMAGE_ANALYSIS_FLOW.md` artifact located in the repository root.
