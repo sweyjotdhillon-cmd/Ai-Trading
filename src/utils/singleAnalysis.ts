@@ -447,8 +447,8 @@ export async function runSingleAnalysis(params: {
   if (meta.reason === "NO_CALIBRATION" || meta.candlesLength === 0) {
     const errorText =
       meta.candlesLength === 0
-        ? "No candles detected. Position chart clearly in camera view."
-        : "Calibration required: Tap 'Calibrate Colors' before running analysis.";
+        ? "No candles detected. Verify clean historical data feed."
+        : "Data error: Verify historical series formatting.";
     if (onJudgeLogs) {
       onJudgeLogs({
         judge1: { text: "STANDBY", status: "idle" },
