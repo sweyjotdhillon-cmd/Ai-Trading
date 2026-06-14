@@ -1,74 +1,73 @@
-# ChartLens: Deterministic Client-Side Point-Based Quantitative Chart Analyzer
+# ChartLens: Pure Text-Based Quantitative Market Analysis Terminal
 
-ChartLens is a high-performance, 100% offline-first, client-side quantitative chart analysis terminal. It combines edge computer vision pipelines with a multi-layered deterministic rule engine to run high-fidelity trading simulation, pattern corroboration, and paper portfolios inside a sandboxed browser environment with Firebase cloud integration.
+ChartLens is a high-performance, 100% offline-first quantitative trading simulation terminal. It ingests pure text-based market data (structured JSON feeds) via high-fidelity proxy pipelines and utilizes a multi-layered deterministic rule engine to run granular trade simulations, pattern corroboration, and paper portfolios entirely in a client-side environment with persistent Firebase cloud storage.
 
 ---
 
 ## 1. System Architecture & Tech Stack
 
 ```
-                                  [ RAW USER CHARTS / CAPTURES ]
-                                                │
-                                                ▼
-                                    Line / Axis Normalization
-                                                │
-                                                ▼  (Color Space Calibration)
-                                     [ homography / OCR / wick ]
-                                                │
-                                                ▼  (100% Isolated Thread Interface)
-   ┌────────────────────────────────────────────┴────────────────────────────────────────────┐
-   │                                  WEB WORKER TASK SCHEDULER                              │
-   │                                (`src/workers/analysisWorker.ts`)                        │
-   │                                                                                         │
-   │   ┌────────────────────┐     ┌─────────────────────┐     ┌──────────────────────────┐   │
-   │   │  PIXEL RECTIFIER   │     │  CANDLE DIGITIZER   │     │   4-JUDGE RULE MATRIX    │   │
-   │   │ (Canny/Sobel/Otsu) │     │ (Axis Price OCR)    │     │   (`ruleEngine.ts`)      │   │
-   │   └─────────┬──────────┘     └──────────┬──────────┘     └────────────┬─────────────┘   │
-   └─────────────┼───────────────────────────┼─────────────────────────────┼─────────────────┘
-                 │                           │                             │
-                 ▼                           ▼                             ▼
-         [ Temporal Series ]      [ Normalized Coordinates ]     [ Quantitative Verdict ]
-         (Float64Array Buffers)     (Real Price Calibration)       (BULL / BEAR / NO_TRADE)
+                              [ YAHOO FINANCE PROXY PIPELINES ]
+                                              │
+                                              ▼
+                                 Pure Text JSON API Ingestion
+                                              │
+                                              ▼
+                         Chronological Series Assembly & Clean up
+                                              │
+                                              ▼  (100% Isolated Thread Interface)
+   ┌──────────────────────────────────────────┴──────────────────────────────────────────┐
+   │                                WEB WORKER TASK SCHEDULER                            │
+   │                              (`src/workers/analysisWorker.ts`)                      │
+   │                                                                                     │
+   │   ┌────────────────────┐     ┌─────────────────────┐     ┌──────────────────────┐   │
+   │   │  SERIES PARSING    │     │ METRIC CALIBRATION  │     │ 4-JUDGE RULE MATRIX  │   │
+   │   │ (Float64Array)     │     │ (Price Alignment)   │     │ (`ruleEngine.ts`)    │   │
+   │   └─────────┬──────────┘     └──────────┬──────────┘     └──────────┬───────────┘   │
+   └─────────────┼───────────────────────────┼───────────────────────────┼───────────────┘
+                 │                           │                           │
+                 ▼                           ▼                           ▼
+        [ Temporal Series ]       [ Base Scale Normalization ] [ Quantitative Verdict ]
+        (Rolling buffers)           (Interval Coordinate Sync)   (BULL / BEAR / NO_TRADE)
 ```
 
-*   **Concurrency Engine**: Intense computer vision and indicator math run asynchronously inside dedicated Web Workers (`src/workers/analysisWorker.ts`). The thread pool uses zero-shared memory patterns to prevent cross-symbol signal pollution.
-*   **Performance Optimization**: Utilizes `Float64Array` buffers to prevent GC/allocation lags during rapid microsecond-scale historical series iterations.
-*   **Persistent Sync Layer**: Bound locally to client-side caches, backed up by a persistent Firebase Firestore instance (`src/services/firebase.ts`) for real-time portfolio balance syncing, risk configuration, and permanent trade history logs.
-*   **Hardware Lock-in prevention**: Integrated background Audio Wake-Locks (`src/hooks/useWakeLock.ts`) to bypass modern browser background CPU throttling, keeping backtests and active loops running at precise intervals.
-*   **Visual Interface**: Built with styled Tailwind CSS layouts, Lucide icons, and an immersive 3D WebGL background powered by Three.js (`src/components/HeroScene.tsx`) to render low-latency particle system compositions.
+*   **Asynchronous Engine**: Intense technical indicators, market structures, and regulatory rulesets are evaluated inside concurrent Web Workers (`src/workers/analysisWorker.ts`). This guarantees fluid UI interaction at 60 FPS by freeing the main execution thread.
+*   **Buffer Optimizations**: Utilizes contiguous memory segments and specialized arrays (`Float64Array`) for rapid mathematical iterations over historical lookback buffers without garbage collection spikes.
+*   **Persistent Sync Layer**: Binds local cache configurations with an active Firebase Firestore DB (`src/services/firebase.ts`) to manage virtual balances, custom client indicators, running trades, and historic audit logs.
+*   **Anti-Throttling Guard**: Incorporates a background audio wake-lock controller (`src/hooks/useWakeLock.ts`) to maintain live update cycles when page tabs undergo aggressive browser sleep cycles.
+*   **Visual Interface**: Engineered with styled Tailwind CSS layouts, Lucide icons, and a low-latency WebGL canvas driven by Three.js (`src/components/HeroScene.tsx`) rendering responsive particle compositions.
 
 ---
 
-## 2. Low-latency File Structure
+## 2. Low-Latency File Structure
 
-*   `src/components/`: Render layer. Contains HUD overlays, active trade monitor cards, and `LossAutopsyModal.tsx`.
-*   `src/quant/`: Algorithmic core containing:
-    *   `indicators.ts`: Wilder's ADX (DI+/DI-), RSI, Bollinger Bands, and HLC/3 VWAP calculations.
-    *   `marketStructure.ts`: Swings, Structure pivot counters, BOS, CHoCH tracking.
-    *   `ruleEngine.ts` / `scalpingEngine.ts`: Standard 4-Judge arbitration and risk criteria gating.
-    *   `riskGuard.ts` / `neutralityGuard.ts`: Dynamic drawdown checks, cool-down states, bias buffers.
-*   `src/vision/`: Image processing engines (Otsu binarization, wick tracing, OCR, homography matrix).
-*   `src/workers/`: Thread-level workers isolating compute workloads from the UI thread.
-*   `src/services/`: Core persistence services (trade logging, Firestore sync, Live price feeds).
+*   `src/components/`: Viewholders, active trade dashboards, portfolio charts, and `LossAutopsyModal.tsx`.
+*   `src/quant/`: Technical and algorithmic components including:
+    *   `indicators.ts`: Wilder’s ADX (+DI/-DI), RSI, Bollinger Bands, and HLC/3 VWAP computations.
+    *   `marketStructure.ts`: Swings, pivots, structures (BOS, CHoCH), and structural stop-losses.
+    *   `ruleEngine.ts` / `scalpingEngine.ts`: Direct 4-Judge arbitration pipeline and positional gating.
+    *   `riskGuard.ts` / `neutralityGuard.ts`: Trailing drawdowns, automatic cooling periods, and bias mitigation.
+*   `src/services/`: Core real-time price feeds, Yahoo Finance multi-proxy fallback chains, and Firestore sync.
+*   `src/utils/`: High-resolution timezone utilities (`istUtils.ts`), data serializations, and logging adapters.
 
 ---
 
-## 3. Pixel Vision Pipeline & Mathematical Data Calibration
+## 3. Pure Text Data Ingestion & Calibration Pipeline
 
-Translates static images and raw camera capture matrices into verified `TemporalOHLC` coordinate blocks:
+Rather than relying on noisy camera feeds or imprecise OCR models, ChartLens processes high-quality, pure-text stock feeds:
 
-1.  **Spatial Rectification**: Applies homography matrix operations, Otsu binarization, Canny edge detection, and Sobel kernels to project warped chart bounds into standard orthographic flat matrices.
-2.  **Color Space Calibration & Wick Tracing**: Isolates bullish/bearish blocks in HSLA space (`src/vision/colorSpace.ts`), using recursive wick tracing algorithms to capture thin candle extremities under varying illumination.
-3.  **Dynamic Coordinate Scaling**: Extracts absolute numerical limits from coordinates. Falls back to a localized standard envelope `[10.0, 110.0]` if OCR encounters extreme noise or digit anomalies.
+1.  **Multi-Proxy Request Traversal**: Employs an active fallback proxy chain (AllOrigins, Codetabs, and local-server fallbacks) to fetch clean historical JSON endpoints directly from Yahoo Finance without CORS blocks or API key overheads.
+2.  **Series Validation**: Sanitizes data arrays to filter undefined timestamps or missing OHLC fields. If a feed is unavailable, the engine generates mathematical fallback candlesticks using Brownian motion scaled to the asset's last known trade price.
+3.  **Coordinate Mapping**: Converts raw JSON candlestick structures into normalized UI chart coordinate scales, tracking exact mathematical parameters for geometric canvas rendering.
 
 ---
 
 ## 4. The Client-Side 4-Judge Quantitative Rules Engine
 
-Analyses sequential data arrays through strict, pointwise mathematical inequalities in `ruleEngine.ts`:
+Analyses sequential, text-based data arrays through strict, pointwise mathematical inequalities in `ruleEngine.ts`:
 
 ### Judge 1 (Anatomical Candlestick Patterns)
-Analyzes candle shapes relative to their neighbors. Validates structural formations (e.g. Hammer, Pinbar, Bullish/Bearish Engulfing, Shooting Star) by evaluating wick ratios against total body length:
+Analyzes candle shapes relative to their neighbors. Validates structural formations (e.g., Hammer, Pinbar, Bullish/Bearish Engulfing, Shooting Star) by evaluating wick ratios against total body length:
 $$RejectionRatio = \frac{|High - \max(Open, Close)|}{High - Low}$$
 Requires $RejectionRatio \ge 0.55$ to qualify for wick exhaustion setups.
 
@@ -118,20 +117,15 @@ Entry and validation levels are derived from the physical opening coordinate of 
 
 ### Sequential Lookback Timeline
 To eliminate systemic forward-looking prediction bias (lookahead fallacy):
-1.  **Cutoff Identification**: Locate the precise temporal marker coinciding with the yellow entry boundary line.
-2.  **Historical Parsing**: Extract exactly 3 absolute candlestick objects preceding the start point.
-3.  **Analysis Slicing**: Evaluates directional targets using preceding historical values only, preventing future outcomes from entering the decision pipeline.
-
-### Double-Step Confirmation EOD Settlement
-Performs clock-synchronized paper trade settlement at IST 15:30.
-*   **High-Fidelity Intraday Backfill**: Pulls historical 1-minute candlestick data to resolve Stop-Loss (SL) and Take-Profit (TP) conditions on a granular scale.
-*   **Fallback Resolution Rules**: Computes daily High/Low bounds to resolve outcomes in volatile regimes. Marks trades as **Ambiguous** and skips automatic P&L adjustment if both boundaries were breached during the same day.
+1.  **Cutoff Identification**: Locate the precise temporal marker coinciding with the trade's entry boundary.
+2.  **Historical Parsing**: Extract exactly 1 to 5 preceding absolute candlestick records from the JSON history series based on selected timeframes.
+3.  **Analysis Slicing**: Evaluates directional targets using preceding historical values only, preventing future outcomes from leaking into the active decision pipeline.
 
 ---
 
 ## 6. Mathematical Neutrality & Strict Directional Agnosticism
 
-ChartLens maintains an unbiased, symmetric directional approach to prevent structural market skewing (e.g. Call/Put pricing imbalances under neutral drift):
+ChartLens maintains an unbiased, symmetric directional approach to prevent structural market skewing (e.g., Call/Put pricing imbalances under neutral drift):
 
 *   **Pointwise Mirror Symmetry (Invariants I-1, I-6)**: Calculation algorithms evaluate relative properties (wick ratios, Z-score bounds, volatility variances) symmetrically. For inverted price vectors, the engine yields perfectly identical absolute score magnitudes.
 *   **Central Neutrality Margin (Invariant I-5)**: Implements an inactive zone in `calculateBoundaryReversal`. Candle closures falling inside the $47.5\% \le yPercent \le 52.5\%$ range evaluate to 0, completely filtering noise in flat regimes.
@@ -150,3 +144,71 @@ ChartLens is engineered to operate strictly within the boundaries of Indian mark
 $$VWAP_{Proxy} = \frac{\sum (High_t + Low_t + Close_t) / 3}{t_{period}}$$
 This represents a volume-neutral estimate and is clearly disclaimed inside UI viewports.
 4.  **Enforced Long-only Bias**: Although Short-Selling is structurally permitted under SEBI's intraday short selling guidelines (NSE Circular `CMPL60221`), ChartLens restricts active paper execution purely to long-only positions. Bearish signals are processed strictly as risk mitigation / vetoes.
+
+---
+
+## 8. Local Setup, Development, & Production Hosting
+
+Follow the technical steps below to build, run, test, or host ChartLens natively.
+
+### A. Environment Prerequisites
+- **Node.js** >= `18.0.0`
+- **npm** or **pnpm** >= `10.0.0`
+
+### B. Quickstart Steps (Local Development)
+
+1. **Clone and Navigate**:
+   ```bash
+   git clone <repository_url> c-chartlens
+   cd c-chartlens
+   ```
+
+2. **Install Dependencies**:
+   ```bash
+   npm install
+   ```
+
+3. **Configure Environment Variables**:
+   Create a `.env` file at the root level using `.env.example` as a template:
+   ```env
+   # .env
+   GEMINI_API_KEY=your_gemini_api_key_here
+   ```
+
+4. **Launch Local Dev Server**:
+   ```bash
+   npm run dev
+   ```
+   *Runs the high-speed Express middleware with Vite hot module integrations, available locally at `http://localhost:3000`.*
+
+### C. Testing & Validation
+
+Run the comprehensive unit-testing harness verifying mathematical invariants, indicator calculation bounds, and quantitative judge logic:
+
+```bash
+# Run tests via Vitest
+npx vitest run
+```
+
+Run ES-Linter to check strict code guidelines and typing patterns:
+```bash
+npm run lint
+```
+
+### D. Compiling & Production Build (Hosting)
+
+To host the high-performance compiled artifact, execute the production bundling suite:
+
+1. **Build Artifacts**:
+   ```bash
+   npm run build
+   ```
+   *This performs two operations sequentially:*
+   - Packages the front-end SPA static pages into `/dist` via `vite build`.
+   - Compiles and bundles the server-side TypeScript entrypoint into a single self-contained CommonJS target (`/dist/server.cjs`) via `esbuild`.
+
+2. **Execute Production Server**:
+   ```bash
+   npm run start
+   ```
+   *Runs the bundled CJS server natively using Node.js without runtime transpilation latency, default port `3000`.*
