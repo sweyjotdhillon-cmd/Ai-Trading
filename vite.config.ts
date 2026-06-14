@@ -13,9 +13,15 @@ export default defineConfig({
       'react-native': 'react-native-web',
     },
   },
+
+  preview: {
+    host: true,
+    allowedHosts: true,
+    port: process.env.PORT ? parseInt(process.env.PORT) : 4173,
+  },
   server: {
     host: '0.0.0.0',
-    port: 3000,
+    port: process.env.PORT ? parseInt(process.env.PORT) : 3000,
     proxy: {
       '/api/stock': {
         target: 'https://military-jobye-haiqstudios-14f59639.koyeb.app',
