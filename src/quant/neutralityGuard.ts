@@ -91,6 +91,10 @@ export function enforceNeutrality(
       adjustedBull = bullTotal * (1 - correctionFactor);
       adjustedBear = bearTotal * (1 + correctionFactor);
       neutralityActions.push(`BULL DAMPENING: LONG rate ${bullRate.toFixed(2)} > 0.70. Penalized BULL (-${(correctionFactor * 100).toFixed(1)}%), Boosted BEAR (+${(correctionFactor * 100).toFixed(1)}%)`);
+    } else if (bullRate < 0.10 && total > 50) {
+      adjustedBull = bullTotal * 1.05;
+      adjustedBear = bearTotal * 0.97;
+      neutralityActions.push(`UNDER-TRADING CORRECTION: LONG rate below 10 percent over ${total} samples. Applied mild bull boost.`);
     }
   }
 

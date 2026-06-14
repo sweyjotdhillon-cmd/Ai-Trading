@@ -5,7 +5,7 @@ import {
   RefreshCw, DollarSign, Target, Award, Plus, Minus, Info, Clipboard, Play, RefreshCcw
 } from 'lucide-react';
 import { ScalpConfig, RiskState, ScalpingPlan } from '../types';
-import { loadScalpConfig, getDefaultScalpConfig } from '../quant/scalpingEngine';
+import { loadScalpConfig, getDefaultScalpConfig } from '../config/scalpConfig';
 import { loadRiskState, resetRiskState, checkRiskCaps } from '../quant/riskGuard';
 import { featureFlags } from '../config/featureFlags';
 import { getScalpBuyRate, scalpOverTradingPenalty } from '../quant/neutralityGuard';

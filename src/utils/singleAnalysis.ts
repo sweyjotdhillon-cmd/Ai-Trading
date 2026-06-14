@@ -1,7 +1,7 @@
 /* eslint-disable no-empty */
 import { antiImagine } from "./antiImagine";
 import { simulateScalpTrade } from "../quant/pathSimulator";
-import { loadScalpConfig } from "../quant/scalpingEngine";
+import { loadScalpConfig } from "../config/scalpConfig";
 import { computeRoundTripCharges } from "../quant/brokerCharges";
 import { featureFlags } from "../config/featureFlags";
 import { TradeAnalysisScalpAddon } from "../types";

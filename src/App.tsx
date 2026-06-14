@@ -20,7 +20,7 @@ import { BalanceDashboard } from './components/BalanceDashboard';
 import { OpenTradesDashboard } from './components/OpenTradesDashboard';
 import { useBotLoop } from './hooks/useBotLoop';
 import { registerUserProfile } from './services/botTradeService';
-import { getDefaultScalpConfig } from './quant/scalpingEngine';
+import { getDefaultScalpConfig } from './config/scalpConfig';
 import { SystemSettingsModal } from './components/SystemSettingsModal';
 import { HeroIntro } from './components/HeroIntro';
 import { UserProfileModal } from './components/UserProfileModal';
@@ -134,6 +134,7 @@ function App() {
         console.warn('Failed to clean botPayload in localStorage:', e);
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [botPayload]);
 
   const handleStopBot = () => {

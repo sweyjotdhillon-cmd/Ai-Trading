@@ -18,6 +18,7 @@ export async function initVirtualBalance(uid: string): Promise<number> {
       await setDoc(docRef, { balance: 100000, upd: Math.floor(Date.now() / 1000) });
       try {
         localStorage.setItem('user_virtual_balance', '100000');
+        localStorage.setItem('user_virtual_balance_seed', '100000');
       } catch (err) {
         // LocalStorage is unavailable or full
       }
@@ -35,6 +36,9 @@ export async function initVirtualBalance(uid: string): Promise<number> {
   }
 }
 
+/**
+ * Currently unused. Kept for potential future multi-tab atomic sync. Do not delete the function itself.
+ */
 export async function updateVirtualBalance(
   uid: string,
   delta: number
@@ -76,10 +80,9 @@ export async function setVirtualBalanceValue(
   uid: string | null,
   value: number
 ): Promise<number> {
-  const rounded = parseFloat(value.toFixed(2));
+  const rounded = Math.max(0, parseFloat(value.toFixed(2)));
   try {
     localStorage.setItem('user_virtual_balance', String(rounded));
-    localStorage.setItem('ledger_cached_balance', String(rounded));
   } catch (err) {
     // LocalStorage is unavailable or full
   }

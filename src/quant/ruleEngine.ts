@@ -44,6 +44,7 @@ export interface DecisionResult extends JudgeVerdict {
   skepticVerdict: 'ACCEPT' | 'CAUTION' | 'WEAK';
   primaryEvidence: string;
   noTradeReason: string | null;
+  confidenceRange: number;
   topPatterns: { bull: string[]; bear: string[] };
   formattedReport: string;
   tradeDetails: {
@@ -225,12 +226,14 @@ export function evaluateSignal(
   });
 
   const isCustomList = techniquesList && Array.isArray(techniquesList) && techniquesList.length > 0;
-  if (isCustomList) {
-    if (activeList.length < 1 && !isBypass) {
+  if (isBypass) {
+    hardBlockReason = null;
+  } else if (isCustomList) {
+    if (activeList.length === 0) {
       hardBlockReason = `No custom techniques provided. Include at least 1 technique in your upload.`;
     }
   } else if (!isNoTech) {
-    if (activeList.length < 10 && !isBypass) {
+    if (activeList.length < 10) {
       hardBlockReason = `Insufficient tech consensus. Found ${activeList.length} but need minimum 10 techniques.`;
     }
   }
@@ -298,7 +301,7 @@ export function evaluateSignal(
 
   // Precompute visual yPercent
   const prepVisibleSeries = ohlcSeries.slice(-Math.max(20, nCandles * 5));
-  const prepLastCloseVal = ohlcSeries[ohlcSeries.length - 1].close;
+  const prepLastCloseVal = ohlcSeries[Math.max(0, ohlcSeries.length - 2)].close;
   const prepVisibleCloses = prepVisibleSeries.map(c => c.close);
   const prepMinCloseVal = Math.min(...prepVisibleCloses);
   const prepMaxCloseVal = Math.max(...prepVisibleCloses);
@@ -343,12 +346,12 @@ export function evaluateSignal(
   // FIX 1: Run contextual analysis pass via techniqueEngine.ts
   const extractedJSON = extractChartJSON(ohlcSeries.map(c => ({
     timestamp: c.timestamp, open: c.open, high: c.high, low: c.low, close: c.close
-  })), `${tfMin}m`, tfMin);
+  })), `${tfMins}m`, tfMins);
   const chartWindow = extractedJSON as any as ChartAnalysisWindow;
   const tcResult = evaluateTechniques(chartWindow, activeList.filter(t => typeof t === "object"));
 
-  let bulldogPoints = 0;
-  let peerPoints = 0;
+  let bullPoints = 0;
+  let bearPoints = 0;
   let bullList: any[] = [];
   let bearList: any[] = [];
   let processedCount = 0; // Confidence denominator (non-neutral only)
@@ -381,8 +384,8 @@ export function evaluateSignal(
       matched: isMatched
     };
 
-    if (isBull) { bulldogPoints += bPts; }
-    if (isBear) { peerPoints += mPts; }
+    if (isBull) { bullPoints += bPts; }
+    if (isBear) { bearPoints += mPts; }
 
     const matchedItem = activeList.find(t => {
       const name = typeof t === 'object' ? (t.name || t.technique || '') : String(t);
@@ -403,24 +406,11 @@ export function evaluateSignal(
     }
 
     // Determine the proprietary side of this technique dynamically
-    const kName = v.name.toLowerCase();
-    let propSide: 'BULL' | 'BEAR' = 'BULL';
-    if (kName.includes('oversold') || kName.includes('bull') || kName.includes('lower') || kName.includes('golden') || kName.includes('hammer') || kName.includes('morning') || kName.includes('bottom') || kName.includes('call')) {
-      propSide = 'BULL';
-    } else if (kName.includes('overbought') || kName.includes('bear') || kName.includes('upper') || kName.includes('death') || kName.includes('shooting') || kName.includes('evening') || kName.includes('top') || kName.includes('put')) {
-      propSide = 'BEAR';
-    } else {
-      const bearishKeys = ['rsioverbought', 'stochoverbought', 'macdbearcross', 'bollingerupperbreak', 'emadeathcross', 'shootingstar'];
-      if (bearishKeys.includes(kName.replace(/[\s_-]/g, ''))) {
-        propSide = 'BEAR';
-      } else {
-        propSide = 'BULL';
-      }
-    }
+    
 
-    if (isBull || (propSide === 'BULL' && !isBear)) {
+    if (isBull) {
       bullList.push(obj);
-    } else {
+    } else if (isBear) {
       bearList.push(obj);
     }
   });
@@ -461,13 +451,14 @@ export function evaluateSignal(
 
   const techniquesEvaluation = {
     totalTechniques: evaluatedCount,
-    bulldogPoints,
-    peerPoints,
+    bullPoints,
+    bearPoints,
     bullList,
     bearList
   };
 
   // --- Step 2: 3-Judge Score Formulations (Accumulating separates) ---
+  const last = closes.length - 1;
   const slopeSeries = emaSlope(Array.from(closes), 9);
   const lastSlope = slopeSeries.length > 0 ? slopeSeries[slopeSeries.length - 1] : 0;
 
@@ -528,7 +519,7 @@ export function evaluateSignal(
     const lastPlusDIVal = !isNaN(techCache.adxVals?.plusDI?.[last]) ? techCache.adxVals.plusDI[last] : 0;
     const lastMinusDIVal = !isNaN(techCache.adxVals?.minusDI?.[last]) ? techCache.adxVals.minusDI[last] : 0;
 
-    if (lastADXVal > 25) {
+    if (lastADXVal > 20) {
       if (lastPlusDIVal > lastMinusDIVal) {
         bullJ1Intrinsic += 0.50;
         bearJ1Intrinsic = Math.max(0, bearJ1Intrinsic - 0.50);
@@ -540,7 +531,7 @@ export function evaluateSignal(
         auditPush('J1', 'BEAR', 'intrinsic.adx_trend_corroboration',
           0.50, `ADX=${lastADXVal.toFixed(1)} confirms strong bearish trend (minusDI=${lastMinusDIVal.toFixed(1)} > plusDI=${lastPlusDIVal.toFixed(1)})`);
       }
-    } else if (lastADXVal < 20) {
+    } else if (lastADXVal < 15) {
       bullJ1Intrinsic = Math.max(0, bullJ1Intrinsic - 0.15);
       bearJ1Intrinsic = Math.max(0, bearJ1Intrinsic - 0.15);
     }
@@ -559,6 +550,9 @@ export function evaluateSignal(
   // This prevents high-volume technique portfolios from flooding both sides with spurious coincident pattern points.
   const bullJ1 = Math.max(0, Math.min(4.0, bullJ1Raw - bearJ1Raw));
   const bearJ1 = Math.max(0, Math.min(4.0, bearJ1Raw - bullJ1Raw));
+
+  let bullJ3Intrinsic = 0;
+  let bearJ3Intrinsic = 0;
 
   // ═════════════════════════════════════════════════════════════
   // J2 VEHICLE — OSCILLATOR CONSENSUS (max 4.0 per side)
@@ -758,8 +752,7 @@ export function evaluateSignal(
   const boundaryResBear = calculateBoundaryReversal(yPercentHigh, visibleSeries);
   const boundaryResBull = calculateBoundaryReversal(yPercentLow,  visibleSeries);
 
-  let bullJ3Intrinsic = 0;
-  let bearJ3Intrinsic = 0;
+  
   let bullBlowOffSurplus = 0;
   let bearBlowOffSurplus = 0;
   {
@@ -814,7 +807,8 @@ export function evaluateSignal(
     // Wick rejection on last candle
     // Bug #8 fix: gate intrinsic wick scoring if a technique already claimed this geometry.
     // Hammer/hangingman techniques own the lower wick; shootingstar/invertedhammer own the upper wick.
-    const lc = ohlcSeries[last];
+    const settledLast = Math.max(0, closes.length - 2);
+    const lc = ohlcSeries[settledLast];
     if (lc) {
       const body = Math.abs(lc.close - lc.open);
       const uW   = lc.high - Math.max(lc.open, lc.close);
@@ -1139,25 +1133,35 @@ export function evaluateSignal(
   let bullJ3Final = bullJ3;
   let bearJ3Final = bearJ3;
 
-  const H_exp = rescaledRangeHurst(Array.from(closes).slice(-64));
-  const activeADX = !isNaN(techCache.adxVals?.adx?.[last]) ? techCache.adxVals.adx[last] : 0;
+  const recentSlopeSeries = emaSlope(Array.from(closes).slice(-64), 9);
+  const recentSlope = recentSlopeSeries.length > 0 ? recentSlopeSeries[recentSlopeSeries.length - 1] : 0;
+
+  let H_exp = NaN;
   let hurstExplanation = "Neutral range_balanced";
+  
+  if (ohlcSeries.length >= 64) {
+    H_exp = rescaledRangeHurst(Array.from(closes).slice(-64));
+  } else {
+    hurstExplanation = "Insufficient candles for Hurst — regime neutral";
+  }
+
+  const activeADX = !isNaN(techCache.adxVals?.adx?.[last]) ? techCache.adxVals.adx[last] : 0;
 
   if (!isNaN(H_exp)) {
     // BUG #3: Support synthetic trends taking over when ADX is explosive even if Hurst returns neutral 0.5
-    const isTrending = (H_exp > 0.53 || activeADX > 30) && activeADX > 25;
+    const isTrending = (H_exp > 0.53 || activeADX > 30) && activeADX > 20;
     const isMeanReverting = H_exp < 0.45 || activeADX < 15;
 
     if (isTrending) {
       // Stage A: Trending regime alignment
       // Stage B: Directional Gates for J1 (Winning trend-following vs losing trend-following)
-      if (lastSlope > 0) {
+      if (recentSlope > 0) {
         // Bullish Trend is active
         bullJ1Final = Math.min(4.0, bullJ1 * 1.25);
         bearJ1Final = Math.min(4.0, bearJ1 * 0.50);
         // Suppress counter-trend overbought J2 vehicles
         bearJ2Final = Math.min(4.0, bearJ2 * 0.35);
-      } else if (lastSlope < 0) {
+      } else if (recentSlope < 0) {
         // Bearish Trend is active
         bearJ1Final = Math.min(4.0, bearJ1 * 1.25);
         bullJ1Final = Math.min(4.0, bullJ1 * 0.50);
@@ -1391,6 +1395,16 @@ export function evaluateSignal(
   const margin = Number(Math.abs(adjustedBull - adjustedBear).toFixed(2));
   const winningTotal = rawWinner === 'BULL' ? adjustedBull : (rawWinner === 'BEAR' ? adjustedBear : 0);
 
+  let confidenceRange = 0;
+  if (rawWinner !== 'TIE') {
+    const winningSide = rawWinner === 'BULL' ? cases.bull : cases.bear;
+    const scores = [winningSide.j1, winningSide.j2, winningSide.j3];
+    const mean = scores.reduce((a, b) => a + b, 0) / 3;
+    const variance = scores.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / 3;
+    const stdDev = Math.sqrt(variance);
+    confidenceRange = Math.round(stdDev * 10);
+  }
+
   const minSkepticMarginThreshold = 4.0 * scaleThresholdFactor * testModeFactor;
   const minConfidenceThreshold = 25 * scaleThresholdFactor * testModeFactor;
 
@@ -1620,7 +1634,7 @@ ${rulingStr}
     signal: finalSignal,
     decision: decisionLabel,
     cases,
-    winner: (hardBlockReason || (finalSignal === 'NO_TRADE' && rawWinner !== 'BEAR')) ? 'NO_TRADE' : (margin < minMarginThreshold ? 'NO_TRADE' : rawWinner),
+    winner: finalSignal === 'NO_TRADE' ? 'NO_TRADE' : finalSignal === 'LONG' ? 'BULL' : 'BEAR',
     margin,
     skepticMultiplier,
     skepticPenalty,
@@ -1630,10 +1644,11 @@ ${rulingStr}
     ruling,
     primaryEvidence,
     noTradeReason,
+    confidenceRange,
     topPatterns,
     techniquesUsed: "Execution Driven Only",
     techUsedCount: activeList.length,
-    formattedReport,
+    
     hallucinationDetected,
     hallucinationMetrics,
     tradeDetails: {
@@ -1644,7 +1659,7 @@ ${rulingStr}
     j1Score: cases.bull.j1 + cases.bear.j1,
     j2Score: cases.bull.j2 + cases.bear.j2,
     j3Score: cases.bull.j3 + cases.bear.j3,
-    j4Score: skepticPenalty,       // legacy
+    
     j4PenaltyPct: skepticPenalty,  // Skeptic stripped X% confidence — not a judge score
     techniquesEvaluation,
     techniqueVotes: evaluationVotes,

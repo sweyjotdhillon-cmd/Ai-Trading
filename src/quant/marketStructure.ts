@@ -73,13 +73,14 @@ export function detectStructureSignal(
   closes: number[] | Float64Array,
   highs: number[] | Float64Array,
   lows: number[] | Float64Array,
-  lookback = 2
+  lookback = 2,
+  pivots?: SwingPivot[]
 ): StructureSignal {
   const n = closes.length;
   const emptySig: StructureSignal = { type: 'NONE', bodyClose: n > 0 ? closes[n - 1] : 0, barIndex: n - 1 };
   if (n < 6) return emptySig;
 
-  const allPivots = findSwingPivots(highs, lows, lookback);
+  const allPivots = pivots || findSwingPivots(highs, lows, lookback);
   const pivotsBeforeLast = allPivots.filter(p => p.index < n - 1);
 
   if (pivotsBeforeLast.length === 0) return emptySig;

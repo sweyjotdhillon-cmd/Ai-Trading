@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { ScalpConfig, RiskConfig, ScalpInstrument, SLMode, TPMode } from '../types';
-import { getDefaultScalpConfig } from '../quant/scalpingEngine';
+import { getDefaultScalpConfig } from '../config/scalpConfig';
 import { searchNSEStocks as searchSymbols } from '../services/stockPriceFeed';
 import { initVirtualBalance, setVirtualBalanceValue } from '../services/virtualBalanceService';
 import { auth } from '../services/firebase';
@@ -49,8 +49,8 @@ function buildConfigFromPreset(
       maxHoldingMinutes:    timeframeMinutes * 2,
       risk: {
         dailyLossCapRupees:     capital * 0.01,   // 1% of capital
-        maxTradesPerDay:        999,
-        maxConsecutiveLosses:   999,
+        maxTradesPerDay:        5,
+        maxConsecutiveLosses:   2,
         cooldownMinutes:        15,
         slippageTicks:          1,
       },
@@ -66,8 +66,8 @@ function buildConfigFromPreset(
       maxHoldingMinutes:    timeframeMinutes * 2,
       risk: {
         dailyLossCapRupees:     capital * 0.02,   // 2% of capital
-        maxTradesPerDay:        999,
-        maxConsecutiveLosses:   999,
+        maxTradesPerDay:        10,
+        maxConsecutiveLosses:   3,
         cooldownMinutes:        10,
         slippageTicks:          1,
       },
@@ -83,8 +83,8 @@ function buildConfigFromPreset(
       maxHoldingMinutes:    timeframeMinutes * 3,
       risk: {
         dailyLossCapRupees:     capital * 0.04,   // 4% of capital
-        maxTradesPerDay:        999,
-        maxConsecutiveLosses:   999,
+        maxTradesPerDay:        25,
+        maxConsecutiveLosses:   6,
         cooldownMinutes:        5,
         slippageTicks:          2,
       },
@@ -192,6 +192,13 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
       const v = localStorage.getItem('chartlens_market_hours_gate');
       return v === 'true';
     } catch { return false; }
+  });
+
+  const [leverage, setLeverage] = useState<number>(() => {
+    try {
+      const v = localStorage.getItem('chartlens_leverage');
+      return v ? parseInt(v, 10) : 5; // Default 5x margin for intraday
+    } catch { return 5; }
   });
 
   const [investmentPerTrade, setInvestmentPerTrade] = useState<number>(() => {
@@ -385,6 +392,7 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
 
     const config = buildConfigFromPreset(preset, parsedCapital, instrument, timeframe, marketHoursGate);
     config.investmentPerTrade = investmentPerTrade;
+    config.leverage = leverage;
     config.rrRatioChoice = rrRatioChoice;
     config.rrRatio = rrRatioChoice;
     config.minRR = rrRatioChoice;
@@ -400,14 +408,16 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
       techniquesList,
       techFileName,
       investmentPerTrade,
+      leverage,
       rrRatioChoice,
       useConfidenceThreshold,
       maxConcurrentTrades,
     } as any);
-  }, [selectedStock, virtualBalance, preset, instrument, timeframe, minConfidence, techniquesList, techFileName, marketHoursGate, investmentPerTrade, rrRatioChoice, useConfidenceThreshold, maxConcurrentTrades, onStart]);
+  }, [selectedStock, virtualBalance, preset, instrument, timeframe, minConfidence, techniquesList, techFileName, marketHoursGate, investmentPerTrade, rrRatioChoice, useConfidenceThreshold, maxConcurrentTrades, leverage, onStart]);
 
   const previewConfig = buildConfigFromPreset(preset, virtualBalance || 100000, instrument, timeframe, marketHoursGate);
   previewConfig.investmentPerTrade = investmentPerTrade;
+  previewConfig.leverage = leverage;
   previewConfig.rrRatioChoice = rrRatioChoice;
   previewConfig.rrRatio = rrRatioChoice;
   previewConfig.minRR = rrRatioChoice;
@@ -652,9 +662,25 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
         </div>
       </div>
 
-      {/* Control 1 — Investment per trade (₹) */}
+      {/* Control 1 — Investment per trade (₹) & Leverage */}
       <div className="bg-gray-800 p-4 rounded-lg flex flex-col gap-2">
-        <h2 className="font-bold text-gray-300 text-sm md:text-base">INVESTMENT PER TRADE (₹)</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="font-bold text-gray-300 text-sm md:text-base">INVESTMENT PER TRADE (₹)</h2>
+          <div className="flex items-center gap-2">
+            <span className="text-gray-400 text-xs font-bold">Leverage:</span>
+            <div className="flex bg-gray-900 rounded overflow-hidden border border-gray-700">
+              {[1, 2, 5].map(lev => (
+                <button
+                  key={lev}
+                  onClick={() => setLeverage(lev)}
+                  className={`px-2 py-0.5 text-xs font-black transition-colors ${leverage === lev ? 'bg-amber-500 text-amber-950' : 'text-gray-400 hover:bg-gray-700'}`}
+                >
+                  {lev}x
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
         <div className="flex items-center gap-2 mt-1">
           <span className="text-zinc-400 font-mono">₹</span>
           <input 
@@ -673,7 +699,7 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
           />
         </div>
         <p className="text-[10px] text-zinc-400 leading-normal mt-0.5">
-          Virtual rupees allocated per concurrent stock position. Minimum ₹500.
+          Effective Exposure: <span className="text-amber-400 font-bold font-mono">₹{(investmentPerTrade * leverage).toLocaleString('en-IN')}</span> (Buys ₹{(investmentPerTrade * leverage).toLocaleString('en-IN')} worth of stock considering {leverage}x broker margin)
         </p>
       </div>
 

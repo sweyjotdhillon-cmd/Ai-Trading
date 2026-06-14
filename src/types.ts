@@ -176,6 +176,8 @@ export interface ScalpingPlan {
   instrument: ScalpInstrument;
   noteReasons: string[];        // human-readable confluence/blocker reasons
   investmentRupees?: number;
+  confluenceScaleFactor?: number;
+  brokerChargesConservative?: number;
   antiHallucination?: AntiHallucinationCheck;
 }
 
@@ -229,11 +231,13 @@ export interface ScalpFeatures {
   bear_engulfing_recent: boolean;
   predictabilityPassed: boolean;
   withinMarketHours: boolean;
+  timeOfDayQuality: 'OPTIMAL' | 'ACCEPTABLE' | 'AVOID';
 }
 
 export interface RiskState {
   dailyPnL: number;
   tradesToday: number;
+  tradesPerSymbol?: Record<string, number>;
   consecutiveLosses: number;
   lastTradeAt: number;          // ms epoch
   inCooldown: boolean;
@@ -243,9 +247,11 @@ export interface RiskState {
 
 export interface RiskConfig {
   dailyLossCapRupees: number;   // default 2000
+  dailyLossCapPct?: number;     // percentage of current virtual balance, fx 2.0 means 2 percent
   maxTradesPerDay: number;      // default 5
   maxConsecutiveLosses: number; // default 3
   cooldownMinutes: number;      // default 10
+  cooldownMinutesPerPctLoss?: number; // extra cooldown minutes per 1 percent of capital lost
   slippageTicks: number;        // default 1
 }
 

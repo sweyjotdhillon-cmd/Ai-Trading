@@ -1,23 +1,19 @@
 import {
   doc, collection,
   setDoc, updateDoc, getDoc, getDocs, deleteDoc,
-  query, where, orderBy, limit
+  query, where, orderBy, limit,
+  runTransaction
 } from 'firebase/firestore';
 import { db, auth }              from './firebase';
 import { BotTradeRecord, BotSessionStats } from '../hooks/useBotLoop';
 import { computeRoundTripCharges }         from '../quant/brokerCharges';
 import { ScalpInstrument }                 from '../types';
-import { updateVirtualBalance }            from '../services/virtualBalanceService';
 import { compressText, decompressText }    from '../utils/storageUtils';
+import { todayIST }                        from '../utils/istUtils';
 
-enum OperationType {
-  CREATE = 'create',
-  UPDATE = 'update',
-  DELETE = 'delete',
-  LIST = 'list',
-  GET = 'get',
-  WRITE = 'write',
-}
+export const MAX_ARCHIVE_SIZE = 200;
+
+type OperationType = 'create' | 'update' | 'delete' | 'list' | 'get' | 'write';
 
 interface FirestoreErrorInfo {
   error: string;
@@ -36,7 +32,7 @@ interface FirestoreErrorInfo {
   };
 }
 
-function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null): never {
+function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null): FirestoreErrorInfo {
   const errMsg = error instanceof Error ? error.message : String(error);
   const isSecurityOrPermissionError = 
     errMsg.toLowerCase().includes('permission') || 
@@ -64,12 +60,7 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
   } else {
     console.warn('[Firestore Network Monitor] Operation failed:', errMsg, `(Op: ${operationType}, Path: ${path})`);
   }
-  throw new Error(JSON.stringify(errInfo));
-}
-
-function todayIST(): string {
-  const ist = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
-  return ist.toISOString().slice(0, 10);
+  return errInfo;
 }
 
 interface CompressedTrade {
@@ -87,106 +78,175 @@ interface CompressedTrade {
   iv?: number; // investment Rupees
   bc?: number; // broker charges
   r?: number;  // rMultiple
+  n?: number;  // net PnL (precomputed, gross realized - charges)
+  ca?: number; // charges actual
 }
 
-function decompressTrade(c: CompressedTrade): BotTradeRecord {
-  const entry = c.e;
-  const stopLoss = c.sl ?? entry * 0.99;
-  const takeProfit2 = c.tp ?? (c.x && c.x > entry ? c.x : entry * 1.01);
+export function reconstructTradeFromRaw(
+  id: string,
+  symbol: string,
+  entry: number,
+  exit: number | null,
+  pnl: number | null,
+  openedAtSec: number,
+  closedAtSec: number | null,
+  outcome: string | null,
+  size: number,
+  sl: number | undefined,
+  tp: number | undefined,
+  invested: number | undefined,
+  charges: number | undefined,
+  rMul: number | undefined,
+  isArchive: boolean,
+  rawPayload?: any
+): BotTradeRecord {
+  const stopLoss = sl ?? entry * 0.99;
+  const takeProfit2 = tp ?? (exit && exit > entry ? exit : entry * 1.01);
   const takeProfit1 = entry + (entry - stopLoss) * 1.0;
-  const posSize = c.z ?? 1;
-  const realizedPnL = c.p;
+  const finalInvested = invested ?? (size * entry);
+  const realizedPnLPct = pnl != null && finalInvested > 0 ? (pnl / finalInvested) * 100 : null;
+  const rMultiple = rMul ?? (pnl != null && (entry - stopLoss) > 0 ? pnl / ((entry - stopLoss) * size) : null);
 
-  const invested = c.iv ?? (posSize * entry);
-  const realizedPnLPct = c.p != null && invested > 0 ? (c.p / invested) * 100 : null;
-  const rMultiple = c.r ?? (c.p != null && (entry - stopLoss) > 0 ? c.p / ((entry - stopLoss) * posSize) : null);
+  const instrument = isArchive ? 'EQUITY_INTRADAY' : (rawPayload?.inst ?? 'EQUITY_INTRADAY');
+  const slMode = isArchive ? 'FIXED_SL' : (rawPayload?.sm ?? 'FIXED_SL');
+  const tpMode = isArchive ? 'FIXED_TP' : (rawPayload?.tm ?? 'FIXED_TP');
+  const maxHoldingMinutes = isArchive ? 15 : (rawPayload?.mh ?? 15);
+  const confluenceScore = isArchive ? 7 : (rawPayload?.cs ?? 7);
 
-  return {
-    id:              c.i,
-    symbol:          c.s,
-    entryPrice:      entry,
-    exitPrice:       c.x,
-    outcome:         c.t as any,
-    realizedPnL:     realizedPnL,
-    realizedPnLPct:  realizedPnLPct,
-    rMultiple:       rMultiple,
-    openedAt:        c.o * 1000,
-    closedAt:        c.c ? c.c * 1000 : null,
-    durationMinutes: c.c && c.o ? Math.round((c.c - c.o) / 60) : null,
+  const netPnL = isArchive ? (rawPayload?.n ?? null) : (rawPayload?.n ?? rawPayload?.netPnL ?? rawPayload?.pnl ?? null);
+  const chargesActual = isArchive ? (rawPayload?.ca ?? null) : (rawPayload?.ca ?? rawPayload?.chargesActual ?? rawPayload?.bc ?? null);
+
+  const record: BotTradeRecord = {
+    id,
+    symbol,
+    entryPrice: entry,
+    exitPrice: exit,
+    outcome: outcome as any,
+    realizedPnL: pnl,
+    realizedPnLPct,
+    rMultiple,
+    openedAt: openedAtSec * 1000,
+    closedAt: closedAtSec ? closedAtSec * 1000 : null,
+    durationMinutes: closedAtSec && openedAtSec ? Math.round((closedAtSec - openedAtSec) / 60) : null,
     plan: {
       entry,
       stopLoss,
       takeProfit1,
       takeProfit2,
-      trailingActivate:   takeProfit1,
-      trailingDistance:   Math.abs(entry - stopLoss) * 0.5,
-      breakEvenAfter:     takeProfit1,
-      positionSize:       posSize,
-      riskRupees:         Math.abs(entry - stopLoss) * posSize,
-      potentialRewardRupees: Math.abs(takeProfit2 - entry) * posSize,
-      rrRatio:            Math.abs(takeProfit2 - entry) / Math.max(0.1, Math.abs(entry - stopLoss)),
-      maxHoldingMinutes:  15,
-      confluenceScore:    7,
-      brokerCharges:      c.bc ?? 0,
-      netExpectedPnL:     realizedPnL != null ? realizedPnL : 0,
-      slMode:             'FIXED_SL',
-      tpMode:             'FIXED_TP',
-      instrument:         'EQUITY_INTRADAY',
-      noteReasons:        [],
-      investmentRupees:   invested,
+      trailingActivate: takeProfit1,
+      trailingDistance: Math.abs(entry - stopLoss) * 0.5,
+      breakEvenAfter: takeProfit1,
+      positionSize: size,
+      riskRupees: Math.abs(entry - stopLoss) * size,
+      potentialRewardRupees: Math.abs(takeProfit2 - entry) * size,
+      rrRatio: Math.abs(takeProfit2 - entry) / Math.max(0.1, Math.abs(entry - stopLoss)),
+      maxHoldingMinutes,
+      confluenceScore,
+      brokerCharges: charges ?? 0,
+      netExpectedPnL: pnl != null ? pnl : 0,
+      slMode,
+      tpMode,
+      instrument,
+      noteReasons: [],
+      investmentRupees: finalInvested,
     } as any,
   };
+
+  if (netPnL !== null && netPnL !== undefined) {
+    record.netPnL = netPnL;
+  }
+  if (chargesActual !== null && chargesActual !== undefined) {
+    record.chargesActual = chargesActual;
+  }
+
+  return record;
+}
+
+function decompressTrade(c: CompressedTrade): BotTradeRecord {
+  return reconstructTradeFromRaw(
+    c.i,
+    c.s,
+    c.e,
+    c.x,
+    c.p,
+    c.o,
+    c.c,
+    c.t,
+    c.z ?? 1,
+    c.sl,
+    c.tp,
+    c.iv,
+    c.bc,
+    c.r,
+    true,
+    c
+  );
 }
 
 async function saveTradeToCompressedArchive(uid: string, trade: BotTradeRecord): Promise<void> {
   try {
     const docRef = doc(db, 'tradeBot', uid, 'st', 'g');
-    const snap = await getDoc(docRef);
-    let archive: CompressedTrade[] = [];
-    if (snap.exists()) {
-      const data = snap.data();
-      if (data.ha && typeof data.ha === 'string') {
-        try {
-          const decompressed = decompressText(data.ha);
-          archive = JSON.parse(decompressed);
-        } catch {
+    await runTransaction(db, async (transaction) => {
+      const snap = await transaction.get(docRef);
+      let archive: CompressedTrade[] = [];
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data.ha && typeof data.ha === 'string') {
           try {
-            archive = JSON.parse(data.ha);
+            const decompressed = decompressText(data.ha);
+            archive = JSON.parse(decompressed);
           } catch {
-            archive = [];
+            try {
+              archive = JSON.parse(data.ha);
+            } catch {
+              archive = [];
+            }
           }
         }
       }
-    }
 
-    archive = archive.filter(t => t.i !== trade.id);
+      // Convert archive into a Map for O(1) deduplication
+      const map = new Map<string, CompressedTrade>();
+      archive.forEach(t => map.set(t.i, t));
 
-    archive.unshift({
-      i: trade.id,
-      s: trade.symbol,
-      e: trade.entryPrice,
-      x: trade.exitPrice,
-      p: trade.realizedPnL,
-      o: Math.floor(trade.openedAt / 1000),
-      c: trade.closedAt ? Math.floor(trade.closedAt / 1000) : null,
-      t: trade.outcome,
-      z: trade.plan?.positionSize ?? 1,
-      sl: trade.plan?.stopLoss,
-      tp: trade.plan?.takeProfit2,
-      iv: trade.plan?.investmentRupees,
-      bc: trade.plan?.brokerCharges,
-      r: trade.rMultiple ?? undefined,
+      const newComp: CompressedTrade = {
+        i: trade.id,
+        s: trade.symbol,
+        e: trade.entryPrice,
+        x: trade.exitPrice,
+        p: trade.realizedPnL,
+        o: Math.floor(trade.openedAt / 1000),
+        c: trade.closedAt ? Math.floor(trade.closedAt / 1000) : null,
+        t: trade.outcome,
+        z: trade.plan?.positionSize ?? 1,
+        sl: trade.plan?.stopLoss,
+        tp: trade.plan?.takeProfit2,
+        iv: trade.plan?.investmentRupees,
+        bc: trade.plan?.brokerCharges,
+        r: trade.rMultiple ?? undefined,
+        n: trade.netPnL ?? (trade.realizedPnL != null ? trade.realizedPnL : undefined),
+        ca: trade.chargesActual ?? (trade.plan?.brokerCharges != null ? trade.plan.brokerCharges : undefined),
+      };
+
+      map.set(trade.id, newComp);
+
+      let updatedList = Array.from(map.values());
+      updatedList.sort((a, b) => {
+        const tA = a.c ?? a.o;
+        const tB = b.c ?? b.o;
+        return tB - tA;
+      });
+
+      if (updatedList.length > MAX_ARCHIVE_SIZE) {
+        updatedList = updatedList.slice(0, MAX_ARCHIVE_SIZE);
+      }
+
+      const serialized = JSON.stringify(updatedList);
+      const compressed = compressText(serialized);
+      transaction.set(docRef, { ha: compressed }, { merge: true });
     });
-
-    if (archive.length > 200) {
-      archive = archive.slice(0, 200);
-    }
-
-    const serialized = JSON.stringify(archive);
-    const compressed = compressText(serialized);
-    await setDoc(docRef, { ha: compressed }, { merge: true });
   } catch (err) {
-    console.warn('[Compressed Archive] Failed to save/update trade in archive:', err);
+    console.warn('[Compressed Archive] Failed to save/update trade in archive transaction:', err);
   }
 }
 
@@ -206,12 +266,18 @@ export async function writeTrade_Open(
       ot:  Math.floor(trade.openedAt / 1000),
       st:  'O',
       sd:  todayIST(),
+      inst: trade.plan.instrument,
+      sm:  trade.plan.slMode,
+      tm:  trade.plan.tpMode,
+      mh:  trade.plan.maxHoldingMinutes,
+      cs:  trade.plan.confluenceScore,
     };
 
     await setDoc(doc(db, 'tradeBot', uid, 'tr', trade.id), payload);
     await saveTradeToCompressedArchive(uid, trade);
   } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, path);
+    const errInfo = handleFirestoreError(error, 'write', path);
+    throw new Error(JSON.stringify(errInfo));
   }
 }
 
@@ -219,7 +285,9 @@ export async function writeTrade_Close(
   uid:       string,
   trade:     BotTradeRecord,
   exitPrice: number,
-  capital:   number
+  capital:   number,
+  precomputedNetPnL?: number,
+  precomputedCharges?: number
 ): Promise<{
   realizedPnL:    number;
   realizedPnLPct: number;
@@ -238,15 +306,13 @@ export async function writeTrade_Close(
   );
 
   const grossPnL      = (exitPrice - trade.entryPrice) * posSize;
-  const realizedPnL   = grossPnL - charges.total;
+  const chargesTotal  = (precomputedCharges != null && Number.isFinite(precomputedCharges)) ? precomputedCharges : charges.total;
+  const realizedPnL   = (precomputedNetPnL != null && Number.isFinite(precomputedNetPnL)) ? precomputedNetPnL : grossPnL - chargesTotal;
   const invested      = trade.plan.investmentRupees ?? (posSize * trade.entryPrice);
   const realizedPnLPct = invested > 0 ? (realizedPnL / invested) * 100 : 0;
   const rMultiple     = trade.plan.riskRupees > 0
     ? realizedPnL / trade.plan.riskRupees
     : 0;
-  const durationMinutes = trade.openedAt
-    ? Math.round((Date.now() - trade.openedAt) / 60_000)
-    : null;
 
   try {
     // Delete the trade document from the active 'tr' subcollection so that active/open trades
@@ -259,6 +325,8 @@ export async function writeTrade_Close(
       exitPrice,
       realizedPnL,
       closedAt: Date.now(),
+      netPnL: realizedPnL,
+      chargesActual: chargesTotal,
     };
     await saveTradeToCompressedArchive(uid, updatedTrade);
 
@@ -266,7 +334,7 @@ export async function writeTrade_Close(
       realizedPnL:    parseFloat(realizedPnL.toFixed(2)),
       realizedPnLPct: parseFloat(realizedPnLPct.toFixed(4)),
       rMultiple:      parseFloat(rMultiple.toFixed(3)),
-      brokerCharges:  parseFloat(charges.total.toFixed(2)),
+      brokerCharges:  parseFloat(chargesTotal.toFixed(2)),
     };
   } catch (error) {
     console.warn('[botTradeService] writeTrade_Close db up failed. Using local fallback values:', error);
@@ -274,7 +342,7 @@ export async function writeTrade_Close(
       realizedPnL:    parseFloat(realizedPnL.toFixed(2)),
       realizedPnLPct: parseFloat(realizedPnLPct.toFixed(4)),
       rMultiple:      parseFloat(rMultiple.toFixed(3)),
-      brokerCharges:  parseFloat(charges.total.toFixed(2)),
+      brokerCharges:  parseFloat(chargesTotal.toFixed(2)),
     };
   }
 }
@@ -286,11 +354,32 @@ export async function writeStats_Update(
 ): Promise<void> {
   const path = `tradeBot/${uid}/st/g`;
   try {
+    const docRef = doc(db, 'tradeBot', uid, 'st', 'g');
+    const snap = await getDoc(docRef);
+    let tt = stats.totalTrades;
+    let tw = stats.totalWins;
+    let tl = stats.totalLosses;
+    let pnl = parseFloat(stats.totalPnL.toFixed(2));
+
+    if (snap.exists()) {
+      const d = snap.data();
+      const cloudTT = d.tt ?? 0;
+      if (cloudTT > stats.totalTrades) {
+        tt = cloudTT;
+        const cloudTW = d.tw ?? 0;
+        const cloudTL = d.tl ?? 0;
+        const cloudPnL = d.pnl ?? 0;
+        tw = Math.max(stats.totalWins, cloudTW);
+        tl = Math.max(stats.totalLosses, cloudTL);
+        pnl = parseFloat(Math.max(stats.totalPnL, cloudPnL).toFixed(2));
+      }
+    }
+
     const payload = {
-      tt:  stats.totalTrades,
-      tw:  stats.totalWins,
-      tl:  stats.totalLosses,
-      pnl: parseFloat(stats.totalPnL.toFixed(2)),
+      tt,
+      tw,
+      tl,
+      pnl,
       dp:  parseFloat(dailyPnL.toFixed(2)),
       avr: parseFloat(stats.avgRMultiple.toFixed(3)),
       bst: parseFloat(stats.bestTrade.toFixed(2)),
@@ -299,9 +388,10 @@ export async function writeStats_Update(
       upd: Math.floor(Date.now() / 1000),
     };
 
-    await setDoc(doc(db, 'tradeBot', uid, 'st', 'g'), payload, { merge: true });
+    await setDoc(docRef, payload, { merge: true });
   } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, path);
+    const errInfo = handleFirestoreError(error, 'write', path);
+    throw new Error(JSON.stringify(errInfo));
   }
 }
 
@@ -327,11 +417,8 @@ export async function loadStats(
       currentStreak: d.str ?? 0,
     };
   } catch (error) {
-    try {
-      handleFirestoreError(error, OperationType.GET, path);
-    } catch {
-      return null;
-    }
+    handleFirestoreError(error, 'get', path);
+    return null;
   }
 }
 
@@ -347,46 +434,24 @@ export async function loadOpenTrades(
     const snap = await getDocs(q);
     const trades = snap.docs.map(docSnap => {
       const r = docSnap.data();
-      const entry = r.e;
-      const stopLoss = r.sl ?? (entry * 0.99);
-      const takeProfit1 = entry + (entry - stopLoss);
-      const takeProfit2 = r.tp;
-      const posSize = r.sz ?? 1;
-      return {
-        id:              docSnap.id,
-        symbol:          r.s,
-        entryPrice:      entry,
-        exitPrice:       r.x ?? null,
-        outcome:         r.o ?? null,
-        realizedPnL:     r.pnl ?? null,
-        realizedPnLPct:  null,
-        rMultiple:       r.r ?? null,
-        openedAt:        r.ot * 1000,
-        closedAt:        r.ct ? r.ct * 1000 : null,
-        durationMinutes: r.dm ?? null,
-        plan: {
-          entry,
-          stopLoss,
-          takeProfit1,
-          takeProfit2,
-          trailingActivate:   takeProfit1,
-          trailingDistance:   Math.abs(entry - stopLoss) * 0.5,
-          breakEvenAfter:     takeProfit1,
-          positionSize:       posSize,
-          riskRupees:         Math.abs(entry - stopLoss) * posSize,
-          potentialRewardRupees: Math.abs(takeProfit2 - entry) * posSize,
-          rrRatio:            Math.abs(takeProfit2 - entry) / Math.max(0.1, Math.abs(entry - stopLoss)),
-          maxHoldingMinutes:  15,
-          confluenceScore:    7,
-          brokerCharges:      r.bc ?? 0,
-          netExpectedPnL:     r.pnl ?? 0,
-          slMode:             'FIXED_SL',
-          tpMode:             'FIXED_TP',
-          instrument:         'EQUITY_INTRADAY',
-          noteReasons:        [],
-          investmentRupees:   r.iv ?? (posSize * entry),
-        } as any,
-      };
+      return reconstructTradeFromRaw(
+        docSnap.id,
+        r.s,
+        r.e,
+        r.x ?? null,
+        r.pnl ?? null,
+        r.ot,
+        r.ct ? r.ct : null,
+        r.o ?? null,
+        r.sz ?? 1,
+        r.sl,
+        r.tp,
+        r.iv,
+        r.bc,
+        r.r,
+        false,
+        r
+      );
     });
     // Sort in memory by openedAt descending
     trades.sort((a, b) => b.openedAt - a.openedAt);
@@ -418,11 +483,8 @@ export async function loadOpenTrades(
       console.warn('[Compressed Archive] loadOpenTrades fallback failed:', err);
     }
 
-    try {
-      handleFirestoreError(error, OperationType.LIST, path);
-    } catch {
-      return [];
-    }
+    handleFirestoreError(error, 'list', path);
+    return [];
   }
 }
 
@@ -441,9 +503,10 @@ export async function loadAllTrades(
   // ── FASTRACK COMPRESSED PATH ───────────────────────────────────────
   // Directly pull from the single compressed archive document to deliver 
   // near-instant (lightning fast) load times matching high speed requirements.
+  let statsSnap: any = null;
   try {
     const statsDocRef = doc(db, 'tradeBot', uid, 'st', 'g');
-    const statsSnap = await getDoc(statsDocRef);
+    statsSnap = await getDoc(statsDocRef);
     if (statsSnap.exists()) {
       const data = statsSnap.data();
       if (data.ha && typeof data.ha === 'string') {
@@ -473,54 +536,34 @@ export async function loadAllTrades(
     const snap = await getDocs(q);
     const trades = snap.docs.map(docSnap => {
       const r = docSnap.data();
-      const entry = r.e;
-      const stopLoss = r.sl ?? (entry * 0.99);
-      const takeProfit1 = entry + (entry - stopLoss);
-      const takeProfit2 = r.tp;
-      const posSize = r.sz ?? 1;
-      return {
-        id:              docSnap.id,
-        symbol:          r.s,
-        entryPrice:      entry,
-        exitPrice:       r.x ?? null,
-        outcome:         r.o ?? null,
-        realizedPnL:     r.pnl ?? null,
-        realizedPnLPct:  null,
-        rMultiple:       r.r ?? null,
-        openedAt:        r.ot * 1000,
-        closedAt:        r.ct ? r.ct * 1000 : null,
-        durationMinutes: r.dm ?? null,
-        plan: {
-          entry,
-          stopLoss,
-          takeProfit1,
-          takeProfit2,
-          trailingActivate:   takeProfit1,
-          trailingDistance:   Math.abs(entry - stopLoss) * 0.5,
-          breakEvenAfter:     takeProfit1,
-          positionSize:       posSize,
-          riskRupees:         Math.abs(entry - stopLoss) * posSize,
-          potentialRewardRupees: Math.abs(takeProfit2 - entry) * posSize,
-          rrRatio:            Math.abs(takeProfit2 - entry) / Math.max(0.1, Math.abs(entry - stopLoss)),
-          maxHoldingMinutes:  15,
-          confluenceScore:    7,
-          brokerCharges:      r.bc ?? 0,
-          netExpectedPnL:     r.pnl ?? 0,
-          slMode:             'FIXED_SL',
-          tpMode:             'FIXED_TP',
-          instrument:         'EQUITY_INTRADAY',
-          noteReasons:        [],
-          investmentRupees:   r.iv ?? (posSize * entry),
-        } as any,
-      };
+      return reconstructTradeFromRaw(
+        docSnap.id,
+        r.s,
+        r.e,
+        r.x ?? null,
+        r.pnl ?? null,
+        r.ot,
+        r.ct ? r.ct : null,
+        r.o ?? null,
+        r.sz ?? 1,
+        r.sl,
+        r.tp,
+        r.iv,
+        r.bc,
+        r.r,
+        false,
+        r
+      );
     });
 
     // Merge with archived trades to ensure complete historical representation
     let archiveTrades: BotTradeRecord[] = [];
     try {
-      const statsDocRef = doc(db, 'tradeBot', uid, 'st', 'g');
-      const statsSnap = await getDoc(statsDocRef);
-      if (statsSnap.exists()) {
+      if (!statsSnap) {
+        const statsDocRef = doc(db, 'tradeBot', uid, 'st', 'g');
+        statsSnap = await getDoc(statsDocRef);
+      }
+      if (statsSnap && statsSnap.exists()) {
         const data = statsSnap.data();
         if (data.ha && typeof data.ha === 'string') {
           const decompressed = decompressText(data.ha);
@@ -547,9 +590,11 @@ export async function loadAllTrades(
   } catch (error) {
     console.warn('[botTradeService] loadAllTrades failed, falling back to archive:', error);
     try {
-      const statsDocRef = doc(db, 'tradeBot', uid, 'st', 'g');
-      const statsSnap = await getDoc(statsDocRef);
-      if (statsSnap.exists()) {
+      if (!statsSnap) {
+        const statsDocRef = doc(db, 'tradeBot', uid, 'st', 'g');
+        statsSnap = await getDoc(statsDocRef);
+      }
+      if (statsSnap && statsSnap.exists()) {
         const data = statsSnap.data();
         if (data.ha && typeof data.ha === 'string') {
           const decompressed = decompressText(data.ha);
@@ -574,13 +619,75 @@ export async function loadAllTrades(
 export async function loadTodayTrades(
   uid: string
 ): Promise<BotTradeRecord[]> {
-  const all = await loadAllTrades(uid);
-  const todayStr = todayIST();
-  return all.filter(t => {
-    const effTime = t.closedAt ?? t.openedAt;
-    const tDate = new Date(effTime + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
-    return tDate === todayStr;
-  });
+  try {
+    const todayStr = todayIST();
+    // 1. Direct query of active subcollection for elements where sd == todayIST()
+    const q = query(
+      collection(db, 'tradeBot', uid, 'tr'),
+      where('sd', '==', todayStr)
+    );
+    const snap = await getDocs(q);
+    const activeToday = snap.docs.map(docSnap => {
+      const r = docSnap.data();
+      return reconstructTradeFromRaw(
+        docSnap.id,
+        r.s,
+        r.e,
+        r.x ?? null,
+        r.pnl ?? null,
+        r.ot,
+        r.ct ? r.ct : null,
+        r.o ?? null,
+        r.sz ?? 1,
+        r.sl,
+        r.tp,
+        r.iv,
+        r.bc,
+        r.r,
+        false,
+        r
+      );
+    });
+
+    // 2. Also retrieve today's closed trades from local cached trades in localStorage
+    let closedToday: BotTradeRecord[] = [];
+    try {
+      const cachedStr = localStorage.getItem('ledger_cached_trades');
+      if (cachedStr) {
+        const cachedTrades: BotTradeRecord[] = JSON.parse(cachedStr);
+        closedToday = cachedTrades.filter(t => {
+          if (t.exitPrice == null) return false;
+          const effTime = t.closedAt ?? t.openedAt;
+          const tDate = new Date(effTime + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
+          return tDate === todayStr;
+        });
+      }
+    } catch (e) {
+      console.warn('[loadTodayTrades] failed to read ledger_cached_trades:', e);
+    }
+
+    // Merge them and sort by openedAt descending
+    const mergedMap = new Map<string, BotTradeRecord>();
+    closedToday.forEach(t => mergedMap.set(t.id, t));
+    activeToday.forEach(t => mergedMap.set(t.id, t));
+
+    const finalToday = Array.from(mergedMap.values());
+    finalToday.sort((a, b) => b.openedAt - a.openedAt);
+    return finalToday;
+  } catch (error) {
+    console.warn('[loadTodayTrades] direct query fast path failed, falling back to full sweep:', error);
+    try {
+      const all = await loadAllTrades(uid);
+      const todayStr = todayIST();
+      return all.filter(t => {
+        const effTime = t.closedAt ?? t.openedAt;
+        const tDate = new Date(effTime + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
+        return tDate === todayStr;
+      });
+    } catch {
+      return [];
+    }
+  }
 }
 
 export async function purgeAllSavedData(uid: string): Promise<void> {
@@ -598,7 +705,7 @@ export async function purgeAllSavedData(uid: string): Promise<void> {
       const q = query(collection(db, 'tradeBot', uid, 'tr'));
       const snap = await getDocs(q);
       const deletePromises = snap.docs.map(docSnap => 
-        deleteDoc(docSnap.ref).catch(err => {
+         deleteDoc(docSnap.ref).catch(err => {
           console.warn(`[Purge] Failed to clean document ${docSnap.id}:`, err);
         })
       );
@@ -618,10 +725,10 @@ export async function purgeAllSavedData(uid: string): Promise<void> {
     // 4. Force synchronization of local caches if it is current user
     if (auth.currentUser?.uid === uid) {
       localStorage.setItem('user_virtual_balance', '100000');
-      localStorage.setItem('ledger_cached_balance', '100000');
     }
   } catch (error) {
-    handleFirestoreError(error, OperationType.DELETE, path);
+    const errInfo = handleFirestoreError(error, 'delete', path);
+    throw new Error(JSON.stringify(errInfo));
   }
 }
 
@@ -677,27 +784,43 @@ export async function resetAndPurgeUser(targetUid: string): Promise<void> {
   }
 }
 
+export function getArchiveStats(trades: BotTradeRecord[]): {
+  count: number;
+  capacity: number;
+  percent: number;
+  warning: boolean;
+  danger: boolean;
+} {
+  const count = trades.length;
+  const capacity = MAX_ARCHIVE_SIZE;
+  const percent = parseFloat(((count / capacity) * 100).toFixed(1));
+  return {
+    count,
+    capacity,
+    percent,
+    warning: percent >= 85,
+    danger: percent >= 100,
+  };
+}
+
 export function filterTradesByRange(trades: BotTradeRecord[], range: string): BotTradeRecord[] {
   const now = Date.now();
   const dayMs = 24 * 60 * 60 * 1000;
   
-  // IST correction (5.5 hrs ahead of UTC)
-  const istOffset = 5.5 * 60 * 60 * 1000;
-  const getISTDateString = (timestamp: number) => {
-    return new Date(timestamp + istOffset).toISOString().slice(0, 10);
-  };
-  
-  const todayStr = getISTDateString(now);
-  const tempYesterday = new Date(now - dayMs + istOffset);
-  const yesterdayStr = tempYesterday.toISOString().slice(0, 10);
+  const nowIST = now + 5.5 * 3600 * 1000;
+  const todayMidnightIST = nowIST - (nowIST % (24 * 3600 * 1000)) - 5.5 * 3600 * 1000;
+  const yesterdayMidnightIST = todayMidnightIST - dayMs;
 
   const getEffectiveTime = (t: BotTradeRecord) => t.closedAt ?? t.openedAt;
 
   switch (range) {
     case 'TODAY':
-      return trades.filter(t => getISTDateString(getEffectiveTime(t)) === todayStr);
+      return trades.filter(t => getEffectiveTime(t) >= todayMidnightIST);
     case 'YESTERDAY':
-      return trades.filter(t => getISTDateString(getEffectiveTime(t)) === yesterdayStr);
+      return trades.filter(t => {
+        const tTime = getEffectiveTime(t);
+        return tTime >= yesterdayMidnightIST && tTime < todayMidnightIST;
+      });
     case '7D':
       return trades.filter(t => getEffectiveTime(t) >= now - 7 * dayMs);
     case '30D':

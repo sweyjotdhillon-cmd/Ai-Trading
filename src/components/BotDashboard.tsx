@@ -9,6 +9,7 @@ import { filterTradesByRange } from '../services/botTradeService';
 import { auth } from '../services/firebase';
 import { useEODSettlement } from '../hooks/useEODSettlement';
 import { fetchLivePrice } from '../services/stockPriceFeed';
+import { todayIST, isAfterMarketClose } from '../utils/istUtils';
 
 interface BotDashboardProps {
   bot:      UseBotLoopResult;
@@ -215,31 +216,31 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
   const uid = auth.currentUser?.uid ?? null;
   const { state: eodState, triggerSettlement } = useEODSettlement(uid);
   const [eodBanner, setEodBanner] = useState<{ type: 'success' | 'error'; message: string; sub?: string } | null>(null);
+  const [showSettleConfirm, setShowSettleConfirm] = useState(false);
+  const [reminderDismissed, setReminderDismissed] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return sessionStorage.getItem(`rem_dismissed_${uid}_${todayIST()}`) === '1';
+  });
 
   // Show persistent banner when settlement completes
   useEffect(() => {
     if (!eodState.lastResult) return;
     const r = eodState.lastResult;
-    if (r.settled === 0 && r.skipped === 0) {
-      setEodBanner({ type: 'success', message: 'No open trades to settle' });
-    } else if (r.settled > 0) {
-      const sign = r.totalNetPnL >= 0 ? '+' : '';
-      const parts: string[] = [];
-      if (r.ambiguous > 0) parts.push(`${r.ambiguous} ambiguous.`);
-      if (r.details && r.details.length > 0) {
-        parts.push(r.details.map(d => `${d.symbol}: ${d.pnl >= 0 ? '+' : ''}${d.pnl.toFixed(2)} (${d.outcome.replace('_', ' ')})`).join(' · '));
-      }
+    
+    const sign = r.totalNetPnL >= 0 ? '+' : '';
+    const parts: string[] = [];
+    if (r.ambiguous > 0) parts.push(`${r.ambiguous} ambiguous`);
+    if (r.skipped > 0) parts.push(`${r.skipped} skipped`);
+    if (r.errors.length > 0) parts.push(...r.errors);
 
-      setEodBanner({
-        type: 'success',
-        message: `Settlement done — ${r.settled} trade${r.settled > 1 ? 's' : ''} · Net P&L: ${sign}₹${Math.abs(r.totalNetPnL).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
-        sub: parts.join(' | ')
-      });
-      // Automatically refresh logs and balance after EOD settlement
-      bot.syncFromCloud().catch(err => console.error("Failed to sync after EOD settlement", err));
-    } else {
-      setEodBanner({ type: 'error', message: `Settlement failed: ${r.errors.join(' | ')}` });
-    }
+    setEodBanner({
+      type: 'success',
+      message: `Settlement done — ${r.settled} settled · ${r.skipped} skipped · Net P&L: ${sign}₹${Math.abs(r.totalNetPnL).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
+      sub: parts.join(' | ') || undefined
+    });
+
+    bot.syncFromCloud().catch(err => console.error("Failed to sync after EOD settlement", err));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eodState.lastResult]);
 
   const filteredTrades = useMemo(() => {
@@ -424,6 +425,19 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
             <Activity size={12} className={phase.pulse ? 'animate-pulse' : ''} />
             {phase.label}
           </div>
+          {(bot.phase === 'SCANNING' || bot.phase === 'ARMED') && bot.lastAnalysisResult?.scalpDecision && (
+            <div className="flex items-center gap-3 mt-2 px-1">
+              <span className="text-[10px] font-mono whitespace-nowrap text-zinc-400">
+                Confluence: {bot.lastAnalysisResult.scalpDecision.confluenceScore}/10
+              </span>
+              <div className="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden flex-1 max-w-[100px]">
+                <div 
+                  className={`h-full transition-all ${bot.lastAnalysisResult.scalpDecision.confluenceScore >= 7 ? 'bg-emerald-500' : bot.lastAnalysisResult.scalpDecision.confluenceScore >= 4 ? 'bg-amber-500' : 'bg-rose-500'}`} 
+                  style={{ width: `${Math.min(100, Math.max(0, bot.lastAnalysisResult.scalpDecision.confluenceScore * 10))}%` }} 
+                />
+              </div>
+            </div>
+          )}
 
           {/* Symbol */}
           <span className="font-mono text-sm font-bold text-zinc-300">{symbol}</span>
@@ -528,12 +542,44 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
         </div>
       )}
 
+      {/* 3:30 PM EOD Reminder Notification */}
+      {isAfterMarketClose() && !eodState.alreadySettled && !reminderDismissed && bot.activeTrades && bot.activeTrades.length > 0 && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-pulse">
+          <div className="flex items-start gap-2 text-xs font-mono font-bold text-amber-400">
+            <Clock size={14} className="shrink-0 mt-0.5" />
+            <p>Daily market is closed. Tap below to settle today's trades.</p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto font-mono text-xs">
+            <button
+              onClick={() => {
+                setShowSettleConfirm(true);
+              }}
+              className="px-3 py-1 bg-amber-500 hover:bg-amber-600 text-zinc-950 font-black rounded-lg transition-colors"
+            >
+              Settle Now
+            </button>
+            <button
+              onClick={() => {
+                try {
+                  sessionStorage.setItem(`rem_dismissed_${uid}_${todayIST()}`, '1');
+                } catch {
+                  // ignore
+                }
+                setReminderDismissed(true);
+              }}
+              className="text-zinc-500 hover:text-zinc-300 ml-2 font-bold transition-colors"
+            >
+              ✕ Dismiss
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* EOD Settle Button */}
       {eodState.canSettle && (
         <button
-          onClick={async () => {
-            await triggerSettlement();
-            await bot.syncFromCloud(); // Force state hydration to update bot phase to IDLE
+          onClick={() => {
+            setShowSettleConfirm(true);
           }}
           disabled={eodState.isSettling || !bot.activeTrades || bot.activeTrades.length === 0}
           className={`w-full py-2.5 rounded-xl border text-xs font-black uppercase tracking-widest transition-all active:scale-[0.98] ${
@@ -550,6 +596,39 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
             ? '⏳ Settling Trades...'
             : '📋 Settle Today\'s Trades'}
         </button>
+      )}
+
+      {/* 2-Step Settlement Confirmation Trial Modal */}
+      {showSettleConfirm && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#12131A] border border-zinc-800 w-full max-w-md rounded-2xl p-6 shadow-2xl relative">
+            <h3 className="text-sm font-black uppercase tracking-widest text-[#D9B382] mb-3 flex items-center gap-2">
+              <Shield size={16} /> Confirm EOD Settlement
+            </h3>
+            <p className="text-xs text-zinc-400 font-mono leading-relaxed mb-6">
+              You are about to force close and settle all active paper trades on today's EOD market price. This cannot be undone. Are you sure?
+            </p>
+            <div className="flex justify-end gap-3 font-mono text-xs">
+              <button
+                onClick={() => setShowSettleConfirm(false)}
+                className="px-4 py-2 bg-zinc-850 hover:bg-zinc-800 text-zinc-400 border border-zinc-800 rounded-xl transition-colors font-bold"
+              >
+                No, Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  setShowSettleConfirm(false);
+                  const balance = bot.virtualBalance ?? 100000;
+                  await triggerSettlement(balance);
+                  await bot.syncFromCloud();
+                }}
+                className="px-4 py-2 bg-[#D9B382] hover:bg-[#c9a171] text-zinc-950 rounded-xl font-black transition-colors"
+              >
+                Yes, Settle
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {bot.ohlcQuality === 'NORMALIZED_FALLBACK' && (
@@ -600,26 +679,64 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
       })()}
 
       {/* Last block reason */}
-      {bot.lastBlockReason && bot.phase !== 'IN_TRADE' && (
-        <div className="bg-amber-500/8 border border-amber-500/20 rounded-xl px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex-1">
-            <p className="text-[9px] text-amber-500 font-black uppercase tracking-widest mb-1 font-mono">
-              Last Status / Block Reason
-            </p>
-            <p className="text-xs text-amber-300 font-mono break-all leading-normal">
-              {bot.lastBlockReason}
-            </p>
+      {/* Live Log Terminal */}
+      {bot.phase !== 'IDLE' && bot.phase !== 'IN_TRADE' && bot.phase !== 'HALTED' && (
+        <div className="bg-zinc-950 border border-zinc-800 rounded-xl overflow-hidden mt-4">
+          <div className="px-3 py-2 border-b border-zinc-800 flex items-center justify-between bg-zinc-900/50">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest font-mono flex items-center gap-2">
+                <Activity size={10} className="text-zinc-500" />
+                Live Scanning Log
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </span>
+              <span className="text-[9px] text-emerald-500 font-mono">SCANNING</span>
+            </div>
           </div>
-          {bot.phase !== 'IDLE' && (
-            <button
-              onClick={handleReEvaluate}
-              id="btn-re-evaluate-status"
-              disabled={isReEvaluatingLocal || bot.isAnalyzing}
-              className="px-3 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 text-[10px] font-black uppercase tracking-wider transition-colors shrink-0 flex items-center gap-1.5 active:scale-[0.98] disabled:opacity-50"
-            >
-              🔄 {isReEvaluatingLocal || bot.isAnalyzing ? 'Evaluating...' : 'Re-evaluate'}
-            </button>
-          )}
+          <div className="p-3 font-mono text-[10px] leading-relaxed max-h-[160px] overflow-y-auto space-y-1.5 scroll-smooth">
+            <div className="text-zinc-500 flex gap-2">
+              <span className="opacity-50">[{new Date().toLocaleTimeString()}]</span>
+              <span>Analysis cycle completed. Processing telemetry...</span>
+            </div>
+            
+            {bot.lastBlockers?.length > 0 ? (
+               bot.lastBlockers.map((b, i) => {
+                 const isErr = b.includes('INSUFFICIENT_INVESTMENT') || b.includes('RISK_CAPS_EXCEEDED');
+                 return (
+                   <div key={i} className={`flex gap-2 ${isErr ? 'text-rose-400' : 'text-amber-400/90'}`}>
+                     <span className="opacity-50">[{new Date().toLocaleTimeString()}]</span>
+                     <span className="break-all">{b}</span>
+                   </div>
+                 )
+               })
+            ) : bot.lastAnalysisResult?.judge?.winner === 'BULL' ? (
+              <div className="text-emerald-400 flex gap-2">
+                <span className="opacity-50">[{new Date().toLocaleTimeString()}]</span>
+                <span>Signal generated. Waiting for execution window...</span>
+              </div>
+            ) : bot.lastAnalysisResult?.judge?.winner === 'BEAR' ? (
+              <div className="text-rose-400 flex gap-2">
+                <span className="opacity-50">[{new Date().toLocaleTimeString()}]</span>
+                <span>Bearish signal. Long trades blocked.</span>
+              </div>
+            ) : (
+              <div className="text-zinc-400 flex gap-2">
+                <span className="opacity-50">[{new Date().toLocaleTimeString()}]</span>
+                <span>Waiting for high probability setup...</span>
+              </div>
+            )}
+            
+            {(bot.lastBlockers || []).some(b => b.includes('INSUFFICIENT_INVESTMENT')) && (
+               <div className="text-xs text-rose-400 font-bold flex gap-2 mt-2 p-2 bg-rose-500/10 rounded">
+                 <span>⚠</span>
+                 <span>Tip: To buy at least 1 share, increase your "Investment Per Trade" above the current stock price, or click "FORCE BUY" to manually purchase 1 share.</span>
+               </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -654,9 +771,20 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
           return sum + invested + estCharges;
         }, 0);
 
-        const totalRealizedPnL = (bot.tradeHistory ?? []).reduce((sum, t) => sum + (t.realizedPnL ?? 0), 0);
+        // Compute Unrealised PnL locally when trades are active and currentPrice is available
+        let unrealisedPnL = 0;
+        if (bot.currentPrice != null && openTrades.length > 0) {
+          unrealisedPnL = openTrades.reduce((sum, t) => {
+            const shares = t.plan?.positionSize ?? 1;
+            const currentPrice = bot.currentPrice!;
+            const pnl = (currentPrice - t.entryPrice) * shares;
+            return sum + pnl;
+          }, 0);
+        }
+
+        const totalRealizedPnL = (bot.tradeHistory ?? []).reduce((sum, t) => sum + (t.netPnL ?? t.realizedPnL ?? 0), 0);
         const STARTING_BASE = balance + openTradesOutlay - totalRealizedPnL;
-        const accountEquity = balance + openTradesOutlay;
+        const accountEquity = balance + openTradesOutlay + unrealisedPnL;
         const delta = accountEquity - STARTING_BASE;
         const deltaPct = STARTING_BASE > 0 ? (delta / STARTING_BASE) * 100 : 0;
 
@@ -670,6 +798,19 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
               <div className="text-[9px] text-zinc-500 mt-0.5">
                 Available Cash: ₹{balance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
+              {unrealisedPnL !== 0 && (
+                <div className="text-[10px] mt-1 flex flex-col gap-0.5 font-mono">
+                  <div className="flex gap-2">
+                    <span className="text-zinc-505 text-zinc-500">Unrealised PnL:</span>
+                    <span className={`font-bold ${unrealisedPnL > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {unrealisedPnL > 0 ? '+' : ''}₹{unrealisedPnL.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                  <div className="text-[8px] text-zinc-500/70 uppercase tracking-wider">
+                    Equity = Cash + Deployed (₹{openTradesOutlay.toFixed(0)}) {unrealisedPnL > 0 ? '+' : ''}{unrealisedPnL !== 0 ? `Unrealised (₹${unrealisedPnL.toFixed(0)})` : ''}
+                  </div>
+                </div>
+              )}
             </div>
             <div className="text-left sm:text-right font-mono text-xs">
               <span className={`font-bold ${
@@ -733,8 +874,11 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
                 {bot.lastConfidence.toFixed(0)}%
               </text>
             </svg>
+            <div className="absolute left-0 right-0 text-center text-[7px] text-zinc-500 font-mono -bottom-2.5 leading-none">
+              {bot.lastAnalysisResult?.confidenceRange != null ? `±${bot.lastAnalysisResult.confidenceRange}` : ''}
+            </div>
           </div>
-          <div className={`text-center text-[9px] font-mono font-bold mt-0.5 ${
+          <div className={`text-center text-[9px] font-mono font-bold mt-3 ${
             bot.lastSignal === 'LONG' ? 'text-emerald-400' : 'text-zinc-500'
           }`}>
             {bot.lastSignal ?? 'WAITING'}
@@ -744,12 +888,14 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
 
       {/* ── Live Analysis Judge Panel ── */}
       {bot.lastAnalysisResult && (() => {
-        const judgeObj   = bot.lastAnalysisResult?.judge || {};
+        const judgeObj   = bot.lastAnalysisResult?.judge || bot.lastAnalysisResult || {};
         const casesObj   = judgeObj.cases || null;
         const winner     = judgeObj.winner || 'NO_TRADE';
         const ruling     = judgeObj.ruling || '—';
         const confidence = judgeObj.finalConfidence ?? 0;
-        const techEval   = judgeObj.techniquesEvaluation || null;
+        
+        const hurst = judgeObj.auditTrail?.hurstRegime;
+        const j4Skeptic = judgeObj.auditTrail?.j4Skeptic;
 
         return (
           <div className={`rounded-xl border p-4 ${
@@ -771,6 +917,18 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
                 {winner}
               </span>
             </div>
+            
+            {/* NO TRADE REASON (Fix 19) */}
+            {judgeObj.signal === 'NO_TRADE' && judgeObj.noTradeReason && (
+              <div className="mb-3 p-2.5 rounded bg-amber-500/10 border border-amber-500/20">
+                 <p className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-amber-500 mb-1">
+                   <AlertTriangle size={12} /> Why No Trade
+                 </p>
+                 <p className="text-[10px] text-amber-500/80 leading-snug">
+                   {judgeObj.noTradeReason}
+                 </p>
+              </div>
+            )}
 
             {/* J1/J2/J3 Bull vs Bear scorecards */}
             {casesObj && (
@@ -787,7 +945,7 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
                       {[
                         { label: 'J1 Pattern', val: data.j1, max: 4 },
                         { label: 'J2 Indicator', val: data.j2, max: 4 },
-                        { label: 'J3 Reversal', val: data.j3, max: 3 },
+                        { label: 'J3 Reversal', val: data.j3, max: 4 },
                       ].map((j, i) => (
                         <div key={i} className="mb-1.5">
                           <div className="flex flex-row justify-between mb-0.5">
@@ -797,7 +955,7 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
                           <div className="h-1 bg-white/10 rounded-full overflow-hidden">
                             <div
                               className="h-full rounded-full transition-all duration-1000"
-                              style={{ width: `${(j.val / j.max) * 100}%`, backgroundColor: color }}
+                              style={{ width: `${Math.min(100, (j.val / j.max) * 100)}%`, backgroundColor: color }}
                             />
                           </div>
                         </div>
@@ -813,6 +971,48 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
                 })}
               </div>
             )}
+            
+            {/* J4 Skeptic & Hurst Regime (Fix 18, Fix 20) */}
+            <div className="flex flex-col gap-2 mb-3">
+              {j4Skeptic && (
+                <div className="bg-black/30 rounded-xl p-3 border border-zinc-800">
+                  <div className="flex justify-between items-center cursor-pointer" onClick={() => setShowTech(!showTech)}>
+                    <div className="flex items-center gap-2">
+                       <span className="text-[9px] font-black uppercase tracking-widest text-[#D9B382]">J4 Skeptic</span>
+                       <span className={`text-[8px] font-black px-1.5 py-0.5 rounded ${
+                         j4Skeptic.verdict === 'ACCEPT' ? 'bg-emerald-500/20 text-emerald-400' :
+                         j4Skeptic.verdict === 'CAUTION' ? 'bg-amber-500/20 text-amber-500' :
+                         'bg-red-500/20 text-red-500'
+                       }`}>{j4Skeptic.verdict}</span>
+                    </div>
+                    <span className="text-[9px] text-zinc-400 font-mono">Stripped {(100 - j4Skeptic.multiplier * 100).toFixed(0)}% confidence</span>
+                  </div>
+                  {showTech && j4Skeptic.reasons && j4Skeptic.reasons.length > 0 && (
+                    <div className="mt-2 pt-2 border-t border-zinc-800 space-y-1">
+                      {j4Skeptic.reasons.map((r: string, i: number) => (
+                         <div key={i} className="text-[8px] text-zinc-500 font-mono leading-tight">• {r}</div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {hurst && (
+                <div className="flex items-center gap-2">
+                  <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full ${
+                    (hurst.explanation || '').includes('Trending') ? 'bg-blue-500/20 text-blue-400' :
+                    (hurst.explanation || '').includes('Mean-reverting') ? 'bg-purple-500/20 text-purple-400' :
+                    'bg-zinc-500/20 text-zinc-400'
+                  }`}>
+                    {(hurst.explanation || '').includes('Trending') ? 'Trending Regime' :
+                     (hurst.explanation || '').includes('Mean-reverting') ? 'Mean-Reverting Regime' : 'Balanced'}
+                  </span>
+                  <span className="text-[8px] font-mono text-zinc-500">
+                    H={!isNaN(hurst.H_exp) ? hurst.H_exp.toFixed(2) : 'N/A'}
+                  </span>
+                </div>
+              )}
+            </div>
 
             {/* Ruling */}
             <div className="mb-3 bg-black/20 rounded-xl p-3 border border-[#D9B382]/15">

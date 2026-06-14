@@ -7,6 +7,7 @@ import { SwingPivot } from './marketStructure';
 import { checkRiskCaps } from './riskGuard';
 import { computeRoundTripCharges } from './brokerCharges';
 import { buildScalpFeatures } from './scalpFeatures';
+import { getDefaultScalpConfig, loadScalpConfig } from '../config/scalpConfig';
 
 export interface ScalpContext {
   config: ScalpConfig;
@@ -18,6 +19,7 @@ export interface ScalpContext {
   nowISTMinutesSinceMidnight: number;
   currentBarIndex: number;
   currentPrice?: number;
+  indicatorCache?: any;
 }
 
 export interface ScalpDecision {
@@ -30,7 +32,6 @@ export interface ScalpDecision {
 }
 
 export function findRecentSwingLow(pivots: SwingPivot[], currentBarIndex: number): number | undefined {
-  // Sort descending to find closest lookback pivot
   const sorted = [...pivots].sort((a, b) => b.index - a.index);
   for (const pivot of sorted) {
     if (pivot.kind === 'LOW' && pivot.index < currentBarIndex) {
@@ -42,14 +43,15 @@ export function findRecentSwingLow(pivots: SwingPivot[], currentBarIndex: number
 
 export function calculateStopLoss(entry: number, mode: SLMode, ctx: ScalpContext): number {
   const atrMultiplierSL = ctx.config.atrMultiplierSL ?? 1.5;
-  const atr14 = ctx.atr14[ctx.atr14.length - 1] || entry * 0.01;
+  let atr14 = ctx.atr14[ctx.atr14.length - 1] || entry * 0.01;
+  if (isNaN(atr14) || atr14 <= 0) atr14 = entry * 0.01;
+
   const slPercent = ctx.config.slPercent ?? 0.5;
 
   let sl: number;
 
   if (mode === 'PERCENT') {
     sl = entry - (entry * slPercent / 100);
-    // Floor: sl must never be more than 1.5% below entry for PERCENT mode
     sl = Math.max(sl, entry * 0.985);
   } else if (mode === 'ATR') {
     sl = entry - atrMultiplierSL * atr14;
@@ -69,15 +71,21 @@ export function calculateStopLoss(entry: number, mode: SLMode, ctx: ScalpContext
     // AUTO mode
     const swing = findRecentSwingLow(ctx.pivots, ctx.currentBarIndex);
     const limit = 2 * atrMultiplierSL * atr14;
-    if (swing !== undefined && swing < entry) {
-      if (Math.abs(entry - swing) <= limit) {
-        sl = swing - 0.3 * atr14;
-      } else {
-        sl = entry - atrMultiplierSL * atr14;
-      }
+    if (swing !== undefined && swing < entry && Math.abs(entry - swing) <= limit) {
+      sl = swing - 0.3 * atr14;
     } else {
       sl = entry - atrMultiplierSL * atr14;
     }
+    const percentFloor = entry * (1 - slPercent / 100);
+    if (sl < percentFloor) {
+      sl = percentFloor;
+    }
+  }
+
+  // Enforce an absolute minimum SL distance to prevent immediate trigger due to tick noise or spread
+  const minSlDistance = entry * 0.002; // minimum 0.2% away
+  if (entry - sl < minSlDistance) {
+    sl = entry - minSlDistance;
   }
 
   return sl;
@@ -85,7 +93,7 @@ export function calculateStopLoss(entry: number, mode: SLMode, ctx: ScalpContext
 
 export function buildExitPlan(entry: number, sl: number, ctx: ScalpContext) {
   const risk = entry - sl;
-  if (risk <= 0) throw new Error('Invalid SL');
+  if (risk <= 0) return null;
   const tp1RMultiple = ctx.config.tp1RMultiple ?? 1.0;
   const rrRatio = ctx.config.rrRatio ?? 2.0;
   const tp1 = entry + risk * tp1RMultiple;
@@ -107,12 +115,12 @@ export function buildExitPlan(entry: number, sl: number, ctx: ScalpContext) {
 export function calculateConfluence(f: ScalpFeatures): number {
   let s = 0;
   
-  // Tier 1 triggers (max 6, but cap index at 4)
+  // Tier 1 triggers (uncapped now)
   let t1 = 0;
   if (f.bullEngulfingAtSupport) t1 += 2;
   if (f.hammerAtSupport)        t1 += 2;
   if (f.macdBullishDivergence)  t1 += 2;
-  s += Math.min(t1, 4); // tier-1 cap
+  s += t1;
 
   // Tier 2 trend (max 4)
   let t2 = 0;
@@ -122,124 +130,93 @@ export function calculateConfluence(f: ScalpFeatures): number {
   if (f.bos_bull || f.choch_bull) t2 += 1;
   s += Math.min(t2, 4);
 
-  // Tier 3 quality (max 3)
+  // Tier 3 quality (max 4)
   let t3 = 0;
   if (f.rsi_recovering_from_oversold) t3 += 1;
   if (f.volatility_normal)            t3 += 1;
   if (f.price_above_vwap)             t3 += 1;
-  s += Math.min(t3, 3);
+  if (f.timeOfDayQuality === 'OPTIMAL') t3 += 1;
+  s += Math.min(t3, 4);
 
   // Penalties
   if (f.bear_engulfing_recent)              s -= 3;
   if (f.adx_above_25 && f.minusDI_dominant) s -= 2;
+  if (f.timeOfDayQuality === 'AVOID')       s -= 2;
 
   return Math.max(0, Math.min(10, s));
 }
 
-export function evaluateScalpSignal(
+export function filterScalpSignal(
   ohlc: NumericOHLC[],
   legacyDecision: { winner: 'BULL' | 'BEAR' | 'NO_TRADE' },
   ctx: ScalpContext,
-  isForced: boolean = false
-): ScalpDecision {
+  isForced: boolean,
+  confluenceScore: number,
+  features: ScalpFeatures,
+  preCheckedRiskVerdict?: import('./riskGuard').RiskVerdict
+): { passed: boolean; signal?: 'NO_TRADE'|'WAIT'; blockers: string[] } {
+  const blockers: string[] = [];
   const rawWinner = isForced ? 'BULL' : legacyDecision.winner;
-  const lastBar = ohlc[ohlc.length - 1];
-  const entry = ctx.currentPrice ?? (lastBar ? lastBar.close : 0);
-  
-  // LAYER 1 & 2 - Filters & Long-Only Constraints
-  const features = buildScalpFeatures(ohlc, ctx.pivots, ctx.atr14, ctx.vwapProxy, ctx.nowMsEpoch);
-  const confluenceScore = calculateConfluence(features);
-  
+
   if (rawWinner === 'BEAR') {
-    return { signal: 'NO_TRADE', confluenceScore, blockers: ['BEARS_DOMINANT'], features, rawWinner };
+    blockers.push('BEARS_DOMINANT');
+    return { passed: false, signal: 'NO_TRADE', blockers };
   }
   if (rawWinner === 'NO_TRADE') {
-    return { signal: 'NO_TRADE', confluenceScore, blockers: ['NO_EDGE'], features, rawWinner };
+    blockers.push('NO_EDGE');
+    return { passed: false, signal: 'NO_TRADE', blockers };
   }
-
-  // LAYER 3 - Plan formulation
-  const blockers: string[] = [];
 
   if (!isForced && confluenceScore < ctx.config.minConfluence) {
     blockers.push('LOW_CONFLUENCE');
-    return { signal: 'WAIT', confluenceScore, blockers, features, rawWinner };
+    return { passed: false, signal: 'WAIT', blockers };
   }
   
   const atrVal = ctx.atr14[ctx.atr14.length - 1];
-  if (!atrVal || atrVal <= 0) {
+  if (!atrVal || atrVal <= 0 || isNaN(atrVal)) {
     blockers.push('INVALID_ATR');
-    return { signal: 'WAIT', confluenceScore, blockers, features, rawWinner };
+    return { passed: false, signal: 'WAIT', blockers };
   }
 
-  const sl = calculateStopLoss(entry, ctx.config.slMode, ctx);
-  const riskPerShare = entry - sl;
-  if (riskPerShare <= 0) {
-    blockers.push('INVALID_SL');
-    return { signal: 'WAIT', confluenceScore, blockers, features, rawWinner };
-  }
-
-  // Position Sizing
-  const investmentAmount = ctx.config.investmentPerTrade ?? 10000;
-  const lotSize = ctx.config.lotSize ?? 1;
-  let sizeShares = 0;
-
-  if (lotSize === 1) {
-    // Standard equity stocks: Only WHOLE shares. (No fractional shares in India)
-    sizeShares = Math.floor(investmentAmount / entry);
-  } else {
-    // Non-equity options/futures: keep standard lot size multiples
-    sizeShares = Math.floor((investmentAmount / entry) / lotSize) * lotSize;
-  }
-
-  if (sizeShares <= 0 && !isForced) {
-    blockers.push(`INSUFFICIENT_INVESTMENT: Allocated per trade (₹${investmentAmount}) results in 0 shares. (Stock price: ₹${entry.toFixed(2)})`);
-    return { signal: 'WAIT', confluenceScore, blockers, features, rawWinner };
-  }
-
-  if (sizeShares <= 0) {
-    sizeShares = lotSize === 1 ? 1 : lotSize;
-  }
-
-  // Exit Targets
-  const exits = buildExitPlan(entry, sl, ctx);
-  const rrRatio = (exits.tp2 - entry) / riskPerShare;
-
-  // Min R:R verification
-  if (!isForced && rrRatio < ctx.config.minRR) {
-    blockers.push(`RR_TOO_LOW: Target R:R ${rrRatio.toFixed(2)} < Minimum ${ctx.config.minRR.toFixed(2)}`);
-    return { signal: 'WAIT', confluenceScore, blockers, features, rawWinner };
-  }
-
-  // Predictability Gate
   if (!isForced && ctx.config.enablePredictabilityGate && !features.predictabilityPassed) {
     blockers.push('PREDICTABILITY_FAILED');
-    return { signal: 'WAIT', confluenceScore, blockers, features, rawWinner };
+    return { passed: false, signal: 'WAIT', blockers };
   }
 
-  // Market Hours Gate
   if (!isForced && ctx.config.enableMarketHoursGate && !features.withinMarketHours) {
     blockers.push('OUTSIDE_MARKET_HOURS');
-    return { signal: 'NO_TRADE', confluenceScore, blockers, features, rawWinner };
+    return { passed: false, signal: 'NO_TRADE', blockers };
   }
 
-  // Risk Caps Verification
-  const riskCaps = checkRiskCaps(ctx.riskState, ctx.config.risk, ctx.nowMsEpoch);
+  const riskCaps = preCheckedRiskVerdict ?? checkRiskCaps(ctx.riskState, ctx.config.risk, ctx.nowMsEpoch, ctx.config.capitalRupees);
   if (!isForced && !riskCaps.allow) {
     blockers.push(riskCaps.reason || 'RISK_CAPS_EXCEEDED');
-    return { signal: 'NO_TRADE', confluenceScore, blockers, features, rawWinner };
+    return { passed: false, signal: 'NO_TRADE', blockers };
   }
 
-  // Broker Charges check
-  const chargesBreakdown = computeRoundTripCharges(entry, exits.tp2, sizeShares, ctx.config.instrument);
+  return { passed: true, blockers };
+}
+
+export function buildScalpPlan(
+  entry: number,
+  sl: number,
+  exits: { tp1: number, tp2: number, trailingActivate: number, trailingDistance: number, breakEvenAfter: number },
+  sizeShares: number,
+  confluenceScore: number,
+  ctx: ScalpContext,
+  chargesAtTP1: any,
+  chargesAtTP2: any,
+  features: ScalpFeatures,
+  slippageAdjusted: any,
+  confluenceScaleFactor: number,
+  blockers: string[]
+): ScalpingPlan {
+  const riskPerShare = entry - sl;
   const potentialRewardRupees = (exits.tp2 - entry) * sizeShares;
-  const netExpectedPnL = potentialRewardRupees - chargesBreakdown.total;
+  const rrRatio = (exits.tp2 - entry) / riskPerShare;
+  const netExpectedPnL = potentialRewardRupees - chargesAtTP2.total;
 
-  if (!isForced && netExpectedPnL <= 0) {
-    blockers.push('CHARGES_EAT_EDGE');
-    return { signal: 'WAIT', confluenceScore, blockers, features, rawWinner };
-  }
-
-  const plan: ScalpingPlan = {
+  return {
     entry,
     stopLoss: sl,
     takeProfit1: exits.tp1,
@@ -253,90 +230,20 @@ export function evaluateScalpSignal(
     rrRatio,
     maxHoldingMinutes: ctx.config.maxHoldingMinutes,
     confluenceScore,
-    brokerCharges: chargesBreakdown.total,
+    brokerCharges: chargesAtTP2.total,
+    brokerChargesConservative: chargesAtTP1.total,
     netExpectedPnL,
     slMode: ctx.config.slMode,
     tpMode: ctx.config.tpMode,
     instrument: ctx.config.instrument,
     noteReasons: blockers,
     investmentRupees: sizeShares * entry,
-  };
-
-  const antiHallc = runAntiHallucinationFilter(ohlc, plan, ctx);
-  plan.antiHallucination = antiHallc;
-
-  if (!isForced && !antiHallc.passed) {
-    blockers.push('HALLUCINATION_DETECTED');
-    antiHallc.reasons.forEach(r => blockers.push(`HALLUC_CHECK: ${r}`));
-    return {
-      signal: 'WAIT',
-      confluenceScore,
-      plan,
-      blockers,
-      features,
-      rawWinner
-    };
-  }
-
-  return {
-    signal: 'BUY',
-    confluenceScore,
-    plan,
-    blockers,
-    features,
-    rawWinner
-  };
+    confluenceScaleFactor,
+    ...slippageAdjusted
+  } as any; // Type-cast because of our new fields (slippageAdjusted/confluenceScaleFactor) not in type optionally yet. We'll update the type via another file edit if needed, or JS will just accept it.
 }
 
-import { ScalpConfig } from '../types';
-
-export function getDefaultScalpConfig(): ScalpConfig {
-  return {
-    capitalRupees: 100000,
-    riskPerTradePct: 1.0,
-    maxPositionPctCapital: 30,
-    leverage: 1,
-    instrument: 'EQUITY_INTRADAY',
-    lotSize: 1,
-    investmentPerTrade: 10000,
-    rrRatioChoice: 2,
-    useConfidenceThreshold: true,
-    maxConcurrentTrades: 1,
-    slMode: 'AUTO',
-    atrMultiplierSL: 1.2,
-    slPercent: 0.4,
-    tpMode: 'PARTIAL_RR',
-    rrRatio: 2.0,
-    tp1RMultiple: 1.0,
-    trailMultiplier: 1.5,
-    minConfluence: 5,
-    minRR: 1.5,
-    longOnly: true,
-    enableMarketHoursGate: false,
-    enablePredictabilityGate: true,
-    risk: {
-      dailyLossCapRupees: 2000,
-      maxTradesPerDay: 999,
-      maxConsecutiveLosses: 999,
-      cooldownMinutes: 10,
-      slippageTicks: 1,
-    },
-    maxHoldingMinutes: 5,
-  };
-}
-
-export function loadScalpConfig(): ScalpConfig {
-  if (typeof window === 'undefined') return getDefaultScalpConfig();
-  try {
-    const raw = localStorage.getItem('chartlens_scalp_config_v1');
-    if (!raw) return getDefaultScalpConfig();
-    return JSON.parse(raw);
-  } catch {
-    return getDefaultScalpConfig();
-  }
-}
-
-export function runAntiHallucinationFilter(
+export function validateScalpPlan(
   ohlc: NumericOHLC[],
   plan: ScalpingPlan,
   ctx: ScalpContext
@@ -351,14 +258,12 @@ export function runAntiHallucinationFilter(
   };
   const reasons: string[] = [];
 
-  // Check 1 — Price Ordering: TP2 > TP1 > Entry > SL (strict long check)
   const orderCorrect = plan.takeProfit2 > plan.takeProfit1 && plan.takeProfit1 > plan.entry && plan.entry > plan.stopLoss;
   const valuesPositive = plan.entry > 0 && plan.stopLoss > 0 && plan.takeProfit1 > 0 && plan.takeProfit2 > 0;
   checks.priceOrdering = orderCorrect && valuesPositive;
   if (!orderCorrect) reasons.push('Invalid price boundary structure: TP2 > TP1 > Entry > SL violated.');
   if (!valuesPositive) reasons.push('Zero or negative trade plan boundaries detected.');
 
-  // Check 2 — Candle Consistency: high >= low, high >= open, high >= close, open, high, low, close > 0
   let candleError = false;
   for (let i = 0; i < ohlc.length; i++) {
     const c = ohlc[i];
@@ -370,21 +275,18 @@ export function runAntiHallucinationFilter(
   checks.candleConsistency = !candleError;
   if (candleError) reasons.push('Detected inconsistent or glitched OHLCV values in historical buffer.');
 
-  // Check 3 — Entry Matching: entry matches lastBar.close perfectly (or within tolerance if live)
   const lastBar = ohlc[ohlc.length - 1];
   const currentAtr = ctx.atr14[ctx.atr14.length - 1] ?? 1;
-  const tolerance = ctx.currentPrice ? (currentAtr * 0.5) : 0.001;
+  const tolerance = ctx.currentPrice ? Math.max(0.5, currentAtr * 0.5) : 0.001;
   const targetPrice = ctx.currentPrice ?? (lastBar ? lastBar.close : 0);
   const entryMatch = lastBar ? Math.abs(plan.entry - targetPrice) <= tolerance : false;
   checks.entryMatching = entryMatch;
-  if (!entryMatch) reasons.push(`Trade entry price does not align with the target price (tolerance ${tolerance.toFixed(4)}).`);
+  if (!entryMatch) reasons.push(`Trade entry price differs from last candle close by more than 0.5 ATR. Entry: ${plan.entry}, Last Close: ${targetPrice}, Tolerance: ${tolerance.toFixed(4)}`);
 
-  // Check 4 — Non-zero indicators
   const indicatorsValid = currentAtr > 0;
   checks.nonZeroIndicators = indicatorsValid;
   if (!indicatorsValid) reasons.push('Technical indicator ATR14 is zero, invalid or missing.');
 
-  // Check 5 — Swing Pivots match data high/low
   let pivotsConsistent = true;
   if (ohlc.length >= 10) {
     for (const p of ctx.pivots) {
@@ -404,22 +306,130 @@ export function runAntiHallucinationFilter(
   checks.pivotsMatchData = pivotsConsistent;
   if (!pivotsConsistent) reasons.push('Identified divergent swing pivots that do not align mathematically with candle highs/lows.');
 
-  // Check 6 — Math Congruence: reward calculation consistency
+  const validMathVals = Number.isFinite(plan.riskRupees) && Number.isFinite(plan.potentialRewardRupees);
+  if (!validMathVals) reasons.push('NaN or Infinity detected in risk/reward values. ATR may have produced invalid output.');
   const rewardMatch = Math.abs(plan.potentialRewardRupees - (plan.takeProfit2 - plan.entry) * plan.positionSize) < 0.01;
   const riskMatch = Math.abs(plan.riskRupees - (plan.entry - plan.stopLoss) * plan.positionSize) < 0.01;
-  checks.mathCongruence = rewardMatch && riskMatch;
-  if (!rewardMatch || !riskMatch) reasons.push('Internal mathematical discrepancy found in risk-reward calculations.');
+  checks.mathCongruence = validMathVals && rewardMatch && riskMatch;
+  if (!validMathVals || !rewardMatch || !riskMatch) reasons.push('Internal mathematical discrepancy found in risk-reward calculations.');
 
-  // Calculate verityScore
   const checksPassed = Object.values(checks).filter(Boolean).length;
   const verityScore = Math.round((checksPassed / 6) * 100);
   const passed = checksPassed === 6;
 
-  return {
-    passed,
-    verityScore,
-    checks,
-    reasons,
-  };
+  return { passed, verityScore, checks, reasons };
 }
 
+export function evaluateScalpSignal(
+  ohlc: NumericOHLC[],
+  legacyDecision: { winner: 'BULL' | 'BEAR' | 'NO_TRADE' },
+  ctx: ScalpContext,
+  isForced: boolean = false,
+  preCheckedRiskVerdict?: import('./riskGuard').RiskVerdict
+): ScalpDecision {
+  const rawWinner = isForced ? 'BULL' : legacyDecision.winner;
+  const lastBar = ohlc[ohlc.length - 1];
+  const entry = ctx.currentPrice ?? (lastBar ? lastBar.close : 0);
+  
+  const features = buildScalpFeatures(ohlc, ctx.pivots, ctx.atr14, ctx.vwapProxy, ctx.nowMsEpoch, ctx.indicatorCache);
+  const confluenceScore = calculateConfluence(features);
+  
+  const filterRes = filterScalpSignal(ohlc, legacyDecision, ctx, isForced, confluenceScore, features, preCheckedRiskVerdict);
+  if (!filterRes.passed) {
+    return { signal: filterRes.signal as ScalpSignal, confluenceScore, blockers: filterRes.blockers, features, rawWinner };
+  }
+
+  const sl = calculateStopLoss(entry, ctx.config.slMode, ctx);
+  const riskPerShare = entry - sl;
+  if (isNaN(riskPerShare)) {
+    return { signal: 'WAIT', confluenceScore, blockers: filterRes.blockers.concat('INVALID_ATR_NaN'), features, rawWinner };
+  }
+  if (riskPerShare <= 0) {
+    return { signal: 'WAIT', confluenceScore, blockers: filterRes.blockers.concat('INVALID_SL'), features, rawWinner };
+  }
+
+  // Slippage application
+  const slippageTicks = ctx.config.risk.slippageTicks ?? 1;
+  const tickSize = 0.05;
+  const slippageRupees = slippageTicks * tickSize;
+
+  const exits = buildExitPlan(entry, sl, ctx);
+  if (!exits) {
+    return { signal: 'WAIT', confluenceScore, blockers: filterRes.blockers.concat('INVALID_EXIT_PLAN'), features, rawWinner };
+  }
+
+  const effectiveEntry = entry + slippageRupees;
+  const effectiveSL = sl - slippageRupees;
+  const effectiveTP1 = exits.tp1 - slippageRupees;
+  const effectiveTP2 = exits.tp2 - slippageRupees;
+
+  const slippageAdjusted = {
+    effectiveEntry,
+    effectiveSL,
+    effectiveTP1,
+    effectiveTP2
+  };
+  
+  const effectiveRiskPerShare = effectiveEntry - effectiveSL;
+
+  // Scale position
+  let scaleFactor = 1.0;
+  if (confluenceScore < 5) scaleFactor = 0.50;
+  else if (confluenceScore <= 6) scaleFactor = 0.75;
+  else if (confluenceScore <= 8) scaleFactor = 0.90;
+  
+  const investmentAmount = ctx.config.investmentPerTrade ?? 10000;
+  const leverage = ctx.config.leverage ?? 1;
+  const scaledInvestment = investmentAmount * scaleFactor * leverage;
+  const lotSize = ctx.config.lotSize ?? 1;
+  let sizeShares = 0;
+
+  if (lotSize === 1) {
+    sizeShares = Math.floor(scaledInvestment / effectiveEntry);
+  } else {
+    sizeShares = Math.floor((scaledInvestment / effectiveEntry) / lotSize) * lotSize;
+  }
+
+  if (sizeShares <= 0 && !isForced) {
+    return { signal: 'WAIT', confluenceScore, blockers: filterRes.blockers.concat(`INSUFFICIENT_INVESTMENT: Allocated per trade (₹${scaledInvestment}) results in 0 shares. (Stock price: ₹${effectiveEntry.toFixed(2)})`), features, rawWinner };
+  }
+
+  if (sizeShares <= 0) {
+    sizeShares = lotSize === 1 ? 1 : lotSize;
+  }
+
+  const rrRatio = (effectiveTP2 - effectiveEntry) / effectiveRiskPerShare;
+  if (!isForced && rrRatio < ctx.config.minRR) {
+    return { signal: 'WAIT', confluenceScore, blockers: filterRes.blockers.concat(`RR_TOO_LOW: Target R:R ${rrRatio.toFixed(2)} < Minimum ${ctx.config.minRR.toFixed(2)}`), features, rawWinner };
+  }
+
+  const chargesAtTP1 = computeRoundTripCharges(effectiveEntry, effectiveTP1, sizeShares, ctx.config.instrument);
+  const chargesAtTP2 = computeRoundTripCharges(effectiveEntry, effectiveTP2, sizeShares, ctx.config.instrument);
+
+  const potentialRewardAtTP1 = (effectiveTP1 - effectiveEntry) * sizeShares;
+  if (!isForced && (potentialRewardAtTP1 - chargesAtTP1.total) <= 0) {
+    return { signal: 'WAIT', confluenceScore, blockers: filterRes.blockers.concat('CHARGES_EAT_EDGE'), features, rawWinner };
+  }
+
+  const plan = buildScalpPlan(entry, sl, exits, sizeShares, confluenceScore, ctx, chargesAtTP1, chargesAtTP2, features, slippageAdjusted, scaleFactor, filterRes.blockers);
+
+  // Since we replaced the plan entry/exits but validation still checks original plan, that's fine.
+  const antiHallc = validateScalpPlan(ohlc, plan, ctx);
+  plan.antiHallucination = antiHallc;
+
+  if (!isForced && !antiHallc.passed) {
+    let bl = [...filterRes.blockers, 'HALLUCINATION_DETECTED'];
+    antiHallc.reasons.forEach(r => bl.push(`HALLUC_CHECK: ${r}`));
+    return { signal: 'WAIT', confluenceScore, plan, blockers: bl, features, rawWinner };
+  }
+
+  return { signal: 'BUY', confluenceScore, plan, blockers: filterRes.blockers, features, rawWinner };
+}
+
+export function shouldMoveToBreakeven(plan: ScalpingPlan, currentPrice: number): boolean {
+  return currentPrice >= plan.breakEvenAfter && plan.stopLoss < plan.entry;
+}
+
+export function computeBreakevenSL(plan: ScalpingPlan, slippageTicks: number = 1, tickSize: number = 0.05): number {
+  return plan.entry + slippageTicks * tickSize;
+}

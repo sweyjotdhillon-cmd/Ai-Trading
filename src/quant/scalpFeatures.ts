@@ -32,7 +32,8 @@ export function buildScalpFeatures(
   pivots: SwingPivot[],
   atr14: number[],
   vwapVals: number[],
-  nowMs: number
+  nowMs: number,
+  indicatorCache?: any
 ): ScalpFeatures {
   const highs = ohlc.map(c => c.high);
   const lows = ohlc.map(c => c.low);
@@ -49,20 +50,20 @@ export function buildScalpFeatures(
   const hammerAtSupport = isHam && isNearSupport(lastClose, pivots, ohlc, atrVal);
   
   // MACD Divergence
-  const macdData = macd(closes);
+  const macdData = indicatorCache?.macdVals || macd(closes);
   const mDiv = detectMACDDivergence(closes, macdData);
   const macdBullishDivergence = !!mDiv && (mDiv.type === 'BULLISH' || String(mDiv) === 'BULLISH');
   
   // EMA relations
-  const ema9Data = ema(closes, 9);
-  const ema21Data = ema(closes, 21);
+  const ema9Data = indicatorCache?.ema9 || ema(closes, 9);
+  const ema21Data = indicatorCache?.ema21 || ema(closes, 21);
   const ema9_above_ema21 = ema9Data[ema9Data.length - 1] > ema21Data[ema21Data.length - 1];
   
-  const slope9 = emaSlope(closes, 9);
+  const slope9 = indicatorCache?.slopeSeries || emaSlope(closes, 9);
   const ema9_slope_up = slope9[slope9.length - 1] > 0;
   
   // DM/ADX Index System Setup
-  const adxData = adx(ohlc, 14);
+  const adxData = indicatorCache?.adxVals || adx(ohlc, 14);
   const curAdx = adxData.adx[adxData.adx.length - 1] || 0;
   const curPlusDI = adxData.plusDI[adxData.plusDI.length - 1] || 0;
   const curMinusDI = adxData.minusDI[adxData.minusDI.length - 1] || 0;
@@ -78,16 +79,16 @@ export function buildScalpFeatures(
   const choch_bull = structSig.type === 'CHOCH_BULL';
   
   // RSI oversold recovery: prior < 30 in last 5 steps, now in [30, 55] and rising
-  const rsiVals = rsi(closes, 14);
+  const rsiVals = indicatorCache?.rsiVals || rsi(closes, 14);
   const curRsi = rsiVals[rsiVals.length - 1] || 50;
-  const priorRsiSlice = rsiVals.slice(Math.max(0, rsiVals.length - 6), Math.max(0, rsiVals.length - 1));
+  const priorRsiSlice = rsiVals.slice(Math.max(0, rsiVals.length - 16), Math.max(0, rsiVals.length - 1));
   const holdsPriorOversold = priorRsiSlice.some(v => v < 30);
-  const currentRsiInZone = curRsi >= 30 && curRsi <= 55;
+  const currentRsiInZone = curRsi >= 32 && curRsi <= 52;
   const currentRsiRising = rsiVals.length >= 2 && rsiVals[rsiVals.length - 1] > rsiVals[rsiVals.length - 2];
   const rsi_recovering_from_oversold = holdsPriorOversold && currentRsiInZone && currentRsiRising;
   
   // Volatility regime status
-  const volsCandles = ohlc.map((c, i) => ({
+  const volsCandles = ohlc.slice(-30).map((c, i) => ({
     high: c.high,
     low: c.low,
     close: c.close,
@@ -101,13 +102,11 @@ export function buildScalpFeatures(
   const price_above_vwap = lastClose > lastVwap;
   
   // Recent bearish engulfing
-  let bear_engulfing_recent = false;
-  for (let i = Math.max(0, ohlc.length - 3); i < ohlc.length; i++) {
-    if (isEngulfing(ohlc.slice(0, i + 1)).bearish) {
-      bear_engulfing_recent = true;
-      break;
-    }
-  }
+  const n = ohlc.length;
+  const bear_engulfing_recent = 
+    n >= 2 && isEngulfing(ohlc.slice(-2)).bearish || 
+    n >= 3 && isEngulfing(ohlc.slice(-3, -1)).bearish || 
+    n >= 4 && isEngulfing(ohlc.slice(-4, -2)).bearish;
   
   // Kolmogorov predictability gate
   const predData = calculatePredictability(closes.slice(-50));
@@ -115,9 +114,16 @@ export function buildScalpFeatures(
   
   // Market hours gate (NSE 09:20 - 15:00 IST)
   const istMins = getISTMinutesSinceMidnight(nowMs);
-  const withinMarketHours = istMins >= 560 && istMins <= 900;
+  const withinMarketHours = istMins >= 555 && istMins <= 930;
   
+  let timeOfDayQuality: 'OPTIMAL' | 'ACCEPTABLE' | 'AVOID' = 'OPTIMAL';
+  if (istMins < 555 || istMins > 930) timeOfDayQuality = 'AVOID';
+  else if (istMins < 570) timeOfDayQuality = 'AVOID';
+  else if (istMins >= 720 && istMins <= 780) timeOfDayQuality = 'ACCEPTABLE';
+  else if (istMins > 885) timeOfDayQuality = 'ACCEPTABLE';
+
   return {
+    timeOfDayQuality,
     bullEngulfingAtSupport,
     hammerAtSupport,
     macdBullishDivergence,

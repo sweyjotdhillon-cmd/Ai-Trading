@@ -10,8 +10,8 @@ import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid 
 } from 'recharts';
 import { auth } from '../services/firebase';
-import { initVirtualBalance } from '../services/virtualBalanceService';
-import { loadStats, loadAllTrades, filterTradesByRange } from '../services/botTradeService';
+// initVirtualBalance removed to prevent race conditions
+import { loadStats, loadAllTrades, filterTradesByRange, getArchiveStats } from '../services/botTradeService';
 import { computeRoundTripCharges } from '../quant/brokerCharges';
 import { BotSessionStats, BotTradeRecord } from '../hooks/useBotLoop';
 
@@ -22,12 +22,8 @@ interface BalanceDashboardProps {
 export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) {
   const DEFAULT_STARTING_CAPITAL = 100000;
   const [balance, setBalance] = useState<number>(() => {
-    try {
-      const cached = localStorage.getItem('user_virtual_balance') || localStorage.getItem('ledger_cached_balance');
-      return cached ? parseFloat(cached) : DEFAULT_STARTING_CAPITAL;
-    } catch {
-      return DEFAULT_STARTING_CAPITAL;
-    }
+    const cached = localStorage.getItem('user_virtual_balance');
+    return cached ? parseFloat(cached) : 100000;
   });
   const [allTimeStats, setAllTimeStats] = useState<BotSessionStats | null>(() => {
     try {
@@ -72,12 +68,14 @@ export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) 
     }, 10000);
 
     try {
-      // Parallelize all ledger fetches for extreme high speed sync
-      const [liveBal, stats, tradesList] = await Promise.all([
-        initVirtualBalance(userId),
+      // Parallelize all ledger fetches for extreme high speed sync, omitting initVirtualBalance to prevent races
+      const [stats, tradesList] = await Promise.all([
         loadStats(userId),
         loadAllTrades(userId)
       ]);
+      
+      const cachedBal = localStorage.getItem('user_virtual_balance');
+      const liveBal = cachedBal ? parseFloat(cachedBal) : 100000;
       
       clearTimeout(timeoutId);
       setBalance(liveBal);
@@ -88,7 +86,6 @@ export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) 
       // Cache results to localStorage for instant subsequent visual loads
       try {
         localStorage.setItem('user_virtual_balance', liveBal.toString());
-        localStorage.setItem('ledger_cached_balance', liveBal.toString());
         localStorage.setItem('ledger_cached_stats', JSON.stringify(stats));
         localStorage.setItem('ledger_cached_trades', JSON.stringify(tradesList || []));
       } catch (err) {
@@ -220,27 +217,34 @@ export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) 
   }, 0);
 
   const closedToday = selectedRangeTrades.filter(t => t.exitPrice != null);
-  const todayPnL = closedToday.reduce((sum, t) => sum + (t.realizedPnL ?? 0), 0);
+  // uses netPnL when available, falls back to gross realizedPnL for legacy records
+  const todayPnL = closedToday.reduce((sum, t) => sum + (t.netPnL ?? t.realizedPnL ?? 0), 0);
   const todayTradesCount = closedToday.length;
 
-  // Dynamic starting capital representing ledger base before today's trades
-  const STARTING_CAPITAL = balance + openTradesOutlay - todayPnL;
+  // Read starting capital from localStorage database seed
+  const seedStr = typeof window !== 'undefined' ? localStorage.getItem('user_virtual_balance_seed') : null;
+  const STARTING_CAPITAL = seedStr ? parseFloat(seedStr) : 100000;
   const initialAllocation = STARTING_CAPITAL;
 
   // Account net equity is current available cash plus capital deployed in open positions
   const accountEquity = balance + openTradesOutlay;
 
   // Historical calculation metrics
-  const totalTradesCount = closedToday.length;
-  const wins = closedToday.filter(t => (t.realizedPnL ?? 0) > 0);
-  const losses = closedToday.filter(t => (t.realizedPnL ?? 0) <= 0);
+  const useCloudStats = allTimeStats !== null && selectedRange === 'ALL';
+  const totalTradesCount = useCloudStats ? allTimeStats!.totalTrades : closedToday.length;
+  // uses netPnL when available, falls back to gross realizedPnL for legacy records
+  const wins = closedToday.filter(t => (t.netPnL ?? t.realizedPnL ?? 0) > 0);
+  // uses netPnL when available, falls back to gross realizedPnL for legacy records
+  const losses = closedToday.filter(t => (t.netPnL ?? t.realizedPnL ?? 0) <= 0);
 
-  const winCount = wins.length;
-  const lossCount = losses.length;
+  const winCount = useCloudStats ? allTimeStats!.totalWins : wins.length;
+  const lossCount = useCloudStats ? allTimeStats!.totalLosses : losses.length;
   const winRate = totalTradesCount > 0 ? (winCount / totalTradesCount) * 100 : 0;
 
-  const totalGrossGains = wins.reduce((sum, t) => sum + (t.realizedPnL ?? 0), 0);
-  const totalGrossLosses = Math.abs(losses.reduce((sum, t) => sum + (t.realizedPnL ?? 0), 0));
+  // uses netPnL when available, falls back to gross realizedPnL for legacy records
+  const totalGrossGains = wins.reduce((sum, t) => sum + (t.netPnL ?? t.realizedPnL ?? 0), 0);
+  // uses netPnL when available, falls back to gross realizedPnL for legacy records
+  const totalGrossLosses = Math.abs(losses.reduce((sum, t) => sum + (t.netPnL ?? t.realizedPnL ?? 0), 0));
   
   // Profit factor
   const profitFactor = totalGrossLosses > 0 
@@ -261,7 +265,8 @@ export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) 
     : 0.0;
 
   // Sharpe Ratio estimation (annualized)
-  const returns = closedToday.map(t => t.realizedPnL ?? 0);
+  // uses netPnL when available, falls back to gross realizedPnL for legacy records
+  const returns = closedToday.map(t => t.netPnL ?? t.realizedPnL ?? 0);
   const meanReturn = returns.length > 0 ? returns.reduce((a, b) => a + b, 0) / returns.length : 0;
   const variance = returns.length > 1 ? returns.reduce((a, b) => a + Math.pow(b - meanReturn, 2), 0) / (returns.length - 1) : 0;
   const stdDev = Math.sqrt(variance);
@@ -276,7 +281,8 @@ export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) 
   const chronologicalClosed = [...closedToday].reverse();
   
   chronologicalClosed.forEach(t => {
-    runningBal += (t.realizedPnL ?? 0);
+    // uses netPnL when available, falls back to gross realizedPnL for legacy records
+    runningBal += (t.netPnL ?? t.realizedPnL ?? 0);
     if (runningBal > peak) {
       peak = runningBal;
     }
@@ -310,7 +316,8 @@ export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) 
   let accumBal = STARTING_CAPITAL;
   const chartData = [{ name: 'Alloc', Equity: accumBal }];
   chronologicalClosed.forEach((t, i) => {
-    accumBal = parseFloat((accumBal + (t.realizedPnL ?? 0)).toFixed(2));
+    // uses netPnL when available, falls back to gross realizedPnL for legacy records
+    accumBal = parseFloat((accumBal + (t.netPnL ?? t.realizedPnL ?? 0)).toFixed(2));
     const label = `T${i + 1}`;
     chartData.push({
       name: label,
@@ -329,10 +336,10 @@ export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) 
       // Bug #18 fix: LONG gross = (exit - entry) * shares, not (entry - exit).
       // The old formula produced negative gross on winning trades, making charges negative.
       const grossPnL = (t.exitPrice - t.entryPrice) * shares;
-      const charges = grossPnL - (t.realizedPnL ?? 0);
-      // charges should be a small positive number (broker fees consumed).
-      // If negative it means realizedPnL > grossPnL which is a data anomaly — floor at 0.
-      return sum + Math.max(0, charges);
+      // Floored at zero to handle data anomalies where netPnL exceeds grossPnL in legacy records.
+      // Additionally, when t.chargesActual is available, prefer it over the back-computed value.
+      const charges = t.chargesActual ?? Math.max(0, grossPnL - (t.realizedPnL ?? 0));
+      return sum + charges;
     }
     return sum + (t.plan?.brokerCharges ?? 0);
   }, 0);
@@ -356,8 +363,12 @@ export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) 
   const passedAuditsCount = (priceOrderingPassed ? 1 : 0) + (boundsIntegrityPassed ? 1 : 0) + (localMathConsistent ? 1 : 0) + 1; // 1 auto-passed for standard ATR sync
   const mathVerityScore = Math.round((passedAuditsCount / totalAuditPoints) * 100);
 
-  const totalPnL = todayPnL;
+  const totalPnL = useCloudStats ? allTimeStats!.totalPnL : todayPnL;
   const totalPnLPct = initialAllocation > 0 ? (totalPnL / initialAllocation) * 100 : 0;
+
+  const archiveStats = getArchiveStats(allTrades);
+  const diffCount = allTimeStats ? Math.abs(allTimeStats.totalTrades - allTrades.length) : 0;
+  const showReconciliationNote = allTimeStats !== null && diffCount > 2;
 
   // Broker charges breakdown for last closed trade
   const lastClosedTrade = closedToday[0];
@@ -586,6 +597,48 @@ export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) 
                   )}
                 </div>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Archive Approaching Limit Warn Banner */}
+        {archiveStats.warning && (
+          <div className={`p-4 rounded-2xl flex items-start gap-3 border shadow-md ${
+            archiveStats.danger 
+              ? 'bg-rose-950/15 border-rose-500/30 text-rose-200' 
+              : 'bg-amber-950/15 border-[#D9B382]/30 text-amber-200'
+          }`} id="archive-limit-warning">
+            <span className={`text-base font-bold ${archiveStats.danger ? 'text-rose-400' : 'text-[#D9B382]'}`}>
+              {archiveStats.danger ? '🚫' : '⚠️'}
+            </span>
+            <div className="flex-1">
+              <p className={`font-black text-[10px] uppercase tracking-wider font-mono ${
+                archiveStats.danger ? 'text-rose-400' : 'text-[#D9B382]'
+              }`}>
+                {archiveStats.danger ? 'Archive Space Fully Depleted' : 'Archive approaching maximum sandbox limit'}
+              </p>
+              <p className="text-zinc-400 text-[10px] font-mono leading-normal uppercase mt-1">
+                You have consumed <strong className={archiveStats.danger ? 'text-rose-400' : 'text-[#D9B382]'}>{archiveStats.count}</strong> / {archiveStats.capacity} ({archiveStats.percent}%) of the allocated transaction sandbox space. 
+                {archiveStats.danger 
+                  ? ' New trade records will now trigger silent truncation of your oldest historical entries.' 
+                  : ' Trade archive is nearing bulk capacity.'} 
+                Please export a local backup or trigger the <strong className="text-red-400 font-bold">Purge and Reset</strong> action in settings to restore full operational volume.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Cloud/Local Stats Reconciliation Banner */}
+        {showReconciliationNote && (
+          <div className="bg-zinc-950/40 border border-zinc-800 p-4 rounded-2xl flex items-start gap-3 shadow-md" id="reconciliation-info-banner">
+            <Info size={14} className="text-[#D9B382] mt-0.5" />
+            <div className="flex-1">
+              <p className="font-black text-[10px] text-[#D9B382] uppercase tracking-wider font-mono">
+                Cloud Unified Performance Mode Active
+              </p>
+              <p className="text-zinc-400 text-[10px] font-mono leading-normal uppercase mt-1">
+                Stats represent unified cloud performance. If local totals differ, click the refresh button above to synchronize raw ledger states.
+              </p>
             </div>
           </div>
         )}
@@ -909,11 +962,30 @@ export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) 
 
                       <div className="text-right">
                         <strong className={`text-sm font-black ${isPnLPos ? 'text-emerald-400' : 'text-rose-400'}`}>
-                          {isPnLPos ? '+' : ''}{fmt(trade.realizedPnL)}
+                          {isPnLPos ? '+' : ''}{fmt(trade.netPnL ?? trade.realizedPnL)}
                         </strong>
                         <p className="text-[9px] text-zinc-500 mt-0.5">
                           {trade.rMultiple ? trade.rMultiple.toFixed(2) + 'R' : '--'}
                         </p>
+                        {/* Charge Efficiency Ratio */}
+                        {(() => {
+                          if (trade.realizedPnL != null && trade.exitPrice != null && trade.entryPrice != null) {
+                            const grossPnL = (trade.exitPrice - trade.entryPrice) * shares;
+                            const charges = trade.chargesActual ?? Math.max(0, grossPnL - trade.realizedPnL);
+                            if (Math.abs(grossPnL) > 0) {
+                              const chargeRatio = (charges / Math.abs(grossPnL)) * 100;
+                              let colorClass = 'text-zinc-500';
+                              if (chargeRatio > 60) colorClass = 'text-rose-500';
+                              else if (chargeRatio > 30) colorClass = 'text-amber-500';
+                              return (
+                                <p className={`text-[9px] ${colorClass} mt-0.5 font-bold`}>
+                                  Charges: {chargeRatio.toFixed(0)}% of gross
+                                </p>
+                              );
+                            }
+                          }
+                          return null;
+                        })()}
                       </div>
                     </div>
 
@@ -933,7 +1005,15 @@ export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) 
 
                     <div className="flex justify-between items-center text-[10px] text-zinc-500">
                       <span>Charges Paid (Brokerage+STT+GST)</span>
-                      <strong className="text-[#D9B382]">{fmt(trade.realizedPnL != null ? Math.max(0, (trade.exitPrice! - trade.entryPrice) * shares - trade.realizedPnL) : estCharges)}</strong>
+                      <strong className="text-[#D9B382]">
+                        {fmt(
+                          trade.chargesActual ?? (
+                            trade.realizedPnL != null && trade.exitPrice != null
+                              ? Math.max(0, (trade.exitPrice! - trade.entryPrice) * shares - trade.realizedPnL)
+                              : estCharges
+                          )
+                        )}
+                      </strong>
                     </div>
                   </div>
                 );

@@ -4,12 +4,14 @@ import { useWakeLock }                from './useWakeLock';
 import { ohlcvToDataUrl }             from '../utils/chartRenderer';
 import { vwapProxy }                  from '../quant/vwapProxy';
 import { runSingleAnalysis }          from '../utils/singleAnalysis';
-import { evaluateScalpSignal }         from '../quant/scalpingEngine';
-import { checkRiskCaps, onTradeClosed } from '../quant/riskGuard';
+import { evaluateScalpSignal, shouldMoveToBreakeven, computeBreakevenSL } from '../quant/scalpingEngine';
+import * as import_riskGuard from '../quant/riskGuard';
+import { checkRiskCaps, onTradeClosed, reconcileDailyPnL } from '../quant/riskGuard';
 import { loadRiskState, saveRiskState } from '../quant/riskGuard';
-import { loadScalpConfig }            from '../quant/scalpingEngine';
+import { loadScalpConfig } from '../config/scalpConfig';
 import { atr } from '../quant/indicators';
 import { findSwingPivots } from '../quant/marketStructure';
+import { resetDecisionHistory, resetScalpHistory } from '../quant/neutralityGuard';
 import {
   writeTrade_Open,
   writeTrade_Close,
@@ -18,7 +20,7 @@ import {
   loadOpenTrades,
   loadAllTrades,
 } from '../services/botTradeService';
-import { initVirtualBalance, updateVirtualBalance, setVirtualBalanceValue } from '../services/virtualBalanceService';
+import { initVirtualBalance, setVirtualBalanceValue } from '../services/virtualBalanceService';
 import { computeRoundTripCharges } from '../quant/brokerCharges';
 import { auth } from '../services/firebase';
 import { fetchLivePrice } from '../services/stockPriceFeed';
@@ -48,6 +50,9 @@ export interface BotTradeRecord {
   closedAt:         number | null;
   durationMinutes:  number | null;
   plan:             ScalpingPlan;
+  balanceSnapshot?: number;
+  netPnL?:          number | null;
+  chargesActual?:   number | null;
 }
 
 export interface BotSessionStats {
@@ -78,8 +83,10 @@ export interface UseBotLoopResult {
   ohlcQuality:        'REAL_PRICE' | 'NORMALIZED_FALLBACK';
   stabilityCount:     number;         // 0 | 1 | 2 | 3
   lastSignal:         string | null;  // 'LONG' | 'NO_TRADE'
-  lastConfidence:     number;         // 0–100
-  lastBlockReason:    string | null;  // why last signal was blocked
+  lastConfidence:     number;         // 0-100
+  lastBlockReason:    string | null;
+  lastBlockers:       string[];
+  lastAntiHallucination: any;
   marketOpen:         boolean;
   feedError:          string | null;
   isStale:            boolean;
@@ -106,6 +113,10 @@ export interface UseBotLoopResult {
   unrealizedPnL:    number | null;
   unrealizedPnLPct: number | null;
   timeRemainingMs:  number | null;
+  riskWarnings?: string[];
+  haltCode?: string;
+  riskSummary?: any;
+  activeConfig?: any;
 }
 
 function updateStats(prev: BotSessionStats, trade: BotTradeRecord): BotSessionStats {
@@ -169,8 +180,12 @@ export function useBotLoop(
   });
 
   const virtualBalanceRef = useRef<number>(virtualBalance);
+  const sessionStartBalanceRef = useRef<number | null>(null);
+
   useEffect(() => {
-    virtualBalanceRef.current = virtualBalance;
+    if (sessionStartBalanceRef.current === null) {
+      sessionStartBalanceRef.current = virtualBalance;
+    }
   }, [virtualBalance]);
   const [ohlcQuality, setOhlcQuality] = useState<'REAL_PRICE' | 'NORMALIZED_FALLBACK'>('REAL_PRICE');
   const [tradeHistory,    setTradeHistory]    = useState<BotTradeRecord[]>([]);
@@ -179,10 +194,14 @@ export function useBotLoop(
   const [lastSignal,      setLastSignal]      = useState<string | null>(null);
   const [lastConfidence,  setLastConfidence]  = useState(0);
   const [lastBlockReason, setLastBlockReason] = useState<string | null>(null);
+  const [lastBlockers, setLastBlockers] = useState<string[]>([]);
+  const [lastAntiHallucination, setLastAntiHallucination] = useState<any>(null);
   const [lastChartUrl,     setLastChartUrl]     = useState<string | null>(null);
   const [lastAnalyzedAt,   setLastAnalyzedAt]   = useState<number | null>(null);
   const [isAnalyzing,      setIsAnalyzing]      = useState(false);
   const [cooldownRemainsMs,setCooldownRemainsMs] = useState<number | null>(null);
+  const [riskWarnings, setRiskWarnings] = useState<string[]>([]);
+  const [haltCode, setHaltCode] = useState<string | undefined>(undefined);
   const [botActive,        setBotActive]        = useState(false);
   const [lastAnalysisResult, setLastAnalysisResult] = useState<any | null>(null);
 
@@ -242,12 +261,13 @@ export function useBotLoop(
   }, [symbol]);
 
   const activeConfig = useMemo(() => {
+    const baseBalance = sessionStartBalanceRef.current ?? virtualBalanceRef.current;
     return {
       ...config,
       capitalRupees: virtualBalance,
       risk: {
         ...config.risk,
-        dailyLossCapRupees: virtualBalance * (config.riskPerTradePct * 0.01 || 0.01),
+        dailyLossCapRupees: baseBalance * (config.riskPerTradePct * 0.01 || 0.01),
       }
     };
   }, [config, virtualBalance]);
@@ -278,30 +298,33 @@ export function useBotLoop(
     const instrument    = (trade.plan.instrument ?? 'EQUITY_INTRADAY') as ScalpInstrument;
     const actualCharges = computeRoundTripCharges(trade.entryPrice, exitPrice, posSize, instrument).total;
     const grossPnL      = (exitPrice - trade.entryPrice) * posSize;
-    const realizedPnL   = parseFloat((grossPnL - actualCharges).toFixed(2));
+    const realizedPnL   = parseFloat(grossPnL.toFixed(2)); // gross realized PnL
+    const netPnL        = parseFloat((grossPnL - actualCharges).toFixed(2)); // net PnL after actual broker charges
+    const chargesActual = parseFloat(actualCharges.toFixed(2)); // actual round-trip charges computed at close
     const invested      = trade.plan.investmentRupees ?? (posSize * trade.entryPrice);
-    const realizedPnLPct = invested > 0 ? (realizedPnL / invested) * 100 : 0;
-    const rMultiple     = trade.plan.riskRupees > 0 ? realizedPnL / trade.plan.riskRupees : 0;
+    const realizedPnLPct = invested > 0 ? (netPnL / invested) * 100 : 0;
+    const rMultiple     = trade.plan.riskRupees > 0 ? netPnL / trade.plan.riskRupees : 0;
 
     const closed: BotTradeRecord = {
       ...trade,
       exitPrice,
       outcome,
-      realizedPnL,
+      realizedPnL, // gross realized PnL
+      netPnL, // net PnL after broker charges (FIX 10)
+      chargesActual, // actual charges computed at close (FIX 10)
       realizedPnLPct,
       rMultiple,
       closedAt:        Date.now(),
       durationMinutes: Math.round((Date.now() - trade.openedAt) / 60_000),
     };
 
-    // creditBack = what we return to the balance: originally deducted + the net PnL
-    // Note: at open we deducted (invested + estimatedCharges). So we return that plus realizedPnL to correctly apply exact PnL.
-    const estCharges = trade.plan?.brokerCharges ?? 0;
-    const creditBack = parseFloat((invested + estCharges + realizedPnL).toFixed(2));
+    // creditBack = what we return to the balance: invested + net PnL (FIX 1)
+    const creditBack = parseFloat((invested + netPnL).toFixed(2));
 
     // Optimistic local update — do this immediately (synchronous)
     const newBalance = parseFloat((virtualBalanceRef.current + creditBack).toFixed(2));
     setVirtualBalance(newBalance);
+    virtualBalanceRef.current = newBalance; // inline alignment (FIX 8)
     setTradeHistory(h => [closed, ...h]);
 
     // Atom 8 Fix — Extract filter logic outside updater, sync plans sequentially
@@ -327,7 +350,7 @@ export function useBotLoop(
             const today = new Date(Date.now()  + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
             return tDate === today;
           })
-          .reduce((sum, t) => sum + (t.realizedPnL ?? 0), 0);
+          .reduce((sum, t) => sum + (t.netPnL ?? t.realizedPnL ?? 0), 0);
 
          writeStats_Update(uidRef.current, next, todayPnL).catch(e =>
           console.error('[BotLoop] writeStats_Update fail:', e)
@@ -337,14 +360,12 @@ export function useBotLoop(
     });
 
     // 4. Update risk guard state
-    riskStateRef.current = loadRiskState();
-    const nextRisk = onTradeClosed(riskStateRef.current, realizedPnL, activeConfig.risk);
+    const nextRisk = onTradeClosed(riskStateRef.current, netPnL, activeConfig.risk, Date.now(), virtualBalanceRef.current, symbol || undefined);
     riskStateRef.current = nextRisk;
-    saveRiskState(nextRisk);
 
     // 5. Save trade details & synch balance to Firestore in the background — use ABSOLUTE balance write, NOT delta
     if (uidRef.current) {
-      writeTrade_Close(uidRef.current, closed, exitPrice, invested)
+      writeTrade_Close(uidRef.current, closed, exitPrice, invested, netPnL, chargesActual)
         .then(async () => {
           // Write ABSOLUTE balance from captured synchronous state
           await setVirtualBalanceValue(uidRef.current!, newBalance);
@@ -359,6 +380,9 @@ export function useBotLoop(
 
   const startBot = useCallback(() => {
     if (!symbol) return;
+    sessionStartBalanceRef.current = virtualBalanceRef.current;
+    resetDecisionHistory();
+    resetScalpHistory();
     initialAnalysisFiredRef.current = false;
     botEnabledRef.current = true;
     setBotActive(true);
@@ -432,8 +456,8 @@ export function useBotLoop(
       setLastBlockReason('MAX_TRADES: reached maximum concurrent trades limit');
       return;
     }
-    if (!isForced && virtualBalance < (activeConfig.investmentPerTrade ?? 10000)) {
-      setLastBlockReason(`INSUFFICIENT_BALANCE: ₹${virtualBalance.toFixed(0)} available, ₹${(activeConfig.investmentPerTrade ?? 10000).toFixed(0)} required`);
+    if (!isForced && virtualBalanceRef.current < (activeConfig.investmentPerTrade ?? 10000)) {
+      setLastBlockReason(`INSUFFICIENT_BALANCE: ₹${virtualBalanceRef.current.toFixed(0)} available, ₹${(activeConfig.investmentPerTrade ?? 10000).toFixed(0)} required`);
       return;
     }
     if (feed.ohlcvBuffer.length < 15) {
@@ -484,8 +508,8 @@ export function useBotLoop(
     const estCharges = plan.brokerCharges ?? 0;
     const totalDeduct = parseFloat((invested + estCharges).toFixed(2));
 
-    if (virtualBalance < totalDeduct) {
-      setLastBlockReason(`INSUFFICIENT_BALANCE: ₹${virtualBalance.toFixed(0)} available, ` +
+    if (virtualBalanceRef.current < totalDeduct) {
+      setLastBlockReason(`INSUFFICIENT_BALANCE: ₹${virtualBalanceRef.current.toFixed(0)} available, ` +
         `₹${totalDeduct.toFixed(0)} required (inclusive of brokerage ₹${estCharges.toFixed(0)})`
       );
       return;
@@ -504,25 +528,27 @@ export function useBotLoop(
       closedAt:        null,
       durationMinutes: null,
       plan,
-      balanceSnapshot: virtualBalance,
+      balanceSnapshot: virtualBalanceRef.current,
     };
 
     setActiveTrades(prev => [...prev, trade]);
     setActivePlans(prev => [...prev, plan]);
     setPhase('IN_TRADE');
 
-    const newBal = parseFloat((virtualBalanceRef.current - totalDeduct).toFixed(2));
+    const newBal = Math.max(0, parseFloat((virtualBalanceRef.current - totalDeduct).toFixed(2)));
     setVirtualBalance(newBal);
+    virtualBalanceRef.current = newBal; // inline alignment (FIX 8)
 
     if (uidRef.current) {
-      writeTrade_Open(uidRef.current, trade).catch(err =>
-        console.warn('[BotLoop] manualBuy writeTrade_Open failed:', err)
-      );
+      writeTrade_Open(uidRef.current, trade).catch(err => {
+        console.warn('[BotLoop] manualBuy writeTrade_Open failed:', err);
+        setLastBlockReason('Cloud Ledger Sync Offline (Paper Trading Active)');
+      });
       setVirtualBalanceValue(uidRef.current, newBal).catch(err =>
         console.error('[BotLoop] Failed to decrease virtual balance on manual open:', err)
       );
     }
-  }, [symbol, feed.currentPrice, feed.ohlcvBuffer, activeConfig, virtualBalance]);
+  }, [symbol, feed.currentPrice, feed.ohlcvBuffer, activeConfig]);
 
   const runAnalysisCycle = useCallback(async (isForced: boolean = false) => {
     if (!symbol) return;
@@ -646,15 +672,18 @@ export function useBotLoop(
       }
 
       // Step 5 — Risk guard gate
-      riskStateRef.current = loadRiskState();
-      const capCheck = checkRiskCaps(riskStateRef.current, activeConfig.risk);
+      const capCheck = checkRiskCaps(riskStateRef.current, activeConfig.risk, Date.now(), virtualBalanceRef.current);
       if (!capCheck.allow) {
         stabilityRef.current = 0;
         setStabilityCount(0);
         setLastBlockReason(`RISK_CAP: ${capCheck.reason}`);
-        setPhase(capCheck.reason?.toLowerCase().includes('cooldown') ? 'COOLDOWN' : 'HALTED');
+        setPhase(capCheck.code === 'COOLDOWN' ? 'COOLDOWN' : 'HALTED');
+        setHaltCode(capCheck.code);
         return;
       }
+      
+      const warnings = import_riskGuard.checkRiskWarnings(riskStateRef.current, activeConfig.risk, virtualBalanceRef.current);
+      setRiskWarnings(warnings.warning ? warnings.reasons : []);
 
       // Step 6 — Market hours gate
       if (activeConfig.enableMarketHoursGate && !feed.marketOpen) {
@@ -722,10 +751,13 @@ export function useBotLoop(
         nowISTMinutesSinceMidnight: mm,
         currentBarIndex:            ohlc.length - 1,
         currentPrice:               entryPrice,
+        indicatorCache:             result.analysis?.techCache,
       };
 
       const isAiConfident = result.analysis?.judge?.winner === 'BULL';
-      const decision = evaluateScalpSignal(ohlc, { winner: result.analysis?.judge?.winner || 'NO_TRADE' }, ctx as any, isAiConfident);
+      const decision = evaluateScalpSignal(ohlc, { winner: result.analysis?.judge?.winner || 'NO_TRADE' }, ctx as any, isAiConfident, capCheck);
+      setLastBlockers(decision.blockers || []);
+      setLastAntiHallucination(decision.plan?.antiHallucination || null);
       const plan = decision.plan;
       if (!plan) {
         setLastBlockReason('PLAN_FAIL: evaluateScalpSignal returned no plan');
@@ -764,9 +796,9 @@ export function useBotLoop(
       const estCharges = plan.brokerCharges ?? 0;
       const totalDeduct = parseFloat((invested + estCharges).toFixed(2));
 
-      if (virtualBalance < totalDeduct) {
+      if (virtualBalanceRef.current < totalDeduct) {
         setLastBlockReason(
-          `INSUFFICIENT_BALANCE: ₹${virtualBalance.toFixed(0)} available, ` +
+          `INSUFFICIENT_BALANCE: ₹${virtualBalanceRef.current.toFixed(0)} available, ` +
           `₹${totalDeduct.toFixed(0)} required (inclusive of brokerage ₹${estCharges.toFixed(0)})`
         );
         setPhase('HALTED');
@@ -793,21 +825,23 @@ export function useBotLoop(
         closedAt:        null,
         durationMinutes: null,
         plan,
-        balanceSnapshot: virtualBalance,
+        balanceSnapshot: virtualBalanceRef.current,
       };
       
       setActiveTrades(prev => [...prev, trade]);
       setActivePlans(prev => [...prev, plan]);
       setPhase('IN_TRADE');
 
-      const newBal = parseFloat((virtualBalanceRef.current - totalDeduct).toFixed(2));
+      const newBal = Math.max(0, parseFloat((virtualBalanceRef.current - totalDeduct).toFixed(2)));
       setVirtualBalance(newBal);
+      virtualBalanceRef.current = newBal; // inline alignment (FIX 8)
 
       // Write OPEN trade to Firestore
       if (uidRef.current) {
-        writeTrade_Open(uidRef.current, trade).catch(err =>
-          console.warn('[BotLoop] writeTrade_Open failed:', err)
-        );
+        writeTrade_Open(uidRef.current, trade).catch(err => {
+          console.warn('[BotLoop] writeTrade_Open failed:', err);
+          setLastBlockReason('Cloud Ledger Sync Offline (Paper Trading Active)');
+        });
         setVirtualBalanceValue(uidRef.current, newBal).catch(err =>
           console.error('[BotLoop] Failed to decrease virtual balance on auto open:', err)
         );
@@ -834,6 +868,7 @@ export function useBotLoop(
       analyzingRef.current = false;
       setIsAnalyzing(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol, timeframeMinutes, minConfidence, activeConfig, feed, techniquesList, virtualBalance]);
 
   const reEvaluate = useCallback(async () => {
@@ -922,7 +957,14 @@ export function useBotLoop(
         return;
       }
 
-      // TP check (TP1 and TP2 are equal, single win exit is enforced)
+      // Breakeven check
+      if (shouldMoveToBreakeven(trade.plan, price)) {
+        // Need to update SL in state/DB. For now, since mutate is hard, we adjust local ref visually if needed
+        // But wait, the standard way is update loop
+        trade.plan.stopLoss = computeBreakevenSL(trade.plan, activeConfig.risk.slippageTicks || 1, 0.05);
+      }
+
+      // TP check
       if (price >= trade.plan.takeProfit2) {
         closeTradeByIdRef.current(trade.id, price, 'TP2_HIT');
         return;
@@ -945,6 +987,7 @@ export function useBotLoop(
         return;
       }
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [feed.currentPrice, symbol]);
 
   // Auto-halt if feed goes dead
@@ -964,20 +1007,27 @@ export function useBotLoop(
       return;
     }
     const tick = () => {
-      const state = loadRiskState();
-      const remaining = state.cooldownUntil > 0
-        ? Math.max(0, state.cooldownUntil - Date.now())
+      const remaining = riskStateRef.current.cooldownUntil > 0
+        ? Math.max(0, riskStateRef.current.cooldownUntil - Date.now())
         : null;
       setCooldownRemainsMs(remaining);
-      // Auto-exit cooldown when timer reaches zero
+      
       if (remaining === 0) {
-        setPhase('SCANNING');
         setCooldownRemainsMs(null);
+        const postCooldownCheck = checkRiskCaps(riskStateRef.current, activeConfig.risk, Date.now(), virtualBalanceRef.current);
+        if (postCooldownCheck.allow) {
+          setPhase('SCANNING');
+        } else if (postCooldownCheck.code !== 'COOLDOWN') {
+          setPhase('HALTED');
+          setHaltCode(postCooldownCheck.code);
+          setLastBlockReason(postCooldownCheck.reason ?? 'RISK_CAP_ACTIVE');
+        }
       }
     };
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
 
   const isIdle = phase === 'IDLE';
@@ -993,7 +1043,21 @@ export function useBotLoop(
       ]);
 
       if (stats) setSessionStats(stats);
-      if (trades) setTradeHistory(trades);
+      if (trades) {
+        setTradeHistory(trades);
+        const todayTrades = trades.filter(t => {
+          const effTime = t.closedAt ?? t.openedAt;
+          const tDate = new Date(effTime + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
+          const today = new Date(Date.now()  + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
+          return tDate === today && t.realizedPnL !== null;
+        });
+        const reconciledDailyPnL = reconcileDailyPnL(todayTrades.map(t => ({ pnl: t.realizedPnL! + (t.plan.brokerCharges ?? 0), brokerCharges: t.plan.brokerCharges ?? 0 })));
+        if (Math.abs(reconciledDailyPnL - riskStateRef.current.dailyPnL) > 10) {
+          console.log(`[BotLoop] Reconciled daily PnL: ${riskStateRef.current.dailyPnL} -> ${reconciledDailyPnL}`);
+          riskStateRef.current.dailyPnL = reconciledDailyPnL;
+          import_riskGuard.saveRiskState(riskStateRef.current);
+        }
+      }
       
       const isBotActiveCurrently = botEnabledRef.current || botActive;
       if (openTrades && openTrades.length > 0) {
@@ -1013,9 +1077,25 @@ export function useBotLoop(
 
       const bal = await initVirtualBalance(userId);
       setVirtualBalance(bal);
+      virtualBalanceRef.current = bal; // inline alignment (FIX 8)
       hasHydratedRef.current = true;
-    } catch (err) {
+    } catch (err: any) {
       console.error('[BotLoop] syncFromCloud failed:', err);
+      let fallbackBal = 100000;
+      try {
+        const stored = localStorage.getItem('user_virtual_balance');
+        if (stored) {
+          const parsed = parseFloat(stored);
+          if (!isNaN(parsed)) {
+            fallbackBal = parsed;
+          }
+        }
+      } catch (e) {
+        console.warn('[Sync] Local storage fallback failed:', e);
+      }
+      setVirtualBalance(fallbackBal);
+      virtualBalanceRef.current = fallbackBal; // inline alignment (FIX 8)
+      console.error(`[Sync] Failed to fetch balance from cloud, fallback to local cache: ${fallbackBal}`);
     }
   }, [userId, symbol, botActive]);
 
@@ -1041,6 +1121,7 @@ export function useBotLoop(
       setActiveTrades([]);
       setActivePlans([]);
       setVirtualBalance(100000);
+      virtualBalanceRef.current = 100000; // inline alignment (FIX 8)
     };
     window.addEventListener('determinist:clearstats', handleClearStats);
     return () => {
@@ -1082,6 +1163,8 @@ export function useBotLoop(
     lastSignal,
     lastConfidence,
     lastBlockReason,
+    lastBlockers,
+    lastAntiHallucination,
     marketOpen:      feed.marketOpen,
     feedError:       feed.error,
     isStale:         feed.isStale,
@@ -1109,5 +1192,16 @@ export function useBotLoop(
       : null,
     cooldownRemainsMs,
     techniqueCount:    techniquesList.length,
+    riskWarnings,
+    haltCode,
+    activeConfig,
+    riskSummary: {
+      dailyPnL: riskStateRef.current.dailyPnL,
+      tradesToday: riskStateRef.current.tradesToday,
+      consecutiveLosses: riskStateRef.current.consecutiveLosses,
+      maxTradesPerDay: activeConfig.risk.maxTradesPerDay,
+      dailyLossCapRupees: activeConfig.risk.dailyLossCapRupees,
+      maxConsecutiveLosses: activeConfig.risk.maxConsecutiveLosses
+    }
   };
 }
