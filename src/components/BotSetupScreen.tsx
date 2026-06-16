@@ -106,37 +106,37 @@ function buildConfigFromPreset(
 }
 
 const POPULAR_STOCKS: StockSearchResult[] = [
-  { symbol: 'RELIANCE:NSE',   name: 'Reliance Industries',       exchange: 'NSE' },
-  { symbol: 'TCS:NSE',        name: 'Tata Consultancy Services', exchange: 'NSE' },
-  { symbol: 'HDFCBANK:NSE',   name: 'HDFC Bank',                 exchange: 'NSE' },
-  { symbol: 'INFY:NSE',       name: 'Infosys',                   exchange: 'NSE' },
-  { symbol: 'ICICIBANK:NSE',  name: 'ICICI Bank',                exchange: 'NSE' },
-  { symbol: 'SBIN:NSE',       name: 'State Bank of India',       exchange: 'NSE' },
-  { symbol: 'BHARTIARTL:NSE', name: 'Bharti Airtel',             exchange: 'NSE' },
-  { symbol: 'ITC:NSE',        name: 'ITC Limited',               exchange: 'NSE' },
-  { symbol: 'LT:NSE',         name: 'Larsen & Toubro',           exchange: 'NSE' },
-  { symbol: 'MARUTI:NSE',     name: 'Maruti Suzuki',             exchange: 'NSE' },
-  { symbol: 'BAJFINANCE:NSE', name: 'Bajaj Finance',             exchange: 'NSE' },
-  { symbol: 'TITAN:NSE',      name: 'Titan Company',             exchange: 'NSE' },
-  { symbol: 'HINDUNILVR:NSE', name: 'Hindustan Unilever',        exchange: 'NSE' },
-  { symbol: 'WIPRO:NSE',      name: 'Wipro',                     exchange: 'NSE' },
-  { symbol: 'ADANIENT:NSE',   name: 'Adani Enterprises',         exchange: 'NSE' },
-  { symbol: 'TATAMOTORS:NSE', name: 'Tata Motors',               exchange: 'NSE' },
   { symbol: 'TATASTEEL:NSE',  name: 'Tata Steel',                exchange: 'NSE' },
-  { symbol: 'ASIANPAINT:NSE', name: 'Asian Paints',              exchange: 'NSE' },
-  { symbol: 'AXISBANK:NSE',   name: 'Axis Bank',                 exchange: 'NSE' },
-  { symbol: 'KOTAKBANK:NSE',  name: 'Kotak Mahindra Bank',       exchange: 'NSE' },
-  { symbol: 'ONGC:NSE',       name: 'ONGC',                      exchange: 'NSE' },
-  { symbol: 'NTPC:NSE',       name: 'NTPC',                      exchange: 'NSE' },
-  { symbol: 'SUNPHARMA:NSE',  name: 'Sun Pharma',                exchange: 'NSE' },
-  { symbol: 'M&M:NSE',        name: 'Mahindra & Mahindra',       exchange: 'NSE' },
-  { symbol: 'ULTRACEMCO:NSE', name: 'UltraTech Cement',          exchange: 'NSE' },
-  { symbol: 'HCLTECH:NSE',    name: 'HCL Technologies',          exchange: 'NSE' },
-  { symbol: 'POWERGRID:NSE',  name: 'Power Grid Corp',           exchange: 'NSE' },
-  { symbol: 'BAJAJFINSV:NSE', name: 'Bajaj Finserv',             exchange: 'NSE' },
-  { symbol: 'NESTLEIND:NSE',  name: 'Nestle India',              exchange: 'NSE' },
   { symbol: 'ZOMATO:NSE',     name: 'Zomato',                    exchange: 'NSE' },
-  { symbol: 'JSWSTEEL:NSE',   name: 'JSW Steel',                 exchange: 'NSE' },
+  { symbol: 'IRFC:NSE',       name: 'Indian Railway Finance',    exchange: 'NSE' },
+  { symbol: 'SUZLON:NSE',     name: 'Suzlon Energy',             exchange: 'NSE' },
+  { symbol: 'YESBANK:NSE',    name: 'Yes Bank',                  exchange: 'NSE' },
+  { symbol: 'IOC:NSE',        name: 'Indian Oil Corporation',    exchange: 'NSE' },
+  { symbol: 'PNB:NSE',        name: 'Punjab National Bank',      exchange: 'NSE' },
+  { symbol: 'SAIL:NSE',       name: 'Steel Authority of India',  exchange: 'NSE' },
+  { symbol: 'IDFCFIRSTB:NSE', name: 'IDFC First Bank',           exchange: 'NSE' },
+  { symbol: 'GMRINFRA:NSE',   name: 'GMR Airports Infra',        exchange: 'NSE' },
+  { symbol: 'UNIONBANK:NSE',  name: 'Union Bank of India',       exchange: 'NSE' },
+  { symbol: 'BANKINDIA:NSE',  name: 'Bank of India',             exchange: 'NSE' },
+  { symbol: 'FEDERALBNK:NSE', name: 'Federal Bank',              exchange: 'NSE' },
+  { symbol: 'ASHOKLEY:NSE',   name: 'Ashok Leyland',             exchange: 'NSE' },
+  { symbol: 'NHPC:NSE',       name: 'NHPC Limited',              exchange: 'NSE' },
+  { symbol: 'SJVN:NSE',       name: 'SJVN Limited',              exchange: 'NSE' },
+  { symbol: 'NBCC:NSE',       name: 'NBCC India',                exchange: 'NSE' },
+  { symbol: 'HUDCO:NSE',      name: 'HUDCO',                     exchange: 'NSE' },
+  { symbol: 'HFCL:NSE',       name: 'HFCL Limited',              exchange: 'NSE' },
+  { symbol: 'IEX:NSE',        name: 'Indian Energy Exchange',    exchange: 'NSE' },
+  { symbol: 'MOTHERSON:NSE',  name: 'Samvardhana Motherson',     exchange: 'NSE' },
+  { symbol: 'SOUTHBANK:NSE',  name: 'South Indian Bank',         exchange: 'NSE' },
+  { symbol: 'UCOBANK:NSE',    name: 'UCO Bank',                  exchange: 'NSE' },
+  { symbol: 'ALOKINDS:NSE',   name: 'Alok Industries',           exchange: 'NSE' },
+  { symbol: 'IFCI:NSE',       name: 'IFCI Limited',              exchange: 'NSE' },
+  { symbol: 'INFIBEAM:NSE',   name: 'Infibeam Avenues',          exchange: 'NSE' },
+  { symbol: 'TRIDENT:NSE',    name: 'Trident Limited',           exchange: 'NSE' },
+  { symbol: 'EASEMYTRIP:NSE', name: 'Easy Trip Planners',        exchange: 'NSE' },
+  { symbol: 'DISHTV:NSE',     name: 'Dish TV India',             exchange: 'NSE' },
+  { symbol: 'MANAPPURAM:NSE', name: 'Manappuram Finance',        exchange: 'NSE' },
+  { symbol: 'IDBI:NSE',       name: 'IDBI Bank',                 exchange: 'NSE' },
 ];
 
 export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
@@ -343,7 +343,7 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
   useEffect(() => {
     if (query.length < 2) {
       // Show popular stocks when nothing is typed yet
-      if (query.length === 0 && !selectedStock) {
+      if (query.length === 0) {
         setSearchResults(POPULAR_STOCKS);
         setSearchError(null);
       } else {

@@ -234,8 +234,15 @@ export function OpenTradesDashboard() {
           )}
 
           {eodState.error && (
-            <div className="mt-2 text-[10.5px] font-mono text-rose-500 bg-rose-500/5 p-2 rounded-lg border border-rose-500/15">
-              ✗ {eodState.error}
+            <div className="mt-2 text-[10.5px] font-mono text-rose-500 bg-rose-500/5 p-2 rounded-lg border border-rose-500/15 flex flex-col gap-1">
+              <span>✗ {eodState.error}</span>
+              {eodState.lastResult?.errors && eodState.lastResult.errors.length > 0 && (
+                <ul className="list-disc pl-4 text-[9.5px] opacity-80 mt-1">
+                  {eodState.lastResult.errors.map((err, idx) => (
+                    <li key={idx}>{err}</li>
+                  ))}
+                </ul>
+              )}
             </div>
           )}
         </div>

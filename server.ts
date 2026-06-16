@@ -19,6 +19,69 @@ function parseSymbol(symbol: string) {
   return { ticker: ticker.trim(), exchange: exchange.trim(), yahoo };
 }
 
+function getBasePrice(symbol: string): number {
+  const parsed = parseSymbol(symbol);
+  switch (parsed.ticker) {
+    case 'TATASTEEL': return 155.40;
+    case 'ZOMATO': return 185.00;
+    case 'IRFC': return 158.20;
+    case 'SUZLON': return 52.60;
+    case 'YESBANK': return 24.50;
+    case 'IOC': return 165.80;
+    case 'PNB': return 122.40;
+    case 'SAIL': return 138.50;
+    case 'IDFCFIRSTB': return 82.30;
+    case 'GMRINFRA': return 88.40;
+    case 'UNIONBANK': return 145.00;
+    case 'BANKINDIA': return 126.70;
+    case 'FEDERALBNK': return 164.25;
+    case 'ASHOKLEY': return 180.50;
+    case 'NHPC': return 92.10;
+    case 'SJVN': return 125.80;
+    case 'NBCC': return 128.40;
+    case 'HUDCO': return 184.90;
+    case 'HFCL': return 98.70;
+    case 'IEX': return 152.30;
+    case 'MOTHERSON': return 128.60;
+    case 'SOUTHBANK': return 28.30;
+    case 'UCOBANK': return 54.80;
+    case 'ALOKINDS': return 26.50;
+    case 'IFCI': return 58.40;
+    case 'INFIBEAM': return 33.10;
+    case 'TRIDENT': return 38.60;
+    case 'EASEMYTRIP': return 44.50;
+    case 'DISHTV': return 18.20;
+    case 'MANAPPURAM': return 178.60;
+    case 'IDBI': return 86.40;
+    default: return 120.00;
+  }
+}
+
+const serverMockPrices = new Map<string, number>();
+
+function getUpdatedMockPrice(symbol: string): number {
+  const parsed = parseSymbol(symbol);
+  const base = getBasePrice(symbol);
+  let lastVal = serverMockPrices.get(parsed.ticker);
+  if (lastVal === undefined) {
+    lastVal = base;
+  }
+  // Add slight random walk to update time to time (simulating continuous price movement)
+  const pctChange = (Math.random() - 0.5) * 0.004; // up to +/- 0.20% change
+  let newVal = lastVal * (1 + pctChange);
+  
+  // Maintain simulated price within 10% deviation from the actual base price
+  const maxDev = 0.10;
+  const dev = (newVal - base) / base;
+  if (Math.abs(dev) > maxDev) {
+    newVal = base * (1 + (dev > 0 ? maxDev * 0.5 : -maxDev * 0.5));
+  }
+  
+  newVal = Number(newVal.toFixed(2));
+  serverMockPrices.set(parsed.ticker, newVal);
+  return newVal;
+}
+
 // Fetch live price + meta details from Yahoo Finance
 async function getYahooPrice(symbol: string) {
   const { yahoo } = parseSymbol(symbol);
@@ -71,21 +134,9 @@ async function startServer() {
     } catch (err: any) {
       console.error(`[Yahoo Stock Feed] Error fetching price for ${req.body.symbol || 'Unknown'}:`, err);
       
-      const parsed = parseSymbol(req.body.symbol || 'RELIANCE:NSE');
-      let basePrice = 1450.00;
-      if (parsed.ticker === 'RELIANCE') basePrice = 2462.50;
-      else if (parsed.ticker === 'TCS') basePrice = 3850.20;
-      else if (parsed.ticker === 'HDFCBANK') basePrice = 1612.30;
-      else if (parsed.ticker === 'INFY') basePrice = 1485.40;
-      else if (parsed.ticker === 'ICICIBANK') basePrice = 1110.85;
-      else if (parsed.ticker === 'SBIN') basePrice = 785.40;
-      else if (parsed.ticker === 'BHARTIARTL') basePrice = 1380.00;
-      else if (parsed.ticker === 'ITC') basePrice = 432.50;
-      else if (parsed.ticker === 'LT') basePrice = 3490.00;
-
-      // Add a slight random noise to simulate ticking data
-      const noise = (Math.random() - 0.5) * 1.5;
-      const finalPrice = Math.max(5.0, basePrice + noise);
+      const symbol = req.body.symbol || 'TATASTEEL:NSE';
+      const finalPrice = getUpdatedMockPrice(symbol);
+      const basePrice = getBasePrice(symbol);
 
       res.json({
         price: Number(finalPrice.toFixed(2)),
@@ -96,7 +147,7 @@ async function startServer() {
         currency: 'INR',
         proxyUsed: 'local-server-fail-safe',
         isStalePrice: true,
-        stalePriceWarning: `⚠ Live price unavailable — using cached reference price for ${req.body.symbol || 'this symbol'}. Indicators computed on stale data.`
+        stalePriceWarning: `⚠ Live price unavailable — using cached reference price for ${symbol}. Indicators computed on stale data.`
       });
     }
   });
@@ -260,7 +311,7 @@ async function startServer() {
       console.error("[Yahoo Stock Feed] History backfill error:", err);
       // Fallback response with simulated history to prevent screen freeze
       const outputsize = req.body.outputsize || 60;
-      let lastPrice = 1000;
+      let lastPrice = getUpdatedMockPrice(symbol || 'TATASTEEL:NSE');
       const fallbackHistory = [];
       const baseTime = Date.now();
       const tfValMs = tfVal * 60 * 1000;

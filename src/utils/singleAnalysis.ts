@@ -845,6 +845,8 @@ export async function runSingleAnalysis(params: {
     ...scalpAddon,
     analysis: {
       ...scalpAddon,
+      techniqueVotes: finalDecision.techniqueVotes,
+      deadTechniques: finalDecision.deadTechniques,
       judge: {
         ...scalpAddon,
         cases: cases,

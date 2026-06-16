@@ -147,7 +147,7 @@ function TimeBar({
 export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashboardProps) {
 
   const [toasts, setToasts] = useState<Toast[]>([]);
-  const [showTech, setShowTech] = useState(false);
+  const [showTech, setShowTech] = useState(true);
   const [selectedRange, setSelectedRange] = useState<string>('TODAY');
   const prevPhaseRef    = useRef<string>('');
   const prevOutcomeRef  = useRef<string | null>(null);
@@ -1021,7 +1021,7 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
             </div>
 
             {/* Technique Scoring Panel */}
-            {bot.lastAnalysisResult?.techniqueVotes && (
+            {(bot.lastAnalysisResult?.techniqueVotes || (bot.techniquesList && bot.techniquesList.length > 0)) && (
               <div className="bg-black/20 rounded-xl border border-dashed border-[#D9B382]/30 overflow-hidden">
                 <button
                   type="button"
@@ -1033,10 +1033,16 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
                       Techniques
                     </span>
                     <span className="text-[8px] text-zinc-500 font-mono">
-                      {bot.lastAnalysisResult.techniqueVotes.reduce((acc: any, v: any) => { acc[v.vote] = (acc[v.vote] || 0) + 1; return acc; }, {} as any)['BULL'] || 0} BULL · {' '}
-                      {bot.lastAnalysisResult.techniqueVotes.reduce((acc: any, v: any) => { acc[v.vote] = (acc[v.vote] || 0) + 1; return acc; }, {} as any)['BEAR'] || 0} BEAR · {' '}
-                      {bot.lastAnalysisResult.techniqueVotes.reduce((acc: any, v: any) => { acc[v.vote] = (acc[v.vote] || 0) + 1; return acc; }, {} as any)['NEUTRAL'] || 0} NEUTRAL · {' '}
-                      {bot.lastAnalysisResult.techniqueVotes.reduce((acc: any, v: any) => { acc[v.vote] = (acc[v.vote] || 0) + 1; return acc; }, {} as any)['SKIP'] || 0} SKIP
+                      {bot.lastAnalysisResult?.techniqueVotes ? (
+                        <>
+                          {bot.lastAnalysisResult.techniqueVotes.reduce((acc: any, v: any) => { acc[v.vote] = (acc[v.vote] || 0) + 1; return acc; }, {} as any)['BULL'] || 0} BULL · {' '}
+                          {bot.lastAnalysisResult.techniqueVotes.reduce((acc: any, v: any) => { acc[v.vote] = (acc[v.vote] || 0) + 1; return acc; }, {} as any)['BEAR'] || 0} BEAR · {' '}
+                          {bot.lastAnalysisResult.techniqueVotes.reduce((acc: any, v: any) => { acc[v.vote] = (acc[v.vote] || 0) + 1; return acc; }, {} as any)['NEUTRAL'] || 0} NEUTRAL · {' '}
+                          {bot.lastAnalysisResult.techniqueVotes.reduce((acc: any, v: any) => { acc[v.vote] = (acc[v.vote] || 0) + 1; return acc; }, {} as any)['SKIP'] || 0} SKIP
+                        </>
+                      ) : (
+                        `${bot.techniquesList?.length || 0} Active Tech Rules (Pending first live signal)`
+                      )}
                     </span>
                   </div>
                   <div className="flex flex-row items-center gap-2 shrink-0">
@@ -1046,34 +1052,47 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
 
                 {showTech && (
                   <div className="px-3 pb-3 border-t border-white/10 space-y-1.5 pt-2">
-                    {bot.lastAnalysisResult.techniqueVotes.map((v: any, i: number) => {
-                       const badgeColor = 
-                         v.vote === 'BULL' ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20' :
-                         v.vote === 'BEAR' ? 'bg-red-500/15 text-red-400 border-red-500/20' :
-                         v.vote === 'SKIP' ? 'bg-amber-500/15 text-amber-400 border-amber-500/20' :
-                         'bg-zinc-500/15 text-zinc-400 border-zinc-500/20';
-                         
-                       return (
-                         <div key={i} className="flex flex-row items-start justify-between bg-black/40 rounded p-1.5">
-                           <div className="flex-1 mr-2 flex flex-col gap-1">
-                             <div className="flex items-center gap-1.5">
-                               <span className="text-[9px] font-bold text-white font-mono w-40 truncate" title={v.name}>{v.name}</span>
-                               <span className={`text-[7px] font-black uppercase px-1 py-0.2 rounded border ${badgeColor}`}>
-                                 {v.vote}
+                    {bot.lastAnalysisResult?.techniqueVotes ? (
+                      bot.lastAnalysisResult.techniqueVotes.map((v: any, i: number) => {
+                        const badgeColor = 
+                          v.vote === 'BULL' ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20' :
+                          v.vote === 'BEAR' ? 'bg-red-500/15 text-red-400 border-red-500/20' :
+                          v.vote === 'SKIP' ? 'bg-amber-500/15 text-amber-400 border-amber-500/20' :
+                          'bg-zinc-500/15 text-zinc-400 border-zinc-500/20';
+                          
+                        return (
+                          <div key={i} className="flex flex-row items-start justify-between bg-black/40 rounded p-1.5">
+                            <div className="flex-1 mr-2 flex flex-col gap-1">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[9px] font-bold text-white font-mono w-40 truncate" title={v.name}>{v.name}</span>
+                                <span className={`text-[7px] font-black uppercase px-1 py-0.2 rounded border ${badgeColor}`}>
+                                  {v.vote}
+                                </span>
+                              </div>
+                              <p className="text-[7px] text-zinc-500 font-mono leading-none truncate w-60" title={v.reason}>
+                                {v.reason}
+                              </p>
+                            </div>
+                            <div className="shrink-0 flex items-center justify-end">
+                               <span className="text-[9px] font-mono text-zinc-300">
+                                 {Number(v.score).toFixed(1)}
                                </span>
-                             </div>
-                             <p className="text-[7px] text-zinc-500 font-mono leading-none truncate w-60" title={v.reason}>
-                               {v.reason}
-                             </p>
-                           </div>
-                           <div className="shrink-0 flex items-center justify-end">
-                              <span className="text-[9px] font-mono text-zinc-300">
-                                {Number(v.score).toFixed(1)}
-                              </span>
-                           </div>
-                         </div>
-                       );
-                    })}
+                            </div>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      bot.techniquesList?.map((t: any, i: number) => (
+                        <div key={i} className="flex flex-row items-center justify-between bg-black/40 rounded p-1.5 border border-dashed border-zinc-850">
+                          <span className="text-[9px] font-bold text-zinc-300 font-mono truncate max-w-[180px]" title={t.name}>
+                            {t.name ?? `Custom Technique #${i+1}`}
+                          </span>
+                          <span className="text-[7px] font-mono text-zinc-500 uppercase font-bold bg-zinc-900 border border-zinc-800 px-1.5 py-0.5 rounded">
+                            PENDING SCAN
+                          </span>
+                        </div>
+                      ))
+                    )}
 
                     {/* Dead techniques warning */}
                     {bot.lastAnalysisResult?.deadTechniques?.length > 0 && (

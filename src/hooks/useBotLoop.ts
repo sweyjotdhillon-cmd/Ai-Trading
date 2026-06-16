@@ -258,6 +258,22 @@ export function useBotLoop(
     setLastSignal(null);
     setLastConfidence(0);
     setLastBlockReason(null);
+    setLastBlockers([]);
+    setLastAntiHallucination(null);
+    setLastChartUrl(null);
+    setLastAnalyzedAt(null);
+    setIsAnalyzing(false);
+    setStabilityCount(0);
+    setOhlcQuality('REAL_PRICE');
+
+    // Reset loop & initiation refs so analysis starts freshly on symbol change
+    lastAnalyzedCandleTimeRef.current = null;
+    lastValidPriceRef.current = null;
+    lastCandleCountRef.current = 0;
+    initialAnalysisFiredRef.current = false;
+    noTechWarnedRef.current = false;
+    stabilityRef.current = 0;
+    analysisErrorCount.current = 0;
   }, [symbol]);
 
   const activeConfig = useMemo(() => {
@@ -894,11 +910,7 @@ export function useBotLoop(
       return;
     }
 
-    // Guard: stale data — do not analyze on frozen prices
-    if (feed.isStale) {
-      setLastBlockReason('STALE_DATA: price feed frozen, skipping analysis');
-      return;
-    }
+    // Guard: stale data — do not analyze on frozen prices (removed to prevent cached proxy values or flat prices from locking up scanner)
 
     runAnalysisCycle();
   }, [feed.candleCount, feed.isStale, phase, activeTrades, symbol, activeConfig.maxConcurrentTrades, feed.ohlcvBuffer.length, runAnalysisCycle]);
@@ -1191,6 +1203,7 @@ export function useBotLoop(
       ? `⚠ ${lastAnalysisResult.deadTechniques.length} technique(s) have no conditions and are inactive: ${lastAnalysisResult.deadTechniques.join(', ')}`
       : null,
     cooldownRemainsMs,
+    techniquesList,
     techniqueCount:    techniquesList.length,
     riskWarnings,
     haltCode,

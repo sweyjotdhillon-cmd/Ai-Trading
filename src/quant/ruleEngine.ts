@@ -1442,7 +1442,8 @@ export function evaluateSignal(
 
   let ruling = '';
   if (finalSignal === 'NO_TRADE') {
-    ruling = `NO_TRADE — ${noTradeReason} A clearer trend or score divergence is required to safely execute scalp trades.`;
+    const reasonText = noTradeReason ? `${noTradeReason} ` : '';
+    ruling = `NO_TRADE — ${reasonText}A clearer trend or score divergence is required to safely execute scalp trades.`;
   } else {
     const skepticNote = skepticMultiplier < 0.85 ? ` Skeptic flagged concerns; multiplied score by ${skepticMultiplier.toFixed(2)}.` : '';
     ruling = `${finalSignal} ENTRY — ${primaryEvidence}. Margin ${margin.toFixed(2)}, Confidence ${finalConfidence}%.${skepticNote}`;
