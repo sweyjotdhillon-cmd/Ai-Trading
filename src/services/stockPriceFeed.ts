@@ -230,37 +230,16 @@ export async function fetchLivePrice(symbol: string): Promise<PriceResult> {
   
   const parsed = parseSymbol(symbol || 'TATASTEEL:NSE');
   let basePrice = 120.00;
-  if (parsed.ticker === 'TATASTEEL') basePrice = 155.40;
-  else if (parsed.ticker === 'ZOMATO') basePrice = 185.00;
-  else if (parsed.ticker === 'IRFC') basePrice = 158.20;
-  else if (parsed.ticker === 'SUZLON') basePrice = 52.60;
-  else if (parsed.ticker === 'YESBANK') basePrice = 24.50;
-  else if (parsed.ticker === 'IOC') basePrice = 165.80;
-  else if (parsed.ticker === 'PNB') basePrice = 122.40;
-  else if (parsed.ticker === 'SAIL') basePrice = 138.50;
-  else if (parsed.ticker === 'IDFCFIRSTB') basePrice = 82.30;
-  else if (parsed.ticker === 'GMRINFRA') basePrice = 88.40;
-  else if (parsed.ticker === 'UNIONBANK') basePrice = 145.00;
-  else if (parsed.ticker === 'BANKINDIA') basePrice = 126.70;
-  else if (parsed.ticker === 'FEDERALBNK') basePrice = 164.25;
-  else if (parsed.ticker === 'ASHOKLEY') basePrice = 180.50;
-  else if (parsed.ticker === 'NHPC') basePrice = 92.10;
-  else if (parsed.ticker === 'SJVN') basePrice = 125.80;
-  else if (parsed.ticker === 'NBCC') basePrice = 128.40;
-  else if (parsed.ticker === 'HUDCO') basePrice = 184.90;
-  else if (parsed.ticker === 'HFCL') basePrice = 98.70;
-  else if (parsed.ticker === 'IEX') basePrice = 152.30;
-  else if (parsed.ticker === 'MOTHERSON') basePrice = 128.60;
-  else if (parsed.ticker === 'SOUTHBANK') basePrice = 28.30;
-  else if (parsed.ticker === 'UCOBANK') basePrice = 54.80;
-  else if (parsed.ticker === 'ALOKINDS') basePrice = 26.50;
-  else if (parsed.ticker === 'IFCI') basePrice = 58.40;
-  else if (parsed.ticker === 'INFIBEAM') basePrice = 33.10;
-  else if (parsed.ticker === 'TRIDENT') basePrice = 38.60;
-  else if (parsed.ticker === 'EASEMYTRIP') basePrice = 44.50;
-  else if (parsed.ticker === 'DISHTV') basePrice = 18.20;
-  else if (parsed.ticker === 'MANAPPURAM') basePrice = 178.60;
-  else if (parsed.ticker === 'IDBI') basePrice = 86.40;
+  if (parsed.ticker === 'TATASTEEL') basePrice = 196.00;
+  else if (parsed.ticker === 'ITC') basePrice = 287.00;
+  else if (parsed.ticker === 'POWERGRID') basePrice = 285.00;
+  else if (parsed.ticker === 'LTF') basePrice = 293.00;
+  else if (parsed.ticker === 'M&MFIN' || parsed.ticker === 'M_MFIN') basePrice = 297.00;
+  else if (parsed.ticker === 'PETRONET') basePrice = 285.00;
+  else if (parsed.ticker === 'NATIONALUM') basePrice = 180.00;
+  else if (parsed.ticker === 'IEX') basePrice = 122.00;
+  else if (parsed.ticker === 'CESC') basePrice = 169.00;
+  else if (parsed.ticker === 'FEDERALBNK') basePrice = 195.00;
 
   // Track prices sequentially in-memory so they don't jump erratically
   const cacheKey = `mock_price_val_${parsed.ticker}`;

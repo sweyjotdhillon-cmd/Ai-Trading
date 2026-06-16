@@ -22,37 +22,17 @@ function parseSymbol(symbol: string) {
 function getBasePrice(symbol: string): number {
   const parsed = parseSymbol(symbol);
   switch (parsed.ticker) {
-    case 'TATASTEEL': return 155.40;
-    case 'ZOMATO': return 185.00;
-    case 'IRFC': return 158.20;
-    case 'SUZLON': return 52.60;
-    case 'YESBANK': return 24.50;
-    case 'IOC': return 165.80;
-    case 'PNB': return 122.40;
-    case 'SAIL': return 138.50;
-    case 'IDFCFIRSTB': return 82.30;
-    case 'GMRINFRA': return 88.40;
-    case 'UNIONBANK': return 145.00;
-    case 'BANKINDIA': return 126.70;
-    case 'FEDERALBNK': return 164.25;
-    case 'ASHOKLEY': return 180.50;
-    case 'NHPC': return 92.10;
-    case 'SJVN': return 125.80;
-    case 'NBCC': return 128.40;
-    case 'HUDCO': return 184.90;
-    case 'HFCL': return 98.70;
-    case 'IEX': return 152.30;
-    case 'MOTHERSON': return 128.60;
-    case 'SOUTHBANK': return 28.30;
-    case 'UCOBANK': return 54.80;
-    case 'ALOKINDS': return 26.50;
-    case 'IFCI': return 58.40;
-    case 'INFIBEAM': return 33.10;
-    case 'TRIDENT': return 38.60;
-    case 'EASEMYTRIP': return 44.50;
-    case 'DISHTV': return 18.20;
-    case 'MANAPPURAM': return 178.60;
-    case 'IDBI': return 86.40;
+    case 'TATASTEEL': return 196.00;
+    case 'ITC': return 287.00;
+    case 'POWERGRID': return 285.00;
+    case 'LTF': return 293.00;
+    case 'M&MFIN':
+    case 'M_MFIN': return 297.00;
+    case 'PETRONET': return 285.00;
+    case 'NATIONALUM': return 180.00;
+    case 'IEX': return 122.00;
+    case 'CESC': return 169.00;
+    case 'FEDERALBNK': return 195.00;
     default: return 120.00;
   }
 }
@@ -161,45 +141,28 @@ async function startServer() {
       }
 
       console.log(`[Yahoo Stock Feed] Performing search query: ${query}`);
-      const targetUrl = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=8&newsCount=0&enableFuzzyQuery=false&region=IN`;
-      
-      const resSearch = await fetch(targetUrl, {
-        headers: { 'Accept': 'application/json' }
-      });
-      if (!resSearch.ok) {
-        return res.json([]);
-      }
+      const APPROVED_STOCKS = [
+        { symbol: 'TATASTEEL:NSE',  name: 'Tata Steel',              exchange: 'NSE' },
+        { symbol: 'ITC:NSE',        name: 'ITC Ltd',                 exchange: 'NSE' },
+        { symbol: 'POWERGRID:NSE',  name: 'Power Grid Corp',         exchange: 'NSE' },
+        { symbol: 'LTF:NSE',        name: 'L&T Finance',             exchange: 'NSE' },
+        { symbol: 'M&MFIN:NSE',     name: 'M&M Financial Services',  exchange: 'NSE' },
+        { symbol: 'PETRONET:NSE',   name: 'Petronet LNG',            exchange: 'NSE' },
+        { symbol: 'NATIONALUM:NSE', name: 'National Aluminium',      exchange: 'NSE' },
+        { symbol: 'IEX:NSE',        name: 'Indian Energy Exchange',  exchange: 'NSE' },
+        { symbol: 'CESC:NSE',       name: 'CESC Ltd',                exchange: 'NSE' },
+        { symbol: 'FEDERALBNK:NSE', name: 'Federal Bank',            exchange: 'NSE' },
+      ];
 
-      const json: any = await resSearch.json();
-      const items = json?.finance?.result?.[0]?.quotes ?? json?.quotes ?? [];
-      if (!Array.isArray(items)) {
-        return res.json([]);
-      }
-
-      const results = items
-        .filter((item: any) =>
-          item.symbol?.endsWith('.NS') ||
-          item.symbol?.endsWith('.BO') ||
-          item.exchange === 'NSI' ||
-          item.exchange === 'BSE'
-        )
-        .slice(0, 8)
-        .map((item: any) => {
-          const isNSE = item.symbol?.endsWith('.NS') || item.exchange === 'NSI';
-          const ticker = (item.symbol ?? '')
-            .replace('.NS', '')
-            .replace('.BO', '');
-          return {
-            symbol: `${ticker}:${isNSE ? 'NSE' : 'BSE'}`,
-            name: item.longname ?? item.shortname ?? ticker,
-            exchange: isNSE ? 'NSE' : 'BSE',
-          };
-        })
-        .filter((r) => r.symbol.length > 2);
+      const queryLower = query.toLowerCase().trim();
+      const results = APPROVED_STOCKS.filter((item) =>
+        item.symbol.toLowerCase().includes(queryLower) ||
+        item.name.toLowerCase().includes(queryLower)
+      );
 
       res.json(results);
     } catch (err: any) {
-      console.error("[Yahoo Stock Feed] Search list error:", err);
+      console.error("[Search] Search list error:", err);
       res.status(500).json({ error: "Failed to search stocks" });
     }
   });

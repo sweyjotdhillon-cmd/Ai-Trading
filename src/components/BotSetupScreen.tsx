@@ -106,37 +106,16 @@ function buildConfigFromPreset(
 }
 
 const POPULAR_STOCKS: StockSearchResult[] = [
-  { symbol: 'TATASTEEL:NSE',  name: 'Tata Steel',                exchange: 'NSE' },
-  { symbol: 'ZOMATO:NSE',     name: 'Zomato',                    exchange: 'NSE' },
-  { symbol: 'IRFC:NSE',       name: 'Indian Railway Finance',    exchange: 'NSE' },
-  { symbol: 'SUZLON:NSE',     name: 'Suzlon Energy',             exchange: 'NSE' },
-  { symbol: 'YESBANK:NSE',    name: 'Yes Bank',                  exchange: 'NSE' },
-  { symbol: 'IOC:NSE',        name: 'Indian Oil Corporation',    exchange: 'NSE' },
-  { symbol: 'PNB:NSE',        name: 'Punjab National Bank',      exchange: 'NSE' },
-  { symbol: 'SAIL:NSE',       name: 'Steel Authority of India',  exchange: 'NSE' },
-  { symbol: 'IDFCFIRSTB:NSE', name: 'IDFC First Bank',           exchange: 'NSE' },
-  { symbol: 'GMRINFRA:NSE',   name: 'GMR Airports Infra',        exchange: 'NSE' },
-  { symbol: 'UNIONBANK:NSE',  name: 'Union Bank of India',       exchange: 'NSE' },
-  { symbol: 'BANKINDIA:NSE',  name: 'Bank of India',             exchange: 'NSE' },
-  { symbol: 'FEDERALBNK:NSE', name: 'Federal Bank',              exchange: 'NSE' },
-  { symbol: 'ASHOKLEY:NSE',   name: 'Ashok Leyland',             exchange: 'NSE' },
-  { symbol: 'NHPC:NSE',       name: 'NHPC Limited',              exchange: 'NSE' },
-  { symbol: 'SJVN:NSE',       name: 'SJVN Limited',              exchange: 'NSE' },
-  { symbol: 'NBCC:NSE',       name: 'NBCC India',                exchange: 'NSE' },
-  { symbol: 'HUDCO:NSE',      name: 'HUDCO',                     exchange: 'NSE' },
-  { symbol: 'HFCL:NSE',       name: 'HFCL Limited',              exchange: 'NSE' },
-  { symbol: 'IEX:NSE',        name: 'Indian Energy Exchange',    exchange: 'NSE' },
-  { symbol: 'MOTHERSON:NSE',  name: 'Samvardhana Motherson',     exchange: 'NSE' },
-  { symbol: 'SOUTHBANK:NSE',  name: 'South Indian Bank',         exchange: 'NSE' },
-  { symbol: 'UCOBANK:NSE',    name: 'UCO Bank',                  exchange: 'NSE' },
-  { symbol: 'ALOKINDS:NSE',   name: 'Alok Industries',           exchange: 'NSE' },
-  { symbol: 'IFCI:NSE',       name: 'IFCI Limited',              exchange: 'NSE' },
-  { symbol: 'INFIBEAM:NSE',   name: 'Infibeam Avenues',          exchange: 'NSE' },
-  { symbol: 'TRIDENT:NSE',    name: 'Trident Limited',           exchange: 'NSE' },
-  { symbol: 'EASEMYTRIP:NSE', name: 'Easy Trip Planners',        exchange: 'NSE' },
-  { symbol: 'DISHTV:NSE',     name: 'Dish TV India',             exchange: 'NSE' },
-  { symbol: 'MANAPPURAM:NSE', name: 'Manappuram Finance',        exchange: 'NSE' },
-  { symbol: 'IDBI:NSE',       name: 'IDBI Bank',                 exchange: 'NSE' },
+  { symbol: 'TATASTEEL:NSE',  name: 'Tata Steel',              exchange: 'NSE' },
+  { symbol: 'ITC:NSE',        name: 'ITC Ltd',                 exchange: 'NSE' },
+  { symbol: 'POWERGRID:NSE',  name: 'Power Grid Corp',         exchange: 'NSE' },
+  { symbol: 'LTF:NSE',        name: 'L&T Finance',             exchange: 'NSE' },
+  { symbol: 'M&MFIN:NSE',     name: 'M&M Financial Services',  exchange: 'NSE' },
+  { symbol: 'PETRONET:NSE',   name: 'Petronet LNG',            exchange: 'NSE' },
+  { symbol: 'NATIONALUM:NSE', name: 'National Aluminium',      exchange: 'NSE' },
+  { symbol: 'IEX:NSE',        name: 'Indian Energy Exchange',  exchange: 'NSE' },
+  { symbol: 'CESC:NSE',       name: 'CESC Ltd',                exchange: 'NSE' },
+  { symbol: 'FEDERALBNK:NSE', name: 'Federal Bank',            exchange: 'NSE' },
 ];
 
 export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
@@ -145,9 +124,15 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
   const [selectedStock,  setSelectedStock]  = useState<StockSearchResult | null>(() => {
     try {
       const stored = localStorage.getItem('chartlens_selected_stock');
-      return stored ? JSON.parse(stored) : null;
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (POPULAR_STOCKS.some(s => s.symbol === parsed.symbol)) {
+          return parsed;
+        }
+      }
+      return POPULAR_STOCKS[0];
     } catch {
-      return null;
+      return POPULAR_STOCKS[0];
     }
   });
   const [isSearching,    setIsSearching]    = useState(false);
@@ -342,7 +327,6 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
 
   useEffect(() => {
     if (query.length < 2) {
-      // Show popular stocks when nothing is typed yet
       if (query.length === 0) {
         setSearchResults(POPULAR_STOCKS);
         setSearchError(null);
@@ -352,25 +336,21 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
       }
       return;
     }
-    if (searchTimeout.current) clearTimeout(searchTimeout.current);
-    searchTimeout.current = setTimeout(async () => {
-      setIsSearching(true);
-      setSearchError(null);
-      try {
-        const results = await searchSymbols(query);
-        setSearchResults(results);
-        if (results.length === 0) setSearchError('No NSE/BSE results found — try manual entry below');
-      } catch (e: any) {
-        const msg = e.message?.startsWith('TIMEOUT') ? e.message
-          : `Search failed: ${e.message ?? 'Unknown error'}`;
-        setSearchError(msg);
-      } finally {
-        setIsSearching(false);
-      }
-    }, 400);
-    return () => {
-      if (searchTimeout.current) clearTimeout(searchTimeout.current);
-    };
+    setIsSearching(true);
+    setSearchError(null);
+
+    // Locally filter only from the 10 permitted stocks
+    const queryLower = query.toLowerCase();
+    const filtered = POPULAR_STOCKS.filter(stock =>
+      stock.symbol.toLowerCase().includes(queryLower) ||
+      stock.name.toLowerCase().includes(queryLower)
+    );
+
+    setSearchResults(filtered);
+    if (filtered.length === 0) {
+      setSearchError('No matching stocks found in the permitted list');
+    }
+    setIsSearching(false);
   }, [query, selectedStock]);
 
   const handleSelectStock = useCallback((result: StockSearchResult) => {
@@ -459,7 +439,7 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
             <input 
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search symbol (e.g. RELIANCE)"
+              placeholder="Search symbol (e.g. TATASTEEL)"
               className="w-full bg-gray-700 text-white border border-gray-600 rounded p-2 focus:outline-none focus:border-blue-500"
             />
             {isSearching && <div className="absolute right-3 top-2 text-gray-400 text-sm">...</div>}
@@ -494,21 +474,19 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
                   <div className="flex gap-2">
                     <input
                       type="text"
-                      placeholder="e.g. RELIANCE:NSE or TCS:NSE"
+                      placeholder="e.g. TATASTEEL:NSE or FEDERALBNK:NSE"
                       className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm font-mono text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-amber-500/50"
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
                           const val = (e.target as HTMLInputElement).value.trim().toUpperCase();
                           if (val.length > 2) {
-                            const symbol = val.includes(':')  ? val
-                                         : val.includes('.NS') ? val.replace('.NS', ':NSE')
-                                         : val.includes('.BO') ? val.replace('.BO', ':BSE')
-                                         : `${val}:NSE`;
-                            handleSelectStock({
-                              symbol,
-                              name:     symbol,
-                              exchange: symbol.includes('BSE') ? 'BSE' : 'NSE',
-                            });
+                            const ticker = val.includes(':') ? val.split(':')[0] : val.replace('.NS', '').replace('.BO', '');
+                            const matched = POPULAR_STOCKS.find(s => s.symbol.startsWith(ticker));
+                            if (matched) {
+                              handleSelectStock(matched);
+                            } else {
+                              alert(`Only the 10 configured liquid stocks are permitted: ${POPULAR_STOCKS.map(s => s.symbol.split(':')[0]).join(', ')}`);
+                            }
                           }
                         }
                       }}
@@ -518,15 +496,13 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
                         const input = (e.currentTarget.previousSibling as HTMLInputElement);
                         const val   = input.value.trim().toUpperCase();
                         if (val.length > 2) {
-                          const symbol = val.includes(':')  ? val
-                                       : val.includes('.NS') ? val.replace('.NS', ':NSE')
-                                       : val.includes('.BO') ? val.replace('.BO', ':BSE')
-                                       : `${val}:NSE`;
-                          handleSelectStock({
-                            symbol,
-                            name:     symbol,
-                            exchange: symbol.includes('BSE') ? 'BSE' : 'NSE',
-                          });
+                          const ticker = val.includes(':') ? val.split(':')[0] : val.replace('.NS', '').replace('.BO', '');
+                          const matched = POPULAR_STOCKS.find(s => s.symbol.startsWith(ticker));
+                          if (matched) {
+                            handleSelectStock(matched);
+                          } else {
+                            alert(`Only the 10 configured liquid stocks are permitted: ${POPULAR_STOCKS.map(s => s.symbol.split(':')[0]).join(', ')}`);
+                          }
                         }
                       }}
                       className="px-3 py-2 bg-amber-500/20 border border-amber-500/40 rounded-lg text-amber-400 text-xs font-bold hover:bg-amber-500/30 transition-colors"
@@ -535,7 +511,7 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
                     </button>
                   </div>
                   <p className="text-zinc-400 text-[9px] font-mono mt-1.5">
-                    NSE stocks: append :NSE (RELIANCE:NSE) · BSE stocks: append :BSE (RELIANCE:BSE)
+                    Only configured liquid under-₹300 stocks are permitted (e.g. TATASTEEL:NSE, FEDERALBNK:NSE)
                   </p>
                 </div>
               </div>

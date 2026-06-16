@@ -392,7 +392,9 @@ export function OpenTradesDashboard() {
                                   const { initVirtualBalance } = await import('../services/virtualBalanceService');
                                   const balance = await initVirtualBalance(uid);
                                   await settleTrade(trade, balance);
-                                  fetchOpenTrades(uid);
+                                  setTimeout(() => {
+                                    fetchOpenTrades(uid);
+                                  }, 1500);
                                 } catch (e) {
                                   console.error(e);
                                 }

@@ -4,8 +4,8 @@ import { BotTradeRecord } from '../hooks/useBotLoop';
 import { TradeOutcome, ScalpInstrument } from '../types';
 import { loadOpenTrades, writeTrade_Close, loadStats, writeStats_Update } from './botTradeService';
 import { setVirtualBalanceValue } from './virtualBalanceService';
-import { parseSymbol, fetchTimeSeries } from './stockPriceFeed';
-import { todayIST, getISTDateString, isAfterMarketClose } from '../utils/istUtils';
+import { fetchTimeSeries } from './stockPriceFeed';
+import { todayIST, getISTDateString } from '../utils/istUtils';
 import { computeRoundTripCharges } from '../quant/brokerCharges';
 
 export async function fetchDailyOHLC(
@@ -448,7 +448,7 @@ async function _doSettle(
     netPnL,
     chargesActual:  parseFloat(charges.toFixed(2)),
     realizedPnLPct: invested > 0 ? (netPnL / invested) * 100 : 0,
-    rMultiple:      trade.plan?.riskRupees > 0 ? netPnL / trade.plan.riskRupees : 0,
+    rMultiple:      (trade.plan?.riskRupees ?? 0) > 0 ? netPnL / trade.plan!.riskRupees : 0,
     closedAt:       Date.now(),
     durationMinutes: Math.round((Date.now() - trade.openedAt) / 60_000),
   };
@@ -473,7 +473,7 @@ async function _doSettle(
       totalLosses:   stats.totalLosses + (isWin ? 0 : 1),
       winRate:       wins / total,
       totalPnL:      stats.totalPnL + netPnL,
-      avgRMultiple:  (stats.avgRMultiple * stats.totalTrades + closedTrade.rMultiple!) / total,
+      avgRMultiple:  (stats.avgRMultiple * stats.totalTrades + (closedTrade.rMultiple ?? 0)) / total,
       bestTrade:     Math.max(stats.bestTrade, netPnL),
       worstTrade:    Math.min(stats.worstTrade, netPnL),
       currentStreak: streak,
