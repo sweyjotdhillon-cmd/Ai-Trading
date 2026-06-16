@@ -197,8 +197,8 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
   const [leverage, setLeverage] = useState<number>(() => {
     try {
       const v = localStorage.getItem('chartlens_leverage');
-      return v ? parseInt(v, 10) : 5; // Default 5x margin for intraday
-    } catch { return 5; }
+      return v ? parseInt(v, 10) : 1; // Default 1x margin for intraday
+    } catch { return 1; }
   });
 
   const [investmentPerTrade, setInvestmentPerTrade] = useState<number>(() => {

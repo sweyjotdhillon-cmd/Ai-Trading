@@ -14,7 +14,7 @@ export function OpenTradesDashboard() {
   const [loading, setLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [uid, setUid] = useState<string | null>(auth.currentUser?.uid ?? null);
-  const { state: eodState, triggerSettlement } = useEODSettlement(uid);
+  const { state: eodState, triggerSettlement, settleTrade } = useEODSettlement(uid);
   const [expandedTradeId, setExpandedTradeId] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
 
@@ -369,6 +369,80 @@ export function OpenTradesDashboard() {
                               <strong className="text-amber-500">{fmt(trade.plan?.brokerCharges ?? invested * 0.0005)}</strong>
                             </div>
                           </div>
+                        </div>
+
+                        {/* Settle Trade Action */}
+                        <div className="border-t border-zinc-900 pt-3.5 flex flex-col gap-2">
+                          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                            <div>
+                              <span className="text-[10px] uppercase font-black text-white tracking-wider font-mono block">
+                                Settle Trade
+                              </span>
+                              <p className="text-[9px] text-zinc-500 font-mono leading-normal mt-0.5">
+                                Manually scan 1m &amp; daily market candles from entry date until today to seek SL or TP hits.
+                              </p>
+                            </div>
+
+                            <button
+                              id={`btn-settle-${trade.id}`}
+                              disabled={eodState.tradeStates?.[trade.id]?.isSettling}
+                              onClick={async () => {
+                                if (!uid) return;
+                                try {
+                                  const { initVirtualBalance } = await import('../services/virtualBalanceService');
+                                  const balance = await initVirtualBalance(uid);
+                                  await settleTrade(trade, balance);
+                                  fetchOpenTrades(uid);
+                                } catch (e) {
+                                  console.error(e);
+                                }
+                              }}
+                              className={`px-4 py-2 rounded-lg border text-[9px] font-mono font-black uppercase tracking-widest transition-all active:scale-[0.98] ${
+                                eodState.tradeStates?.[trade.id]?.isSettling
+                                  ? 'bg-amber-500/10 border-amber-500/30 text-amber-500 cursor-wait animate-pulse'
+                                  : 'bg-zinc-900 hover:bg-zinc-800 text-[#D9B382] border-zinc-800'
+                              }`}
+                            >
+                              {eodState.tradeStates?.[trade.id]?.isSettling ? '⏳ Settling...' : 'Settle Trade'}
+                            </button>
+                          </div>
+
+                          {/* Settle Result status and information */}
+                          {eodState.tradeStates?.[trade.id]?.result && (
+                            <div className={`mt-2 p-3.5 rounded-lg border leading-tight ${
+                              eodState.tradeStates[trade.id]?.result?.pending
+                                ? 'bg-zinc-900/30 border-zinc-850/60 text-zinc-400'
+                                : eodState.tradeStates[trade.id]?.result?.outcome?.includes('SL')
+                                ? 'bg-rose-500/5 border-rose-500/15 text-rose-400'
+                                : 'bg-emerald-500/5 border-emerald-500/15 text-emerald-400'
+                            }`}>
+                              <div className="flex items-center gap-1.5 font-bold uppercase tracking-wider text-[10px] mb-1">
+                                {eodState.tradeStates[trade.id]?.result?.pending ? (
+                                  <>
+                                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                                    Position in Market
+                                  </>
+                                ) : (
+                                  <>
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                                    Trade Closed &amp; Settled
+                                  </>
+                                )}
+                              </div>
+                              <p className="text-[9.5px]/relaxed opacity-90 mt-1">
+                                {eodState.tradeStates[trade.id]?.result?.message}
+                              </p>
+                              <div className="text-[8px] font-mono uppercase tracking-wide opacity-50 mt-2">
+                                Scanned Days: {eodState.tradeStates[trade.id]?.result?.checkedDays} · Exit Price: {eodState.tradeStates[trade.id]?.result?.exitPrice ? fmt(eodState.tradeStates[trade.id]?.result?.exitPrice) : 'N/A'}
+                              </div>
+                            </div>
+                          )}
+
+                          {eodState.tradeStates?.[trade.id]?.error && (
+                            <div className="mt-2 text-[9.5px] font-mono text-rose-500 bg-rose-500/5 p-2 rounded-lg border border-rose-500/15">
+                              ✗ {eodState.tradeStates[trade.id]?.error}
+                            </div>
+                          )}
                         </div>
 
                         {/* Additional actions for specific trade */}

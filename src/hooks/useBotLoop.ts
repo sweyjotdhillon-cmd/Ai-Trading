@@ -963,6 +963,20 @@ export function useBotLoop(
       if (!trade.plan) return;
       if (trade.symbol !== symbol) return;
 
+      // ── Spike guard for SL/TP watcher ──────────────────────────────────────
+      // Reject price if it's more than 10% from entry — proxies can return bad ticks
+      if (trade.entryPrice > 0) {
+        const pctFromEntry = Math.abs(price - trade.entryPrice) / trade.entryPrice;
+        if (pctFromEntry > 0.10) {
+          console.warn(
+            `[BotLoop] SL/TP SPIKE GUARD: price ${price} is ${(pctFromEntry * 100).toFixed(1)}% ` +
+            `from entry ${trade.entryPrice} — ignoring tick to prevent phantom exit.`
+          );
+          return; // skip this trade's SL/TP check for this tick
+        }
+      }
+      // ────────────────────────────────────────────────────────────────────────
+
       // SL check
       if (price <= trade.plan.stopLoss) {
         closeTradeByIdRef.current(trade.id, price, 'SL_HIT');

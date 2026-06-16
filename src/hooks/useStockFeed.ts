@@ -7,6 +7,7 @@ const MAX_BUFFER_SIZE    = 60;
 const MAX_FAILURES       = 3;
 const STALE_THRESHOLD    = 5;
 const API_TIMEOUT_MS     = 8_000;
+const PRICE_SPIKE_GUARD_PCT = 0.08;
 
 interface LiveCandle {
   open:             number;
@@ -150,6 +151,7 @@ export function useStockFeed(
   const simOffsetRef     = useRef<number>(0);
   const lastKnownPriceRef = useRef<number | null>(null);
   const lastKnownPriceAt  = useRef<number | null>(null);
+  const lastAcceptedPriceRef = useRef<number | null>(null);
 
   // ── Reset when symbol changes ──────────────────────────────────────────────
   useEffect(() => {
@@ -171,6 +173,7 @@ export function useStockFeed(
       simOffsetRef.current  = 0;
       lastKnownPriceRef.current = null;
       lastKnownPriceAt.current  = null;
+      lastAcceptedPriceRef.current = null;
       setCurrentPrice(null);
       setOhlcvBuffer([]);
       setCurrentCandle(null);
@@ -260,6 +263,26 @@ export function useStockFeed(
       } else {
         simOffsetRef.current = 0;
       }
+
+      // ── Spike guard — reject prices that jump > 8% from last accepted tick ──
+      if (lastAcceptedPriceRef.current !== null && marketIsOpen) {
+        const changePct = Math.abs(price - lastAcceptedPriceRef.current) / lastAcceptedPriceRef.current;
+        if (changePct > PRICE_SPIKE_GUARD_PCT) {
+          // Validate against dayHigh / dayLow if available
+          const dh = result.dayHigh || 0;
+          const dl = result.dayLow || 0;
+          const withinDayRange = dh > 0 && dl > 0 && price >= dl * 0.99 && price <= dh * 1.01;
+          if (!withinDayRange) {
+            console.warn(
+              `[StockFeed] SPIKE REJECTED: ${lastAcceptedPriceRef.current.toFixed(2)} → ${price.toFixed(2)} ` +
+              `(${(changePct * 100).toFixed(1)}% move, dayHigh=${dh}, dayLow=${dl}). Keeping last price.`
+            );
+            // Keep last accepted price for candle building — do NOT update currentPrice
+            price = lastAcceptedPriceRef.current;
+          }
+        }
+      }
+      lastAcceptedPriceRef.current = price;
 
       // Staleness check — only during market hours
       if (marketIsOpen) {

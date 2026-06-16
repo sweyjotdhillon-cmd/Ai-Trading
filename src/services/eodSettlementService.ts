@@ -1,11 +1,12 @@
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from './firebase';
 import { BotTradeRecord } from '../hooks/useBotLoop';
-import { TradeOutcome } from '../types';
+import { TradeOutcome, ScalpInstrument } from '../types';
 import { loadOpenTrades, writeTrade_Close, loadStats, writeStats_Update } from './botTradeService';
 import { setVirtualBalanceValue } from './virtualBalanceService';
 import { parseSymbol, fetchTimeSeries } from './stockPriceFeed';
 import { todayIST, getISTDateString, isAfterMarketClose } from '../utils/istUtils';
+import { computeRoundTripCharges } from '../quant/brokerCharges';
 
 export async function fetchDailyOHLC(
   symbol: string,
@@ -266,4 +267,216 @@ export async function settleEODTrades(
     errors,
     ambiguous,
   };
+}
+
+export interface SingleTradeSettleResult {
+  pending:     boolean;       // true = neither SL nor TP hit yet
+  exitPrice:   number | null;
+  outcome:     TradeOutcome | null;
+  checkedDays: number;        // how many daily candles were scanned
+  message:     string;        // human-readable status
+}
+
+export async function settleSingleTrade(
+  uid:   string,
+  trade: BotTradeRecord,
+  currentBalance: number
+): Promise<SingleTradeSettleResult> {
+  const sl  = trade.plan?.stopLoss    ?? (trade.entryPrice * 0.99);
+  const tp1 = trade.plan?.takeProfit1 ?? null;
+  const tp2 = trade.plan?.takeProfit2 ?? (trade.entryPrice * 1.01);
+
+  // ── Step 1: Try 1-minute intraday candles from entry to now ──────────────
+  // Covers same-day AND cross-day (Yahoo returns up to 7d of 1m data)
+  try {
+    const candles = await fetchTimeSeries(trade.symbol, 1, 2000);
+    if (Array.isArray(candles) && candles.length > 0) {
+      // Only look at candles AFTER entry
+      const relevant = candles
+        .filter(c => c.timestamp >= trade.openedAt)
+        .sort((a, b) => a.timestamp - b.timestamp);
+
+      for (const candle of relevant) {
+        const hitSL  = candle.low  <= sl;
+        const hitTP2 = candle.high >= tp2;
+        const hitTP1 = tp1 !== null && candle.high >= tp1;
+
+        // SL priority when both hit in same candle
+        if (hitSL && (hitTP1 || hitTP2)) {
+          await _doSettle(uid, trade, sl, 'SL_HIT', currentBalance);
+          return {
+            pending:     false,
+            exitPrice:   sl,
+            outcome:     'SL_HIT',
+            checkedDays: _countDays(relevant),
+            message:     `Stop Loss hit at ₹${sl.toFixed(2)} (SL took priority over TP in same candle).`,
+          };
+        }
+        if (hitSL) {
+          await _doSettle(uid, trade, sl, 'SL_HIT', currentBalance);
+          return {
+            pending:   false,
+            exitPrice: sl,
+            outcome:   'SL_HIT',
+            checkedDays: _countDays(relevant),
+            message:   `Stop Loss hit at ₹${sl.toFixed(2)}.`,
+          };
+        }
+        if (hitTP2) {
+          await _doSettle(uid, trade, tp2, 'TP2_HIT', currentBalance);
+          return {
+            pending:   false,
+            exitPrice: tp2,
+            outcome:   'TP2_HIT',
+            checkedDays: _countDays(relevant),
+            message:   `Take Profit 2 hit at ₹${tp2.toFixed(2)}.`,
+          };
+        }
+        if (hitTP1) {
+          await _doSettle(uid, trade, tp1!, 'TP1_HIT', currentBalance);
+          return {
+            pending:   false,
+            exitPrice: tp1!,
+            outcome:   'TP1_HIT',
+            checkedDays: _countDays(relevant),
+            message:   `Take Profit 1 hit at ₹${tp1!.toFixed(2)}.`,
+          };
+        }
+      }
+
+      // Scanned all candles — neither SL nor TP was hit
+      return {
+        pending:     true,
+        exitPrice:   null,
+        outcome:     null,
+        checkedDays: _countDays(relevant),
+        message:     `Position still in market. Neither SL (₹${sl.toFixed(2)}) nor TP (₹${tp2.toFixed(2)}) has been breached across ${_countDays(relevant)} day(s) of data.`,
+      };
+    }
+  } catch (err) {
+    console.warn('[settleSingleTrade] 1m candle fetch failed, falling back to daily OHLC:', err);
+  }
+
+  // ── Step 2: Fallback — scan daily OHLC from entry date to today ──────────
+  const entryDateStr = getISTDateString(trade.openedAt);
+
+  // Fetch daily candles (1440m interval = 1 day)
+  try {
+    const dailyCandles = await fetchTimeSeries(trade.symbol, 1440, 30);
+    if (Array.isArray(dailyCandles) && dailyCandles.length > 0) {
+      const relevant = dailyCandles
+        .filter(c => getISTDateString(c.timestamp) >= entryDateStr)
+        .sort((a, b) => a.timestamp - b.timestamp);
+
+      for (const candle of relevant) {
+        const hitSL  = candle.low  <= sl;
+        const hitTP2 = candle.high >= tp2;
+        const hitTP1 = tp1 !== null && candle.high >= tp1;
+
+        if (hitSL && (hitTP1 || hitTP2)) {
+          await _doSettle(uid, trade, sl, 'SL_HIT', currentBalance);
+          return {
+            pending:     false,
+            exitPrice:   sl,
+            outcome:     'SL_HIT',
+            checkedDays: relevant.length,
+            message:     `Stop Loss hit at ₹${sl.toFixed(2)} (daily OHLC, SL priority).`,
+          };
+        }
+        if (hitSL) {
+          await _doSettle(uid, trade, sl, 'SL_HIT', currentBalance);
+          return { pending: false, exitPrice: sl, outcome: 'SL_HIT', checkedDays: relevant.length, message: `Stop Loss hit at ₹${sl.toFixed(2)} (daily OHLC).` };
+        }
+        if (hitTP2) {
+          await _doSettle(uid, trade, tp2, 'TP2_HIT', currentBalance);
+          return { pending: false, exitPrice: tp2, outcome: 'TP2_HIT', checkedDays: relevant.length, message: `Take Profit 2 hit at ₹${tp2.toFixed(2)} (daily OHLC).` };
+        }
+        if (hitTP1) {
+          await _doSettle(uid, trade, tp1!, 'TP1_HIT', currentBalance);
+          return { pending: false, exitPrice: tp1!, outcome: 'TP1_HIT', checkedDays: relevant.length, message: `Take Profit 1 hit at ₹${tp1!.toFixed(2)} (daily OHLC).` };
+        }
+      }
+
+      return {
+        pending:     true,
+        exitPrice:   null,
+        outcome:     null,
+        checkedDays: relevant.length,
+        message:     `Position still in market. Checked ${relevant.length} daily candle(s) — no SL/TP breach found.`,
+      };
+    }
+  } catch (err) {
+    console.warn('[settleSingleTrade] Daily OHLC fetch also failed:', err);
+  }
+
+  // ── Step 3: All fetches failed — cannot determine, report pending ─────────
+  return {
+    pending:     true,
+    exitPrice:   null,
+    outcome:     null,
+    checkedDays: 0,
+    message:     `Could not fetch price data for ${trade.symbol}. Position remains open. Try again later.`,
+  };
+}
+
+// ── Private helpers ──────────────────────────────────────────────────────────
+
+function _countDays(candles: { timestamp: number }[]): number {
+  const days = new Set(candles.map(c => getISTDateString(c.timestamp)));
+  return days.size;
+}
+
+async function _doSettle(
+  uid:            string,
+  trade:          BotTradeRecord,
+  exitPrice:      number,
+  outcome:        TradeOutcome,
+  currentBalance: number
+): Promise<void> {
+  const posSize    = trade.plan?.positionSize ?? 1;
+  const instrument = (trade.plan?.instrument ?? 'EQUITY_INTRADAY') as ScalpInstrument;
+  const charges    = computeRoundTripCharges(trade.entryPrice, exitPrice, posSize, instrument).total;
+  const grossPnL   = (exitPrice - trade.entryPrice) * posSize;
+  const netPnL     = parseFloat((grossPnL - charges).toFixed(2));
+  const invested   = trade.plan?.investmentRupees ?? (posSize * trade.entryPrice);
+
+  const closedTrade: BotTradeRecord = {
+    ...trade,
+    exitPrice,
+    outcome,
+    realizedPnL:    parseFloat(grossPnL.toFixed(2)),
+    netPnL,
+    chargesActual:  parseFloat(charges.toFixed(2)),
+    realizedPnLPct: invested > 0 ? (netPnL / invested) * 100 : 0,
+    rMultiple:      trade.plan?.riskRupees > 0 ? netPnL / trade.plan.riskRupees : 0,
+    closedAt:       Date.now(),
+    durationMinutes: Math.round((Date.now() - trade.openedAt) / 60_000),
+  };
+
+  await writeTrade_Close(uid, closedTrade, exitPrice, invested, netPnL, charges);
+
+  const newBalance = parseFloat((currentBalance + invested + netPnL).toFixed(2));
+  await setVirtualBalanceValue(uid, newBalance);
+
+  const stats = await loadStats(uid);
+  if (stats) {
+    const isWin  = netPnL > 0;
+    const total  = stats.totalTrades + 1;
+    const wins   = stats.totalWins + (isWin ? 1 : 0);
+    const streak = isWin
+      ? (stats.currentStreak >= 0 ? stats.currentStreak + 1 : 1)
+      : (stats.currentStreak <= 0 ? stats.currentStreak - 1 : -1);
+    await writeStats_Update(uid, {
+      ...stats,
+      totalTrades:   total,
+      totalWins:     wins,
+      totalLosses:   stats.totalLosses + (isWin ? 0 : 1),
+      winRate:       wins / total,
+      totalPnL:      stats.totalPnL + netPnL,
+      avgRMultiple:  (stats.avgRMultiple * stats.totalTrades + closedTrade.rMultiple!) / total,
+      bestTrade:     Math.max(stats.bestTrade, netPnL),
+      worstTrade:    Math.min(stats.worstTrade, netPnL),
+      currentStreak: streak,
+    }, netPnL);
+  }
 }

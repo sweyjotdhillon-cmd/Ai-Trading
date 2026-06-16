@@ -78,9 +78,11 @@ export function enforceNeutrality(
   }
 
   // 2. Anti-Bias Rolling Historical Correction Channel (Invariant I-10)
+  const hist = getHistoricalRates();
   const bullRate = config.historicalBullRate !== undefined 
     ? config.historicalBullRate 
-    : getHistoricalRates().bullRate;
+    : hist.bullRate;
+  const total = hist.total;
 
   const biasStrength = config.biasCorrectionFactor;
 

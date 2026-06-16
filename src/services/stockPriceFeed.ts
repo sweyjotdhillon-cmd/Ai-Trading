@@ -125,6 +125,14 @@ export async function fetchLivePrice(symbol: string): Promise<PriceResult> {
       if (symData && symData.close !== undefined) {
         const price = Number(symData.close);
         if (isFinite(price) && price > 0) {
+          // Sanity: Stooq sometimes returns previous-day prices in pre/post market.
+          // Reject if price is more than 20% outside the day's high/low range.
+          const h = Number(symData.high ?? 0);
+          const l = Number(symData.low ?? 0);
+          if (h > 0 && l > 0 && (price > h * 1.05 || price < l * 0.95)) {
+            throw new Error(`Stooq price ${price} is outside day range [${l}, ${h}] — likely stale.`);
+          }
+
           return {
             price,
             previousClose: Number(symData.open ?? price),

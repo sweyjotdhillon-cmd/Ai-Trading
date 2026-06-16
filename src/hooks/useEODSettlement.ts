@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
-import { settleEODTrades } from '../services/eodSettlementService';
+import { settleEODTrades, settleSingleTrade, SingleTradeSettleResult } from '../services/eodSettlementService';
 import { todayIST, isAfterMarketClose } from '../utils/istUtils';
+import { BotTradeRecord } from './useBotLoop';
 
 function getStorageKey(uid: string): string {
   return `eod_settled_${uid}_${todayIST()}`;
@@ -8,11 +9,7 @@ function getStorageKey(uid: string): string {
 
 function hasAlreadySettled(uid: string): boolean {
   if (typeof window === 'undefined') return false;
-  try {
-    return sessionStorage.getItem(getStorageKey(uid)) === '1';
-  } catch {
-    return false;
-  }
+  try { return sessionStorage.getItem(getStorageKey(uid)) === '1'; } catch { return false; }
 }
 
 export interface EODSettlementResult {
@@ -23,17 +20,26 @@ export interface EODSettlementResult {
   ambiguous:   number;
 }
 
+export interface TradeSettleState {
+  isSettling: boolean;
+  result:     SingleTradeSettleResult | null;
+  error:      string | null;
+}
+
 export interface EODSettlementState {
   isSettling:     boolean;
   lastResult:     EODSettlementResult | null;
   error:          string | null;
-  canSettle:      boolean;   // true if current IST time >= 15:30 or already settled
+  canSettle:      boolean;
   alreadySettled: boolean;
+  // per-trade settle states: key = trade.id
+  tradeStates:    Record<string, TradeSettleState>;
 }
 
 export function useEODSettlement(uid: string | null): {
   state:             EODSettlementState;
   triggerSettlement: (currentBalance?: number) => Promise<void>;
+  settleTrade:       (trade: BotTradeRecord, currentBalance: number) => Promise<void>;
 } {
   const [state, setState] = useState<EODSettlementState>(() => {
     const settled = uid ? hasAlreadySettled(uid) : false;
@@ -43,20 +49,50 @@ export function useEODSettlement(uid: string | null): {
       error:          null,
       canSettle:      settled || isAfterMarketClose(),
       alreadySettled: settled,
+      tradeStates:    {},
     };
   });
 
+  // ── Per-trade settle ───────────────────────────────────────────────────────
+  const settleTrade = useCallback(async (trade: BotTradeRecord, currentBalance: number) => {
+    if (!uid) return;
+    const tid = trade.id;
+
+    setState(prev => ({
+      ...prev,
+      tradeStates: {
+        ...prev.tradeStates,
+        [tid]: { isSettling: true, result: null, error: null },
+      },
+    }));
+
+    try {
+      const result = await settleSingleTrade(uid, trade, currentBalance);
+      setState(prev => ({
+        ...prev,
+        tradeStates: {
+          ...prev.tradeStates,
+          [tid]: { isSettling: false, result, error: null },
+        },
+      }));
+    } catch (err: any) {
+      setState(prev => ({
+        ...prev,
+        tradeStates: {
+          ...prev.tradeStates,
+          [tid]: { isSettling: false, result: null, error: err?.message ?? 'Settlement failed' },
+        },
+      }));
+    }
+  }, [uid]);
+
+  // ── Bulk EOD settle ────────────────────────────────────────────────────────
   const triggerSettlement = useCallback(async (currentBalance?: number) => {
     if (!uid || state.isSettling) return;
-
     setState(prev => ({ ...prev, isSettling: true, error: null }));
     try {
       const result = await settleEODTrades(uid, currentBalance);
-      try {
-        sessionStorage.setItem(getStorageKey(uid), '1');
-      } catch {
-        // Safe check
-      }
+      try { sessionStorage.setItem(getStorageKey(uid), '1'); } catch { /* ok */ }
       setState(prev => ({
         ...prev,
         isSettling:     false,
@@ -64,14 +100,13 @@ export function useEODSettlement(uid: string | null): {
         alreadySettled: true,
         canSettle:      true,
         error: result.errors.length > 0 && result.settled === 0
-          ? `Settlement failed for ${result.skipped} trade(s)`
-          : null,
+          ? `Settlement failed for ${result.skipped} trade(s)` : null,
       }));
     } catch (err: any) {
       setState(prev => ({
         ...prev,
         isSettling: false,
-        error:      err?.message ?? 'Settlement failed unexpectedly',
+        error: err?.message ?? 'Settlement failed unexpectedly',
       }));
     }
   }, [uid, state.isSettling]);
@@ -79,26 +114,19 @@ export function useEODSettlement(uid: string | null): {
   useEffect(() => {
     if (!uid) return;
     const settled = hasAlreadySettled(uid);
-    setState(prev => ({
-      ...prev,
-      alreadySettled: settled,
-      canSettle:      settled || isAfterMarketClose(),
-    }));
+    setState(prev => ({ ...prev, alreadySettled: settled, canSettle: settled || isAfterMarketClose() }));
   }, [uid]);
 
-  // Periodic checker for market close
   useEffect(() => {
     if (state.canSettle) return;
-
     const interval = setInterval(() => {
       if (isAfterMarketClose()) {
         setState(prev => ({ ...prev, canSettle: true }));
         clearInterval(interval);
       }
     }, 10000);
-
     return () => clearInterval(interval);
   }, [state.canSettle]);
 
-  return { state, triggerSettlement };
+  return { state, triggerSettlement, settleTrade };
 }
