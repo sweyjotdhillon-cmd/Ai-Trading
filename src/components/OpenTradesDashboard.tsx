@@ -7,14 +7,12 @@ import {
 } from 'lucide-react';
 import { auth } from '../services/firebase';
 import { loadOpenTrades } from '../services/botTradeService';
-import { useEODSettlement } from '../hooks/useEODSettlement';
 
 export function OpenTradesDashboard() {
   const [openTrades, setOpenTrades] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [uid, setUid] = useState<string | null>(auth.currentUser?.uid ?? null);
-  const { state: eodState, triggerSettlement, settleTrade } = useEODSettlement(uid);
   const [expandedTradeId, setExpandedTradeId] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
 
@@ -51,12 +49,7 @@ export function OpenTradesDashboard() {
     }
   };
 
-  const handleSettle = async () => {
-    await triggerSettlement();
-    if (uid) {
-      fetchOpenTrades(uid);
-    }
-  };
+
 
   const fmt = (v: number | null | undefined) => {
     if (v == null) return '₹0.00';
@@ -154,98 +147,7 @@ export function OpenTradesDashboard() {
           </div>
         </div>
 
-        {/* Cloud Settlement Control Card */}
-        <div className="bg-zinc-950/60 border border-zinc-800/80 rounded-2xl p-5 flex flex-col gap-4 relative overflow-hidden" id="settle-trade-control-panel">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-[#D9B382] bg-opacity-[0.01] rounded-full blur-3xl pointer-events-none" />
-          
-          <div className="flex flex-col sm:flex-row justify-between sm:items-center border-b border-zinc-900 pb-3 gap-2">
-            <div className="flex items-center gap-2">
-              <List size={14} className="text-[#D9B382]" />
-              <span className="text-sm font-black text-white tracking-widest uppercase font-sans">
-                Position Settlement Control
-              </span>
-            </div>
-            {openTrades.length > 0 && (
-              <span className="text-[9px] font-mono bg-emerald-500/10 text-emerald-400 font-bold px-2 py-0.5 rounded uppercase animate-pulse">
-                Awaiting EOD Settlement
-              </span>
-            )}
-          </div>
 
-          <div className="bg-zinc-900/30 border border-zinc-850 p-4 rounded-xl flex flex-col gap-3">
-            <div className="flex items-start gap-3">
-              <div className="w-5 h-5 rounded-full bg-[#D9B382]/10 flex items-center justify-center shrink-0 mt-0.5">
-                <Info size={11} className="text-[#D9B382]" />
-              </div>
-              <div className="flex flex-col gap-1 text-left">
-                <span className="text-[10px] uppercase font-black text-white tracking-wider font-mono">Cloud Settlement Logic</span>
-                <p className="text-[9.5px] text-zinc-400 leading-normal font-mono">
-                  All active positions are securely stored in the Firestore NoSQL cloud database. They are continuously monitored and will be settled using the day's official Yahoo Finance OHLC (Open, High, Low, Close) market session candle:
-                </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2 font-mono text-[9px] text-zinc-500">
-                  <div className="flex items-start gap-1 p-2 bg-zinc-950/40 rounded border border-zinc-900">
-                    <span className="text-emerald-400">✓</span>
-                    <div>
-                      <span className="text-zinc-300 font-bold">Take Profit Hit (Profit):</span> If Day High ≥ TP, trade is closed at <span className="text-emerald-400">TP Target</span>.
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-1 p-2 bg-zinc-950/40 rounded border border-zinc-900">
-                    <span className="text-rose-400 font-sans">✗</span>
-                    <div>
-                      <span className="text-zinc-300 font-bold">Stop Loss Hit (Loss):</span> If Day Low ≤ SL, trade is closed at <span className="text-rose-400">SL Target</span>.
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-1 p-2 bg-zinc-950/40 rounded border border-zinc-900 col-span-1 sm:col-span-2">
-                    <span className="text-[#D9B382]">📊</span>
-                    <div>
-                      <span className="text-zinc-300 font-bold">Overlap &amp; Time Out:</span> If both High/Low targets are crossed on the same day OR if neither limit is breached, the positions are conservatively resolved/settled at the day's official regular session <span className="text-[#D9B382]">Closing Price (Close)</span>.
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-            
-            <div className="border-t border-zinc-900/60 pt-3 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-              <div className="text-[9px] text-zinc-500 leading-relaxed max-w-md font-mono">
-                * Settlements execute instantly on demand. This updates the primary Ledger Balance, modifies trade statuses to Closed, and logs historical stats on the cloud.
-              </div>
-              
-              <button
-                onClick={handleSettle}
-                disabled={eodState.isSettling || openTrades.length === 0}
-                id="btn-settle-open-trades"
-                className={`w-full sm:w-auto px-5 py-2.5 rounded-xl border text-[10px] font-mono font-black uppercase tracking-widest transition-all active:scale-[0.98] ${
-                  eodState.isSettling
-                    ? 'bg-amber-500/10 border-amber-500/30 text-amber-500 cursor-wait animate-pulse'
-                    : openTrades.length === 0
-                    ? 'bg-zinc-900/40 border-zinc-900/40 text-zinc-650 cursor-not-allowed'
-                    : 'bg-[#D9B382] hover:bg-[#c9a171] text-zinc-950 border-transparent font-extrabold shadow-md'
-                }`}
-              >
-                {eodState.isSettling ? '⏳ Settling...' : '📋 Settle Open Trades'}
-              </button>
-            </div>
-          </div>
-
-          {eodState.lastResult && eodState.lastResult.settled > 0 && (
-            <div className="mt-2 text-[10.5px] font-mono text-emerald-400 bg-emerald-500/5 p-2 rounded-lg border border-emerald-500/15">
-              ✓ Successfully settled {eodState.lastResult.settled} trades! Realized P&L: {fmt(eodState.lastResult.totalNetPnL)}
-            </div>
-          )}
-
-          {eodState.error && (
-            <div className="mt-2 text-[10.5px] font-mono text-rose-500 bg-rose-500/5 p-2 rounded-lg border border-rose-500/15 flex flex-col gap-1">
-              <span>✗ {eodState.error}</span>
-              {eodState.lastResult?.errors && eodState.lastResult.errors.length > 0 && (
-                <ul className="list-disc pl-4 text-[9.5px] opacity-80 mt-1">
-                  {eodState.lastResult.errors.map((err, idx) => (
-                    <li key={idx}>{err}</li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          )}
-        </div>
 
         {/* Section: Open trades list */}
         <div className="flex flex-col gap-3">
@@ -371,81 +273,7 @@ export function OpenTradesDashboard() {
                           </div>
                         </div>
 
-                        {/* Settle Trade Action */}
-                        <div className="border-t border-zinc-900 pt-3.5 flex flex-col gap-2">
-                          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                            <div>
-                              <span className="text-[10px] uppercase font-black text-white tracking-wider font-mono block">
-                                Settle Trade
-                              </span>
-                              <p className="text-[9px] text-zinc-500 font-mono leading-normal mt-0.5">
-                                Manually scan 1m &amp; daily market candles from entry date until today to seek SL or TP hits.
-                              </p>
-                            </div>
 
-                            <button
-                              id={`btn-settle-${trade.id}`}
-                              disabled={eodState.tradeStates?.[trade.id]?.isSettling}
-                              onClick={async () => {
-                                if (!uid) return;
-                                try {
-                                  const { initVirtualBalance } = await import('../services/virtualBalanceService');
-                                  const balance = await initVirtualBalance(uid);
-                                  await settleTrade(trade, balance);
-                                  setTimeout(() => {
-                                    fetchOpenTrades(uid);
-                                  }, 1500);
-                                } catch (e) {
-                                  console.error(e);
-                                }
-                              }}
-                              className={`px-4 py-2 rounded-lg border text-[9px] font-mono font-black uppercase tracking-widest transition-all active:scale-[0.98] ${
-                                eodState.tradeStates?.[trade.id]?.isSettling
-                                  ? 'bg-amber-500/10 border-amber-500/30 text-amber-500 cursor-wait animate-pulse'
-                                  : 'bg-zinc-900 hover:bg-zinc-800 text-[#D9B382] border-zinc-800'
-                              }`}
-                            >
-                              {eodState.tradeStates?.[trade.id]?.isSettling ? '⏳ Settling...' : 'Settle Trade'}
-                            </button>
-                          </div>
-
-                          {/* Settle Result status and information */}
-                          {eodState.tradeStates?.[trade.id]?.result && (
-                            <div className={`mt-2 p-3.5 rounded-lg border leading-tight ${
-                              eodState.tradeStates[trade.id]?.result?.pending
-                                ? 'bg-zinc-900/30 border-zinc-850/60 text-zinc-400'
-                                : eodState.tradeStates[trade.id]?.result?.outcome?.includes('SL')
-                                ? 'bg-rose-500/5 border-rose-500/15 text-rose-400'
-                                : 'bg-emerald-500/5 border-emerald-500/15 text-emerald-400'
-                            }`}>
-                              <div className="flex items-center gap-1.5 font-bold uppercase tracking-wider text-[10px] mb-1">
-                                {eodState.tradeStates[trade.id]?.result?.pending ? (
-                                  <>
-                                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                                    Position in Market
-                                  </>
-                                ) : (
-                                  <>
-                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                                    Trade Closed &amp; Settled
-                                  </>
-                                )}
-                              </div>
-                              <p className="text-[9.5px]/relaxed opacity-90 mt-1">
-                                {eodState.tradeStates[trade.id]?.result?.message}
-                              </p>
-                              <div className="text-[8px] font-mono uppercase tracking-wide opacity-50 mt-2">
-                                Scanned Days: {eodState.tradeStates[trade.id]?.result?.checkedDays} · Exit Price: {eodState.tradeStates[trade.id]?.result?.exitPrice ? fmt(eodState.tradeStates[trade.id]?.result?.exitPrice) : 'N/A'}
-                              </div>
-                            </div>
-                          )}
-
-                          {eodState.tradeStates?.[trade.id]?.error && (
-                            <div className="mt-2 text-[9.5px] font-mono text-rose-500 bg-rose-500/5 p-2 rounded-lg border border-rose-500/15">
-                              ✗ {eodState.tradeStates[trade.id]?.error}
-                            </div>
-                          )}
-                        </div>
 
                         {/* Additional actions for specific trade */}
                         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-zinc-900 pt-3 text-[8px] text-zinc-500 uppercase">

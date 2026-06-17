@@ -7,9 +7,7 @@ import {
 import { UseBotLoopResult, BotPhase, BotTradeRecord } from '../hooks/useBotLoop';
 import { filterTradesByRange } from '../services/botTradeService';
 import { auth } from '../services/firebase';
-import { useEODSettlement } from '../hooks/useEODSettlement';
 import { fetchLivePrice } from '../services/stockPriceFeed';
-import { todayIST, isAfterMarketClose } from '../utils/istUtils';
 
 interface BotDashboardProps {
   bot:      UseBotLoopResult;
@@ -214,34 +212,6 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
 
   const primaryPlan = bot.activePlans[0];
   const uid = auth.currentUser?.uid ?? null;
-  const { state: eodState, triggerSettlement } = useEODSettlement(uid);
-  const [eodBanner, setEodBanner] = useState<{ type: 'success' | 'error'; message: string; sub?: string } | null>(null);
-  const [showSettleConfirm, setShowSettleConfirm] = useState(false);
-  const [reminderDismissed, setReminderDismissed] = useState(() => {
-    if (typeof window === 'undefined') return false;
-    return sessionStorage.getItem(`rem_dismissed_${uid}_${todayIST()}`) === '1';
-  });
-
-  // Show persistent banner when settlement completes
-  useEffect(() => {
-    if (!eodState.lastResult) return;
-    const r = eodState.lastResult;
-    
-    const sign = r.totalNetPnL >= 0 ? '+' : '';
-    const parts: string[] = [];
-    if (r.ambiguous > 0) parts.push(`${r.ambiguous} ambiguous`);
-    if (r.skipped > 0) parts.push(`${r.skipped} skipped`);
-    if (r.errors.length > 0) parts.push(...r.errors);
-
-    setEodBanner({
-      type: 'success',
-      message: `Settlement done — ${r.settled} settled · ${r.skipped} skipped · Net P&L: ${sign}₹${Math.abs(r.totalNetPnL).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
-      sub: parts.join(' | ') || undefined
-    });
-
-    bot.syncFromCloud().catch(err => console.error("Failed to sync after EOD settlement", err));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [eodState.lastResult]);
 
   const filteredTrades = useMemo(() => {
     return filterTradesByRange(bot.tradeHistory, selectedRange);
@@ -461,17 +431,7 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
             {bot.marketOpen ? 'MARKET OPEN' : 'MARKET CLOSED'}
           </span>
 
-          {/* EOD Settlement status pill */}
-          {eodState.isSettling && (
-            <span className="flex items-center gap-1 text-[10px] font-mono text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full animate-pulse">
-              ⏳ Settling trades...
-            </span>
-          )}
-          {!eodState.isSettling && eodState.alreadySettled && eodState.lastResult && eodState.lastResult.settled > 0 && (
-            <span className="flex items-center gap-1 text-[10px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
-              ✓ EOD SETTLED
-            </span>
-          )}
+
 
           {/* Stale warning */}
           {bot.isStale && (
@@ -517,119 +477,7 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
         </div>
       )}
 
-      {/* EOD Settlement Banner */}
-      {eodBanner && (
-        <div className={`flex flex-col gap-1 px-4 py-3 border rounded-xl ${
-          eodBanner.type === 'success'
-            ? 'bg-emerald-500/8 border-emerald-500/20'
-            : 'bg-rose-500/10 border-rose-500/30'
-        }`}>
-          <div className="flex items-center justify-between">
-            <div className={`flex items-center gap-2 text-xs font-mono font-bold ${
-              eodBanner.type === 'success' ? 'text-emerald-400' : 'text-rose-400'
-            }`}>
-              <span>{eodBanner.type === 'success' ? '✓' : '✗'}</span>
-              <span>{eodBanner.message}</span>
-            </div>
-            <button
-              onClick={() => setEodBanner(null)}
-              className="text-zinc-500 hover:text-zinc-300 text-xs ml-3 shrink-0"
-            >✕</button>
-          </div>
-          {eodBanner.sub && (
-            <span className="text-[10px] font-mono text-zinc-500 pl-5">{eodBanner.sub}</span>
-          )}
-        </div>
-      )}
 
-      {/* 3:30 PM EOD Reminder Notification */}
-      {isAfterMarketClose() && !eodState.alreadySettled && !reminderDismissed && bot.activeTrades && bot.activeTrades.length > 0 && (
-        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-pulse">
-          <div className="flex items-start gap-2 text-xs font-mono font-bold text-amber-400">
-            <Clock size={14} className="shrink-0 mt-0.5" />
-            <p>Daily market is closed. Tap below to settle today's trades.</p>
-          </div>
-          <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto font-mono text-xs">
-            <button
-              onClick={() => {
-                setShowSettleConfirm(true);
-              }}
-              className="px-3 py-1 bg-amber-500 hover:bg-amber-600 text-zinc-950 font-black rounded-lg transition-colors"
-            >
-              Settle Now
-            </button>
-            <button
-              onClick={() => {
-                try {
-                  sessionStorage.setItem(`rem_dismissed_${uid}_${todayIST()}`, '1');
-                } catch {
-                  // ignore
-                }
-                setReminderDismissed(true);
-              }}
-              className="text-zinc-500 hover:text-zinc-300 ml-2 font-bold transition-colors"
-            >
-              ✕ Dismiss
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* EOD Settle Button */}
-      {eodState.canSettle && (
-        <button
-          onClick={() => {
-            setShowSettleConfirm(true);
-          }}
-          disabled={eodState.isSettling || !bot.activeTrades || bot.activeTrades.length === 0}
-          className={`w-full py-2.5 rounded-xl border text-xs font-black uppercase tracking-widest transition-all active:scale-[0.98] ${
-            !bot.activeTrades || bot.activeTrades.length === 0
-              ? 'bg-zinc-900/40 border-zinc-850 text-zinc-600 cursor-not-allowed'
-              : eodState.isSettling
-              ? 'bg-amber-500/10 border-amber-500/30 text-amber-500 cursor-wait animate-pulse'
-              : 'bg-[#D9B382] hover:bg-[#c9a171] text-zinc-950 border-transparent font-extrabold shadow-md'
-          }`}
-        >
-          {(!bot.activeTrades || bot.activeTrades.length === 0)
-            ? '✓ No Open Trades to Settle'
-            : eodState.isSettling
-            ? '⏳ Settling Trades...'
-            : '📋 Settle Today\'s Trades'}
-        </button>
-      )}
-
-      {/* 2-Step Settlement Confirmation Trial Modal */}
-      {showSettleConfirm && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#12131A] border border-zinc-800 w-full max-w-md rounded-2xl p-6 shadow-2xl relative">
-            <h3 className="text-sm font-black uppercase tracking-widest text-[#D9B382] mb-3 flex items-center gap-2">
-              <Shield size={16} /> Confirm EOD Settlement
-            </h3>
-            <p className="text-xs text-zinc-400 font-mono leading-relaxed mb-6">
-              You are about to force close and settle all active paper trades on today's EOD market price. This cannot be undone. Are you sure?
-            </p>
-            <div className="flex justify-end gap-3 font-mono text-xs">
-              <button
-                onClick={() => setShowSettleConfirm(false)}
-                className="px-4 py-2 bg-zinc-850 hover:bg-zinc-800 text-zinc-400 border border-zinc-800 rounded-xl transition-colors font-bold"
-              >
-                No, Cancel
-              </button>
-              <button
-                onClick={async () => {
-                  setShowSettleConfirm(false);
-                  const balance = bot.virtualBalance ?? 100000;
-                  await triggerSettlement(balance);
-                  await bot.syncFromCloud();
-                }}
-                className="px-4 py-2 bg-[#D9B382] hover:bg-[#c9a171] text-zinc-950 rounded-xl font-black transition-colors"
-              >
-                Yes, Settle
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {bot.ohlcQuality === 'NORMALIZED_FALLBACK' && (
         <div className="bg-amber-900/60 border border-amber-500 text-amber-200 text-xs px-3 py-2 rounded-xl flex items-center gap-2">
