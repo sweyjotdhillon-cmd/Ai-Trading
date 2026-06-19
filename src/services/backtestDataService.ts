@@ -32,26 +32,57 @@ export async function fetchBacktestHistory(symbol: string): Promise<OHLCV[]> {
     `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`,
   ];
 
+  type ProxyDiagnostic = {
+    index: number;
+    proxyUrl: string;
+    targetUrl: string;
+    status: number | "no response";
+    responseBody: string | null;
+    error: string | null;
+  };
+
   const proxyErrors: string[] = [];
+  const diagnostics: ProxyDiagnostic[] = [];
 
   for (let i = 0; i < proxies.length; i++) {
+    const diagnostic: ProxyDiagnostic = {
+      index: i,
+      proxyUrl: proxies[i],
+      targetUrl,
+      status: "no response",
+      responseBody: null,
+      error: null,
+    };
+
     try {
       const res = await fetch(proxies[i], {
         signal: AbortSignal.timeout(20000),
         headers: { Accept: 'application/json' },
       });
 
+      diagnostic.status = res.status;
+
+      let text = '';
+      try {
+        text = await res.text();
+        diagnostic.responseBody = text.substring(0, 500);
+      } catch (textErr: any) {
+        diagnostic.responseBody = `<failed to read body: ${textErr.message}>`;
+      }
+
       if (!res.ok) {
+        diagnostic.error = `HTTP Error ${res.status}`;
+        diagnostics.push(diagnostic);
         proxyErrors.push(`proxy ${i} (${res.status})`);
         continue;
       }
 
-      let text = await res.text();
-
       if (i === 2) {
         try {
           text = JSON.parse(text).contents ?? text;
-        } catch {
+        } catch (e: any) {
+          diagnostic.error = `contents unwrap failed: ${e.message}`;
+          diagnostics.push(diagnostic);
           proxyErrors.push(`proxy ${i} (contents unwrap failed)`);
           continue;
         }
@@ -60,6 +91,8 @@ export async function fetchBacktestHistory(symbol: string): Promise<OHLCV[]> {
       const json   = JSON.parse(text);
       const result = json?.chart?.result?.[0];
       if (!result) {
+        diagnostic.error = `no chart result`;
+        diagnostics.push(diagnostic);
         proxyErrors.push(`proxy ${i} (no chart result)`);
         continue;
       }
@@ -67,6 +100,8 @@ export async function fetchBacktestHistory(symbol: string): Promise<OHLCV[]> {
       const timestamps: number[] = result.timestamp ?? [];
       const quote = result.indicators?.quote?.[0];
       if (!quote || timestamps.length === 0) {
+        diagnostic.error = `empty quote data`;
+        diagnostics.push(diagnostic);
         proxyErrors.push(`proxy ${i} (empty quote data)`);
         continue;
       }
@@ -101,6 +136,8 @@ export async function fetchBacktestHistory(symbol: string): Promise<OHLCV[]> {
       }
 
       if (candles.length === 0) {
+        diagnostic.error = `zero valid market-hours candles`;
+        diagnostics.push(diagnostic);
         proxyErrors.push(`proxy ${i} (zero valid market-hours candles)`);
         continue;
       }
@@ -109,13 +146,24 @@ export async function fetchBacktestHistory(symbol: string): Promise<OHLCV[]> {
       return candles;
 
     } catch (err: any) {
+      diagnostic.error = err ? `${err.name || 'Error'}: ${err.message}` : String(err);
+      diagnostics.push(diagnostic);
       proxyErrors.push(`proxy ${i} (${err.message})`);
     }
   }
 
+  const diagnosticsStr = diagnostics.map(d => 
+    `\n[Proxy ${d.index}]` +
+    `\n  Proxy URL: ${d.proxyUrl}` +
+    `\n  Target URL: ${d.targetUrl}` +
+    `\n  Status: ${d.status}` +
+    `\n  Error: ${d.error || 'None'}` +
+    `\n  Response Body: ${d.responseBody ? d.responseBody.replace(/\r?\n|\r/g, '') : 'None'}`
+  ).join('\n');
+
   throw new Error(
     `Failed to fetch backtest history for ${symbol} from Yahoo Finance. ` +
     `All proxies failed: ${proxyErrors.join('; ')}. ` +
-    `No simulated data was generated — try again or pick a different symbol.`
+    `No simulated data was generated — try again or pick a different symbol.\n\nDiagnostics Detail:${diagnosticsStr}`
   );
 }

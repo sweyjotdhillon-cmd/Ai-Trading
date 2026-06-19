@@ -143,7 +143,11 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow read, write, delete: if isAuthenticated();
+      allow get: if isOwner(userId) || isAdmin();
+      allow list: if isAdmin();
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId);
+      allow delete: if isAdmin();
 
       match /techniques/{techniqueId} {
         allow list: if isOwner(userId) || isAdmin();

@@ -6,7 +6,7 @@ import { initVirtualBalance, setVirtualBalanceValue } from '../services/virtualB
 import { auth } from '../services/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 
-interface StockSearchResult {
+export interface StockSearchResult {
   symbol:   string;   // e.g. 'RELIANCE.NS'
   name:     string;   // e.g. 'Reliance Industries Limited'
   exchange: string;   // 'NSE' | 'BSE'
@@ -105,7 +105,7 @@ function buildConfigFromPreset(
   };
 }
 
-const POPULAR_STOCKS: StockSearchResult[] = [
+export const POPULAR_STOCKS: StockSearchResult[] = [
   { symbol: 'TATASTEEL:NSE',  name: 'Tata Steel',              exchange: 'NSE' },
   { symbol: 'ITC:NSE',        name: 'ITC Ltd',                 exchange: 'NSE' },
   { symbol: 'POWERGRID:NSE',  name: 'Power Grid Corp',         exchange: 'NSE' },

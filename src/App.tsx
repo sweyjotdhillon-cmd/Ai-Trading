@@ -9,7 +9,7 @@ import {
   Platform,
   ScrollView
 } from 'react-native';
-import { Settings, LogIn, Activity, RefreshCw, XCircle, User, Bot, Wallet, List } from 'lucide-react';
+import { Settings, LogIn, Activity, RefreshCw, XCircle, User, Bot, Wallet, List, BarChart2 } from 'lucide-react';
 import { motion, AnimatePresence, LayoutGroup, useReducedMotion } from 'motion/react';
 import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, User as FirebaseUser } from 'firebase/auth';
 import { auth } from './services/firebase';
@@ -18,6 +18,7 @@ import { BotSetupScreen, BotStartPayload } from './components/BotSetupScreen';
 import { BotDashboard } from './components/BotDashboard';
 import { BalanceDashboard } from './components/BalanceDashboard';
 import { OpenTradesDashboard } from './components/OpenTradesDashboard';
+import { BacktestScreen } from './components/BacktestScreen';
 import { useBotLoop } from './hooks/useBotLoop';
 import { registerUserProfile } from './services/botTradeService';
 import { getDefaultScalpConfig } from './config/scalpConfig';
@@ -99,7 +100,7 @@ function App() {
     }
   });
 
-  const [activeTab, setActiveTab] = useState<'bot' | 'open-trades' | 'balance'>('bot');
+  const [activeTab, setActiveTab] = useState<'bot' | 'open-trades' | 'backtest' | 'balance'>('bot');
   const [botPayload, setBotPayload] = useState<BotStartPayload | null>(() => {
     try {
       const stored = localStorage.getItem('chartlens_active_bot_payload');
@@ -406,7 +407,7 @@ function App() {
               </motion.div>
             ) : (
               <motion.div
-                key={activeTab === 'bot' ? (botPayload ? 'dashboard' : 'setup') : activeTab === 'open-trades' ? 'open-trades' : 'balance'}
+                key={activeTab === 'bot' ? (botPayload ? 'dashboard' : 'setup') : activeTab === 'open-trades' ? 'open-trades' : activeTab === 'backtest' ? 'backtest' : 'balance'}
                 layout
                 initial={{ opacity: 0, y: prefersReducedMotion ? 0 : 12 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -429,6 +430,8 @@ function App() {
                     )
                   ) : activeTab === 'open-trades' ? (
                     <OpenTradesDashboard />
+                  ) : activeTab === 'backtest' ? (
+                    <BacktestScreen />
                   ) : (
                     <BalanceDashboard />
                   )}
@@ -462,6 +465,17 @@ function App() {
               <List color={activeTab === 'open-trades' ? '#1A1308' : '#8E9299'} size={18} />
             </View>
             <Text style={[styles.bottomBarText, activeTab === 'open-trades' && styles.bottomBarTextActive]}>Open Trades</Text>
+          </Pressable>
+
+          <Pressable 
+            style={[styles.bottomBarItem]} 
+            onPress={() => setActiveTab('backtest')}
+            id="tab-backtest"
+          >
+            <View style={[styles.bottomBarIcon, activeTab === 'backtest' && styles.bottomBarIconActive]}>
+              <BarChart2 color={activeTab === 'backtest' ? '#1A1308' : '#8E9299'} size={18} />
+            </View>
+            <Text style={[styles.bottomBarText, activeTab === 'backtest' && styles.bottomBarTextActive]}>Backtest</Text>
           </Pressable>
 
           <Pressable 
