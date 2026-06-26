@@ -1,0 +1,3 @@
+## 2026-06-26 - Added accessibility to React Native Web Pressables
+**Learning:** React Native Web's `<Pressable>` component requires specific accessibility props (`accessibilityLabel` and `accessibilityRole="button"`) to function correctly with screen readers, unlike standard HTML `<button>`s which use `aria-label`. In mixed codebases using React Native Web, icon-only `<Pressable>`s are a common pattern that need this treatment.
+**Action:** Always verify that `<Pressable>` components, especially those containing only icons (like close buttons in modals), include `accessibilityLabel` and `accessibilityRole="button"` props to ensure they are accessible.

@@ -111,6 +111,7 @@ export function OpenTradesDashboard() {
               disabled={isSyncing}
               className="p-3 rounded-xl bg-zinc-950 border border-zinc-800 hover:bg-zinc-850 text-[#D9B382] transition-colors flex items-center justify-center active:scale-95 disabled:opacity-50"
               title="Force sync open trades"
+              aria-label="Force sync open trades"
             >
               <RefreshCw size={15} className={isSyncing ? "animate-spin" : ""} />
             </button>
