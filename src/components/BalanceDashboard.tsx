@@ -434,6 +434,7 @@ export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) 
               disabled={isSyncing}
               className="p-3 rounded-xl bg-zinc-950 border border-zinc-800 hover:bg-zinc-800 text-[#D9B382] transition-colors flex items-center justify-center active:scale-95 disabled:opacity-50"
               title="Force ledger sync"
+              aria-label="Force ledger sync"
             >
               <RefreshCw size={15} className={isSyncing ? "animate-spin" : ""} />
             </button>
@@ -512,6 +513,7 @@ export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) 
                         setTimeout(() => setCopiedEmail(false), 2000);
                       }}
                       className="text-zinc-400 hover:text-white transition-colors"
+                      aria-label="Copy Authenticated Email"
                     >
                       {copiedEmail ? <Check size={11} className="text-emerald-500" /> : <Copy size={11} />}
                     </button>
@@ -531,6 +533,7 @@ export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) 
                         setTimeout(() => setCopiedUid(false), 2000);
                       }}
                       className="text-zinc-400 hover:text-white transition-colors"
+                      aria-label="Copy Firebase Account UID"
                     >
                       {copiedUid ? <Check size={11} className="text-emerald-500" /> : <Copy size={11} />}
                     </button>
