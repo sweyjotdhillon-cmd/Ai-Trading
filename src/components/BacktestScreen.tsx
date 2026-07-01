@@ -105,7 +105,7 @@ export function BacktestScreen() {
     setIsRunning(true);
     setError(null);
     setResult(null);
-    setStatusMessage('Fetching historical 5-minute data from Yahoo Finance...');
+    setStatusMessage('Loading bundled historical data...');
 
     let candles;
     try {

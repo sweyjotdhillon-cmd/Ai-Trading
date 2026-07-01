@@ -17,7 +17,6 @@ import {
   writeTrade_Close,
   writeStats_Update,
   loadStats,
-  loadOpenTrades,
   loadAllTrades,
 } from '../services/botTradeService';
 import { initVirtualBalance, setVirtualBalanceValue } from '../services/virtualBalanceService';
@@ -1064,8 +1063,7 @@ export function useBotLoop(
     try {
       const [stats, trades, openTrades] = await Promise.all([
         loadStats(userId),
-        loadAllTrades(userId),
-        loadOpenTrades(userId)
+        loadAllTrades(userId)
       ]);
 
       if (stats) setSessionStats(stats);

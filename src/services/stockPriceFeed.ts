@@ -234,7 +234,6 @@ export async function fetchLivePrice(symbol: string): Promise<PriceResult> {
   else if (parsed.ticker === 'ITC') basePrice = 287.00;
   else if (parsed.ticker === 'POWERGRID') basePrice = 285.00;
   else if (parsed.ticker === 'LTF') basePrice = 293.00;
-  else if (parsed.ticker === 'M&MFIN' || parsed.ticker === 'M_MFIN') basePrice = 297.00;
   else if (parsed.ticker === 'PETRONET') basePrice = 285.00;
   else if (parsed.ticker === 'NATIONALUM') basePrice = 180.00;
   else if (parsed.ticker === 'IEX') basePrice = 122.00;

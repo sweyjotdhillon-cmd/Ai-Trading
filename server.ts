@@ -26,8 +26,6 @@ function getBasePrice(symbol: string): number {
     case 'ITC': return 287.00;
     case 'POWERGRID': return 285.00;
     case 'LTF': return 293.00;
-    case 'M&MFIN':
-    case 'M_MFIN': return 297.00;
     case 'PETRONET': return 285.00;
     case 'NATIONALUM': return 180.00;
     case 'IEX': return 122.00;
@@ -146,7 +144,6 @@ async function startServer() {
         { symbol: 'ITC:NSE',        name: 'ITC Ltd',                 exchange: 'NSE' },
         { symbol: 'POWERGRID:NSE',  name: 'Power Grid Corp',         exchange: 'NSE' },
         { symbol: 'LTF:NSE',        name: 'L&T Finance',             exchange: 'NSE' },
-        { symbol: 'M&MFIN:NSE',     name: 'M&M Financial Services',  exchange: 'NSE' },
         { symbol: 'PETRONET:NSE',   name: 'Petronet LNG',            exchange: 'NSE' },
         { symbol: 'NATIONALUM:NSE', name: 'National Aluminium',      exchange: 'NSE' },
         { symbol: 'IEX:NSE',        name: 'Indian Energy Exchange',  exchange: 'NSE' },
