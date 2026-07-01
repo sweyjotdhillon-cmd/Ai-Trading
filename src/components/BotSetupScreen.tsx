@@ -110,7 +110,6 @@ export const POPULAR_STOCKS: StockSearchResult[] = [
   { symbol: 'ITC:NSE',        name: 'ITC Ltd',                 exchange: 'NSE' },
   { symbol: 'POWERGRID:NSE',  name: 'Power Grid Corp',         exchange: 'NSE' },
   { symbol: 'LTF:NSE',        name: 'L&T Finance',             exchange: 'NSE' },
-  { symbol: 'M&MFIN:NSE',     name: 'M&M Financial Services',  exchange: 'NSE' },
   { symbol: 'PETRONET:NSE',   name: 'Petronet LNG',            exchange: 'NSE' },
   { symbol: 'NATIONALUM:NSE', name: 'National Aluminium',      exchange: 'NSE' },
   { symbol: 'IEX:NSE',        name: 'Indian Energy Exchange',  exchange: 'NSE' },

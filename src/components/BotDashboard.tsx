@@ -993,57 +993,15 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
         <div className="flex flex-col sm:flex-row justify-between sm:items-center border-b border-zinc-900 pb-3 gap-2">
           <div className="flex items-center gap-2">
             <h3 className="font-sans font-black text-xs text-white uppercase tracking-widest flex items-center gap-1.5">
-              <Target size={12} className="text-[#D9B382]" /> Active Cloud Positions &amp; Targets
+              <Target size={12} className="text-[#D9B382]" /> Active Positions
             </h3>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-[8px] font-mono bg-zinc-900 border border-zinc-800 text-zinc-400 font-bold px-2 py-0.5 rounded uppercase tracking-wider">
-              ✓ Firebase Sync Active
-            </span>
             {bot.activeTrades && bot.activeTrades.length > 0 && (
               <span className="text-[8px] font-mono bg-emerald-500/10 text-emerald-400 font-bold px-2 py-0.5 rounded uppercase animate-pulse">
                 In-Flight Position
               </span>
             )}
-          </div>
-        </div>
-
-        {/* Dynamic educational logic walk-through */}
-        <div className="bg-zinc-900/40 border border-zinc-850 p-3.5 rounded-xl flex flex-col gap-2.5 text-left">
-          <div className="flex items-start gap-2.5">
-            <div className="w-5 h-5 rounded-full bg-[#D9B382]/10 flex items-center justify-center shrink-0 mt-0.5">
-              <span className="text-[10px]">📊</span>
-            </div>
-            <div className="flex flex-col gap-1">
-              <span className="text-[9.5px] uppercase font-bold text-zinc-100 tracking-wider font-mono">Cloud Settlement Logic</span>
-              <p className="text-[9px] text-[#A2A4AA] leading-normal font-mono uppercase">
-                Active trades are evaluated using session data (High, Low, Close) to guarantee realistic pricing:
-              </p>
-            </div>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-2 font-mono text-[9px] mt-1">
-            <div className="p-2.5 bg-black/40 rounded-lg border border-zinc-900/60 flex items-start gap-1.5">
-              <span className="text-emerald-400">✓</span>
-              <div>
-                <span className="text-zinc-300 font-bold block mb-0.5">PROFIT TARGET (TP)</span>
-                If Day High ≥ TP Target, trade is credited at <strong className="text-emerald-400">{bot.activeTrades?.[0]?.plan?.takeProfit2 ? fmt(bot.activeTrades[0].plan.takeProfit2) : 'TP Level'}</strong>.
-              </div>
-            </div>
-            <div className="p-2.5 bg-black/40 rounded-lg border border-zinc-900/60 flex items-start gap-1.5">
-              <span className="text-rose-400">✗</span>
-              <div>
-                <span className="text-zinc-300 font-bold block mb-0.5">STOP LOSS GUARD (SL)</span>
-                If Day Low ≤ SL Guard, trade is closed at <strong className="text-rose-400">{bot.activeTrades?.[0]?.plan?.stopLoss ? fmt(bot.activeTrades[0].plan.stopLoss) : 'SL Level'}</strong>.
-              </div>
-            </div>
-            <div className="p-2.5 bg-black/40 rounded-lg border border-zinc-900/60 flex items-start gap-1.5 col-span-1 md:col-span-1">
-              <span className="text-[#D9B382]">☕</span>
-              <div>
-                <span className="text-[#D9B382] font-bold block mb-0.5">TIME OUT / COINCIDENCE</span>
-                If neither limit is hit OR both prices are crossed on the same day, trade is settled at the day's regular market session <strong className="text-zinc-200">Closing Price</strong>.
-              </div>
-            </div>
           </div>
         </div>
 
