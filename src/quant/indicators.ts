@@ -6,11 +6,15 @@ export function sma(values: number[], period: number): number[] {
   
   const activePeriod = Math.max(1, Math.min(period, values.length));
   let sum = 0;
+  if (period > values.length) return Array.from(result);
   for (let i = 0; i < values.length; i++) {
     sum += values[i];
     if (i >= activePeriod) sum -= values[i - activePeriod];
-    const currentWindow = Math.min(i + 1, activePeriod);
-    result[i] = sum / currentWindow;
+    if (i < activePeriod - 1) {
+      result[i] = 0;
+    } else {
+      result[i] = sum / activePeriod;
+    }
   }
   return Array.from(result);
 }
