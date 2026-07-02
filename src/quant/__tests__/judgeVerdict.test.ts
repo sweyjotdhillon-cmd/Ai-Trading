@@ -104,9 +104,9 @@ describe('Judge Verdict', () => {
     const series = generateSeries('downtrend', 150);
     const result = evaluateSignal(series, null, { tfMinutes: 5, durationMinutes: 15, H: 1.5, horizonClass: 'MULTI_CANDLE', isTestMode: true });
     console.log("DOWNTREND RESULT:", JSON.stringify(result, null, 2));
-    expect(result.winner).toBe('BEAR');
-    expect(result.margin).toBeGreaterThanOrEqual(2);
-    expect(result.finalConfidence).toBeGreaterThanOrEqual(50);
+    // Since Long-Only overtrade changes, down-trends result in NO_TRADE (as PUTs were removed)
+    expect(result.winner).toBe('NO_TRADE');
+    expect(result.signal).toBe('NO_TRADE');
   });
 
   it('3. Sideways noise', () => {
