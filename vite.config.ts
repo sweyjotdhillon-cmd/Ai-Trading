@@ -13,6 +13,11 @@ export default defineConfig({
       'react-native': 'react-native-web',
     },
   },
+  preview: {
+    host: true,
+    allowedHosts: true,
+    port: process.env.PORT ? parseInt(process.env.PORT, 10) : 4173,
+  },
   server: {
     host: '0.0.0.0',
     port: 3000,
