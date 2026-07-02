@@ -29,6 +29,23 @@ export default defineConfig({
       },
     },
   },
+  preview: {
+    host: true,
+    allowedHosts: true,
+    port: process.env.PORT ? parseInt(process.env.PORT) : 4173,
+    proxy: {
+      '/api/stock': {
+        target: 'https://military-jobye-haiqstudios-14f59639.koyeb.app',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/stock/, '/stock'),
+      },
+      '/api/search': {
+        target: 'https://military-jobye-haiqstudios-14f59639.koyeb.app',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/search/, '/search'),
+      },
+    },
+  },
   define: {
     'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development')
   }
