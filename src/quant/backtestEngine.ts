@@ -174,15 +174,29 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
     }
     const tp2 = exits.tp2;
 
-    const investmentPerTrade = config.scalpConfig.investmentPerTrade ?? 10000;
+    const capitalRupees = config.scalpConfig.capitalRupees ?? 100000;
+    const riskPerTradePct = config.scalpConfig.riskPerTradePct ?? 1.0;
+    const maxPositionPctCapital = config.scalpConfig.maxPositionPctCapital ?? 30;
     const lotSize = config.scalpConfig.lotSize ?? 1;
-    let positionSize: number;
-    if (lotSize === 1) {
-      positionSize = Math.floor(investmentPerTrade / entry);
-    } else {
-      positionSize = Math.floor((investmentPerTrade / entry) / lotSize) * lotSize;
+
+    // Target rupee risk for this trade (fixed % of capital)
+    const targetRiskRupees = capitalRupees * (riskPerTradePct / 100);
+
+    // Shares needed to risk exactly targetRiskRupees at this trade's SL distance
+    const riskBasedSize = Math.floor(targetRiskRupees / riskPerShare);
+
+    // Cap notional so one trade can't exceed maxPositionPctCapital of capital
+    const maxNotional = capitalRupees * (maxPositionPctCapital / 100);
+    const notionalCappedSize = Math.floor(maxNotional / entry);
+
+    let positionSize = Math.min(riskBasedSize, notionalCappedSize);
+    if (lotSize > 1) {
+      positionSize = Math.floor(positionSize / lotSize) * lotSize;
     }
     if (positionSize <= 0) positionSize = lotSize === 1 ? 1 : lotSize;
+
+    const actualRiskRupees = positionSize * riskPerShare;
+    log(`[SIZING] TargetRisk: ₹${targetRiskRupees.toFixed(0)} | Risk/Share: ₹${riskPerShare.toFixed(2)} | Qty: ${positionSize} | ActualRisk: ₹${actualRiskRupees.toFixed(0)} | NotionalCapQty: ${notionalCappedSize}`);
 
     const entryTimeStr = new Date(entryCandle.timestamp ?? 0).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
     log(`[ENTER] ${entryTimeStr} | Price: ₹${entry.toFixed(2)} | Qty: ${positionSize} | SL: ₹${sl.toFixed(2)} | TP2: ₹${tp2.toFixed(2)} | Risk/Share: ₹${riskPerShare.toFixed(2)}`);
