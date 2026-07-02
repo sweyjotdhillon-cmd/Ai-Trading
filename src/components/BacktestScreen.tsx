@@ -7,7 +7,7 @@ import { BacktestConfig, BacktestResult, BacktestTrade } from '../types/backtest
 import { getDefaultScalpConfig } from '../config/scalpConfig';
 
 const MARGIN_THRESHOLD = 2.5;
-const MAX_TRADES_PER_DAY = 2;
+const MAX_TRADES_PER_DAY = 5;
 const WARMUP_CANDLES = 30;
 
 function fmt(n: number): string {
@@ -36,6 +36,20 @@ function downloadTradesCSV(trades: BacktestTrade[], symbol: string) {
   const a = document.createElement('a');
   a.href = url;
   a.download = `backtest_${symbol.replace(':', '_')}_${Date.now()}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function downloadDetailedLog(logs: string[] | undefined, symbol: string) {
+  if (!logs || logs.length === 0) return;
+  const content = logs.join('\n');
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `backtest_log_${symbol.replace(':', '_')}_${Date.now()}.txt`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -228,14 +242,23 @@ export function BacktestScreen() {
           <div className="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 flex flex-col gap-3">
             <div className="flex items-center justify-between">
               <span className="text-xs uppercase font-black text-white tracking-widest font-mono">Trade Log</span>
-              <button
-                onClick={() => downloadTradesCSV(result.trades, result.symbol)}
-                disabled={result.trades.length === 0}
-                className="flex items-center gap-1.5 text-[10px] font-mono font-bold text-[#D9B382] border border-[#D9B382]/30 rounded-lg px-2.5 py-1.5 hover:bg-[#D9B382]/10 transition-colors disabled:opacity-40"
-                id="btn-download-csv"
-              >
-                <Download size={12} /> CSV
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => downloadDetailedLog(result.logs, result.symbol)}
+                  disabled={!result.logs || result.logs.length === 0}
+                  className="flex items-center gap-1.5 text-[10px] font-mono font-bold text-zinc-300 border border-zinc-600 rounded-lg px-2.5 py-1.5 hover:bg-zinc-800 transition-colors disabled:opacity-40"
+                >
+                  <Download size={12} /> Detailed Log
+                </button>
+                <button
+                  onClick={() => downloadTradesCSV(result.trades, result.symbol)}
+                  disabled={result.trades.length === 0}
+                  className="flex items-center gap-1.5 text-[10px] font-mono font-bold text-[#D9B382] border border-[#D9B382]/30 rounded-lg px-2.5 py-1.5 hover:bg-[#D9B382]/10 transition-colors disabled:opacity-40"
+                  id="btn-download-csv"
+                >
+                  <Download size={12} /> CSV
+                </button>
+              </div>
             </div>
 
             {result.trades.length === 0 ? (

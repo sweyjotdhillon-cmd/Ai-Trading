@@ -31,12 +31,13 @@ export interface BacktestResult {
   avgDurationMinutes: number;
   startDate:          string;     // IST date string of first candle used
   endDate:            string;     // IST date string of last candle used
+  logs?:              string[];   // Detailed backtest event log
 }
 
 export interface BacktestConfig {
   symbol:            string;
   marginThreshold:   number;      // default 2.5
-  maxTradesPerDay:   number;      // default 2
+  maxTradesPerDay:   number;      // default 5
   warmupCandles:     number;      // default 30
   scalpConfig:       ScalpConfig; // reused for SL/TP and position sizing
   techniquesList:    any[];       // same uploaded techniques as the live bot, [] if none

@@ -65,6 +65,15 @@ function dummyRiskState(dateKey: string): RiskState {
  */
 export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestResult {
   const trades: BacktestTrade[] = [];
+  const logs: string[] = [];
+
+  const log = (msg: string) => {
+    const timestampStr = new Date().toISOString().split('T')[1].slice(0, 8);
+    logs.push(`[${timestampStr}] ${msg}`);
+  };
+
+  log(`[INIT] Starting Backtest for ${config.symbol} | Max Trades/Day: ${config.maxTradesPerDay} | Margin Thresh: ${config.marginThreshold}`);
+  log(`[INIT] Total Candles: ${candles.length} | Warmup: ${config.warmupCandles}`);
 
   let currentDayKey = '';
   let tradesToday = 0;
@@ -73,14 +82,17 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
   while (i < candles.length - 1) {
     const signalCandle = candles[i];
     const dayKey = getISTDateString(signalCandle.timestamp ?? 0);
+    const candleTimeStr = signalCandle.timestamp ? new Date(signalCandle.timestamp).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : `Idx:${i}`;
 
     if (dayKey !== currentDayKey) {
+      if (currentDayKey !== '') log(`\n--- NEW TRADING DAY: ${dayKey} ---`);
       currentDayKey = dayKey;
       tradesToday = 0;
     }
 
     if (tradesToday >= config.maxTradesPerDay) {
-      // Skip ahead to the first candle of the next IST day
+      // Don't spam skipping logs for every single candle, maybe just once per day
+      // let's do it quietly
       let j = i + 1;
       while (j < candles.length && getISTDateString(candles[j].timestamp ?? 0) === currentDayKey) j++;
       i = j;
@@ -103,17 +115,26 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
     );
 
     const qualifies = decision.winner === 'BULL' && decision.margin >= config.marginThreshold;
+    
+    // Log signals that are reasonably strong even if they don't meet the margin
+    if (decision.margin > 1.0 || qualifies) {
+      log(`[${candleTimeStr}] EVAL ${decision.winner} | Bull: ${decision.bullScore.toFixed(2)} Bear: ${decision.bearScore.toFixed(2)} Margin: ${decision.margin.toFixed(2)} -> ${qualifies ? 'QUALIFIED ✨' : 'REJECTED'}`);
+    }
+
     if (!qualifies) {
       i++;
       continue;
     }
 
     const entryCandle = candles[i + 1];
-    if (!entryCandle) break;
+    if (!entryCandle) {
+      log(`[${candleTimeStr}] No next candle available for entry. Ending.`);
+      break;
+    }
 
     const entryDayKey = getISTDateString(entryCandle.timestamp ?? 0);
     if (entryDayKey !== dayKey) {
-      // Signal fired on the last candle of the day - no same-day entry possible
+      log(`[${candleTimeStr}] Signal on last candle of day. Cannot enter same day. Skipping.`);
       i++;
       continue;
     }
@@ -140,12 +161,14 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
     const sl = calculateStopLoss(entry, config.scalpConfig.slMode, ctx);
     const riskPerShare = entry - sl;
     if (!isFinite(riskPerShare) || riskPerShare <= 0) {
+      log(`[${candleTimeStr}] Invalid SL (${sl}) or Risk/Share (${riskPerShare}). Skipping.`);
       i++;
       continue;
     }
 
     const exits = buildExitPlan(entry, sl, ctx);
     if (!exits) {
+      log(`[${candleTimeStr}] Failed to build exit plan. Skipping.`);
       i++;
       continue;
     }
@@ -161,7 +184,9 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
     }
     if (positionSize <= 0) positionSize = lotSize === 1 ? 1 : lotSize;
 
-    // Walk forward within the same IST day only
+    const entryTimeStr = new Date(entryCandle.timestamp ?? 0).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+    log(`[ENTER] ${entryTimeStr} | Price: ₹${entry.toFixed(2)} | Qty: ${positionSize} | SL: ₹${sl.toFixed(2)} | TP2: ₹${tp2.toFixed(2)} | Risk/Share: ₹${riskPerShare.toFixed(2)}`);
+
     let exitIdx = -1;
     let exitPrice = entry;
     let outcome: 'SL_HIT' | 'TP2_HIT' | 'TIME_EXIT' = 'TIME_EXIT';
@@ -170,18 +195,26 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
     while (k < candles.length) {
       const c = candles[k];
       const cDayKey = getISTDateString(c.timestamp ?? 0);
-      if (cDayKey !== dayKey) break; // never spill into next day
+      if (cDayKey !== dayKey) {
+        log(`  -> Reached end of day boundary. Forcing TIME_EXIT.`);
+        break; 
+      }
+
+      const cTimeStr = new Date(c.timestamp ?? 0).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' });
+      log(`  -> [${cTimeStr}] Tick: H=${c.high.toFixed(2)} L=${c.low.toFixed(2)} C=${c.close.toFixed(2)}`);
 
       if (c.low <= sl) {
         outcome = 'SL_HIT';
         exitPrice = sl;
         exitIdx = k;
+        log(`  -> SL HIT at ${sl.toFixed(2)} (Candle Low: ${c.low.toFixed(2)})`);
         break;
       }
       if (c.high >= tp2) {
         outcome = 'TP2_HIT';
         exitPrice = tp2;
         exitIdx = k;
+        log(`  -> TP2 HIT at ${tp2.toFixed(2)} (Candle High: ${c.high.toFixed(2)})`);
         break;
       }
 
@@ -191,17 +224,18 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
         outcome = 'TIME_EXIT';
         exitPrice = c.close;
         exitIdx = k;
+        log(`  -> Last candle of day reached. TIME_EXIT at ${c.close.toFixed(2)}`);
         break;
       }
       k++;
     }
 
     if (exitIdx === -1) {
-      // Ran out of historical data entirely before resolving
       const lastC = candles[candles.length - 1];
       outcome = 'TIME_EXIT';
       exitPrice = lastC.close;
       exitIdx = candles.length - 1;
+      log(`  -> Data ended abruptly. TIME_EXIT at ${exitPrice.toFixed(2)}`);
     }
 
     const exitCandle = candles[exitIdx];
@@ -215,6 +249,8 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
     const netPnL = grossPnL - charges;
     const rMultiple = riskPerShare > 0 ? netPnL / (riskPerShare * positionSize) : 0;
     const durationMinutes = ((exitCandle.timestamp ?? 0) - (entryCandle.timestamp ?? 0)) / 60000;
+
+    log(`[EXIT]  Outcome: ${outcome} | ExitPrice: ₹${exitPrice.toFixed(2)} | NetPnL: ₹${netPnL.toFixed(2)} | R-Mult: ${rMultiple.toFixed(2)} | Charges: ₹${charges.toFixed(2)} | Duration: ${durationMinutes}m\n`);
 
     trades.push({
       id: `bt_${entryCandle.timestamp ?? i}_${i}`,
@@ -235,13 +271,15 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
     i = exitIdx + 1;
   }
 
-  return computeBacktestStats(candles, config, trades);
+  log(`[DONE] Backtest completed. Total trades taken: ${trades.length}`);
+  return computeBacktestStats(candles, config, trades, logs);
 }
 
 function computeBacktestStats(
   candles: OHLCV[],
   config: BacktestConfig,
-  trades: BacktestTrade[]
+  trades: BacktestTrade[],
+  logs: string[]
 ): BacktestResult {
   const wins = trades.filter(t => t.pnl > 0).length;
   const losses = trades.filter(t => t.pnl <= 0).length;
@@ -294,5 +332,6 @@ function computeBacktestStats(
     avgDurationMinutes,
     startDate,
     endDate,
+    logs,
   };
 }
