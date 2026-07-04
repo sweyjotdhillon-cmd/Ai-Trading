@@ -115,6 +115,70 @@ export function BacktestScreen() {
   const [result, setResult]               = useState<BacktestResult | null>(null);
   const [error, setError]                 = useState<string | null>(null);
 
+  const [techniquesList, setTechniquesList] = useState<any[]>(() => {
+    try {
+      const stored = localStorage.getItem('user_techniques_list');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [techFileName, setTechFileName] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('user_techniques_filename') || null;
+    } catch {
+      return null;
+    }
+  });
+  const [techError, setTechError] = useState<string | null>(null);
+
+  const handleTechFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.name.endsWith('.json')) {
+      setTechError('Only .json technique files are supported.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const json = JSON.parse(ev.target?.result as string);
+        const parsed: any[] = Array.isArray(json)
+          ? json
+          : (json.techniques ?? json.list ?? []);
+        if (!Array.isArray(parsed) || parsed.length === 0) {
+          setTechError('File parsed but contains zero techniques. Check the format.');
+          return;
+        }
+        setTechniquesList(parsed);
+        setTechFileName(file.name);
+        setTechError(null);
+        try {
+          localStorage.setItem('user_techniques_list', JSON.stringify(parsed));
+          localStorage.setItem('user_techniques_filename', file.name);
+        } catch (err) {
+          console.error('Failed to store techniques in localStorage:', err);
+        }
+      } catch {
+        setTechError('Invalid JSON — could not parse the technique file.');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  const handleClearTechniques = () => {
+    setTechniquesList([]);
+    setTechFileName(null);
+    setTechError(null);
+    try {
+      localStorage.removeItem('user_techniques_list');
+      localStorage.removeItem('user_techniques_filename');
+    } catch (err) {
+      console.error('Failed to remove techniques from localStorage:', err);
+    }
+  };
+
   const handleRun = async () => {
     setIsRunning(true);
     setError(null);
@@ -141,7 +205,7 @@ export function BacktestScreen() {
         maxTradesPerDay: MAX_TRADES_PER_DAY,
         warmupCandles: WARMUP_CANDLES,
         scalpConfig: getDefaultScalpConfig(),
-        techniquesList: [],
+        techniquesList: techniquesList,
       };
       const res = runBacktest(candles, config);
       setResult(res);
@@ -181,6 +245,51 @@ export function BacktestScreen() {
             <option key={s.symbol} value={s.symbol}>{s.symbol} — {s.name}</option>
           ))}
         </select>
+
+        {/* Technique File Upload Section */}
+        <div className="flex flex-col gap-1.5 mt-1">
+          <label className="text-xs uppercase font-black text-zinc-400 tracking-widest font-mono">
+            Backtest Technique File
+          </label>
+
+          {techFileName ? (
+            <div className="flex items-center justify-between px-4 py-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl w-full max-w-full overflow-hidden">
+              <div className="flex-1 min-w-0 mr-4 overflow-hidden">
+                <span className="block text-xs font-mono font-bold text-emerald-400 truncate" title={techFileName}>
+                  ✓ {techFileName}
+                </span>
+                <span className="block text-[10px] font-mono text-emerald-600 mt-0.5">
+                  {techniquesList.length} custom techniques loaded & active for backtest
+                </span>
+              </div>
+              <button
+                onClick={handleClearTechniques}
+                disabled={isRunning}
+                className="text-[10px] font-mono text-zinc-500 hover:text-rose-400 disabled:opacity-50 transition-colors shrink-0"
+              >
+                Remove
+              </button>
+            </div>
+          ) : (
+            <label className={`flex flex-col items-center justify-center px-4 py-5 bg-zinc-800/40 border border-dashed border-zinc-700 rounded-xl cursor-pointer hover:border-zinc-500 transition-colors ${isRunning ? 'pointer-events-none opacity-50' : ''}`}>
+              <span className="text-zinc-400 text-xs font-mono mb-1">Upload .json technique file</span>
+              <span className="text-zinc-600 text-[10px] font-mono text-center">
+                Without a technique file, J4 judge scores zero. Signal quality will be lower.
+              </span>
+              <input
+                type="file"
+                accept=".json"
+                className="hidden"
+                onChange={handleTechFileUpload}
+                disabled={isRunning}
+              />
+            </label>
+          )}
+
+          {techError && (
+            <span className="text-[10px] font-mono text-rose-400 mt-0.5">{techError}</span>
+          )}
+        </div>
 
         <div className="flex flex-wrap gap-2 text-[9px] font-mono text-zinc-500 mt-1">
           <span className="bg-zinc-950/60 border border-zinc-850 rounded px-2 py-1">Margin ≥ {MARGIN_THRESHOLD}</span>

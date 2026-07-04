@@ -1,6 +1,5 @@
 import express from "express";
 import path from "path";
-import { createServer as createViteServer } from "vite";
 
 // Helper: parse our internal symbol layout (e.g., RELIANCE:NSE)
 function parseSymbol(symbol: string) {
@@ -298,6 +297,7 @@ async function startServer() {
 
   // Serve static UI assets with Vite middleware/production handler
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
