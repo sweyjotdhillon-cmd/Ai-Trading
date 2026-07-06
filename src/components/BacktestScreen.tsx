@@ -7,7 +7,7 @@ import { BacktestConfig, BacktestResult, BacktestTrade } from '../types/backtest
 import { getDefaultScalpConfig } from '../config/scalpConfig';
 
 const MARGIN_THRESHOLD = 2.5;
-const MAX_TRADES_PER_DAY = 5;
+const MAX_TRADES_PER_DAY = Infinity; // backtest: no daily cap, use every qualifying signal
 const WARMUP_CANDLES = 30;
 
 function fmt(n: number): string {
@@ -293,7 +293,7 @@ export function BacktestScreen() {
 
         <div className="flex flex-wrap gap-2 text-[9px] font-mono text-zinc-500 mt-1">
           <span className="bg-zinc-950/60 border border-zinc-850 rounded px-2 py-1">Margin ≥ {MARGIN_THRESHOLD}</span>
-          <span className="bg-zinc-950/60 border border-zinc-850 rounded px-2 py-1">Max {MAX_TRADES_PER_DAY} trades/day</span>
+          <span className="bg-zinc-950/60 border border-zinc-850 rounded px-2 py-1">No daily trade cap</span>
           <span className="bg-zinc-950/60 border border-zinc-850 rounded px-2 py-1">5-minute candles</span>
         </div>
 

@@ -172,7 +172,9 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
       i++;
       continue;
     }
+    const tp1 = exits.tp1;
     const tp2 = exits.tp2;
+    const breakEvenPrice = exits.breakEvenAfter === exits.tp1 ? entry : exits.breakEvenAfter;
 
     const capitalRupees = config.scalpConfig.capitalRupees ?? 100000;
     const riskPerTradePct = config.scalpConfig.riskPerTradePct ?? 1.0;
@@ -201,9 +203,15 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
     const entryTimeStr = new Date(entryCandle.timestamp ?? 0).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
     log(`[ENTER] ${entryTimeStr} | Price: ₹${entry.toFixed(2)} | Qty: ${positionSize} | SL: ₹${sl.toFixed(2)} | TP2: ₹${tp2.toFixed(2)} | Risk/Share: ₹${riskPerShare.toFixed(2)}`);
 
+    let tp1Hit = false;
+    let tp1Qty = Math.floor(positionSize / 2);
+    let remainderQty = positionSize - tp1Qty;
+    let tp1ExitPrice = 0;
+    let currentStop = sl;
+
     let exitIdx = -1;
     let exitPrice = entry;
-    let outcome: 'SL_HIT' | 'TP2_HIT' | 'TIME_EXIT' = 'TIME_EXIT';
+    let outcome: 'SL_HIT' | 'TP2_HIT' | 'TIME_EXIT' | 'BREAK_EVEN' = 'TIME_EXIT';
 
     let k = i + 1;
     while (k < candles.length) {
@@ -217,13 +225,26 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
       const cTimeStr = new Date(c.timestamp ?? 0).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' });
       log(`  -> [${cTimeStr}] Tick: H=${c.high.toFixed(2)} L=${c.low.toFixed(2)} C=${c.close.toFixed(2)}`);
 
-      if (c.low <= sl) {
-        outcome = 'SL_HIT';
-        exitPrice = sl;
+      // Pessimistic: current stop (original SL, or breakeven once TP1 booked) checked first
+      if (c.low <= currentStop) {
+        outcome = tp1Hit ? 'BREAK_EVEN' : 'SL_HIT';
+        exitPrice = currentStop;
         exitIdx = k;
-        log(`  -> SL HIT at ${sl.toFixed(2)} (Candle Low: ${c.low.toFixed(2)})`);
+        log(tp1Hit
+          ? `  -> BREAKEVEN STOP HIT at ${currentStop.toFixed(2)} on remainder (Candle Low: ${c.low.toFixed(2)})`
+          : `  -> SL HIT at ${currentStop.toFixed(2)} (Candle Low: ${c.low.toFixed(2)})`);
         break;
       }
+
+      // TP1 check (only before it's been booked). Not retroactive — breakeven stop
+      // only becomes active from the NEXT candle onward, never this same candle.
+      if (!tp1Hit && c.high >= tp1) {
+        tp1Hit = true;
+        tp1ExitPrice = tp1;
+        currentStop = breakEvenPrice;
+        log(`  -> TP1 HIT at ${tp1.toFixed(2)} (Candle High: ${c.high.toFixed(2)}) | Booked ${tp1Qty} shares | Stop moved to breakeven ${breakEvenPrice.toFixed(2)} for remaining ${remainderQty}`);
+      }
+
       if (c.high >= tp2) {
         outcome = 'TP2_HIT';
         exitPrice = tp2;
@@ -253,18 +274,27 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
     }
 
     const exitCandle = candles[exitIdx];
-    const charges = computeRoundTripCharges(
-      entry,
-      exitPrice,
-      positionSize,
-      config.scalpConfig.instrument
-    ).total;
-    const grossPnL = (exitPrice - entry) * positionSize;
-    const netPnL = grossPnL - charges;
+
+    let netPnL: number;
+    let totalCharges: number;
+
+    if (tp1Hit) {
+      const leg1Charges = computeRoundTripCharges(entry, tp1ExitPrice, tp1Qty, config.scalpConfig.instrument).total;
+      const leg2Charges = computeRoundTripCharges(entry, exitPrice, remainderQty, config.scalpConfig.instrument).total;
+      const leg1PnL = (tp1ExitPrice - entry) * tp1Qty - leg1Charges;
+      const leg2PnL = (exitPrice - entry) * remainderQty - leg2Charges;
+      netPnL = leg1PnL + leg2PnL;
+      totalCharges = leg1Charges + leg2Charges;
+      log(`  -> Leg1 (TP1): Qty ${tp1Qty} @ ${tp1ExitPrice.toFixed(2)} | PnL ₹${leg1PnL.toFixed(2)} | Leg2 (${outcome}): Qty ${remainderQty} @ ${exitPrice.toFixed(2)} | PnL ₹${leg2PnL.toFixed(2)}`);
+    } else {
+      totalCharges = computeRoundTripCharges(entry, exitPrice, positionSize, config.scalpConfig.instrument).total;
+      netPnL = (exitPrice - entry) * positionSize - totalCharges;
+    }
+
     const rMultiple = riskPerShare > 0 ? netPnL / (riskPerShare * positionSize) : 0;
     const durationMinutes = ((exitCandle.timestamp ?? 0) - (entryCandle.timestamp ?? 0)) / 60000;
 
-    log(`[EXIT]  Outcome: ${outcome} | ExitPrice: ₹${exitPrice.toFixed(2)} | NetPnL: ₹${netPnL.toFixed(2)} | R-Mult: ${rMultiple.toFixed(2)} | Charges: ₹${charges.toFixed(2)} | Duration: ${durationMinutes}m\n`);
+    log(`[EXIT]  Outcome: ${outcome} | TP1Hit: ${tp1Hit} | ExitPrice: ₹${exitPrice.toFixed(2)} | NetPnL: ₹${netPnL.toFixed(2)} | R-Mult: ${rMultiple.toFixed(2)} | Charges: ₹${totalCharges.toFixed(2)} | Duration: ${durationMinutes}m\n`);
 
     trades.push({
       id: `bt_${entryCandle.timestamp ?? i}_${i}`,
@@ -273,6 +303,7 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
       entryPrice: entry,
       exitPrice,
       outcome,
+      tp1Hit,
       pnl: netPnL,
       rMultiple,
       durationMinutes,

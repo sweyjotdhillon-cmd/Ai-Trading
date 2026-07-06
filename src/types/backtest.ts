@@ -6,8 +6,9 @@ export interface BacktestTrade {
   exitTime:         number | null;
   entryPrice:       number;
   exitPrice:        number | null;
-  outcome:          Extract<TradeOutcome, 'SL_HIT' | 'TP2_HIT' | 'TIME_EXIT'> | null;
-  pnl:              number;       // ₹, gross
+  outcome:          Extract<TradeOutcome, 'SL_HIT' | 'TP2_HIT' | 'TIME_EXIT' | 'BREAK_EVEN'> | null;
+  tp1Hit:           boolean;      // true if TP1 partial (50%) was booked before final exit
+  pnl:              number;       // ₹, net, combined across both legs if TP1 was hit
   rMultiple:        number;
   durationMinutes:  number;
   bullScore:        number;
