@@ -8,6 +8,11 @@ import { findSwingPivots } from './marketStructure';
 import { calculateStopLoss, buildExitPlan, ScalpContext } from './scalpingEngine';
 import { computeRoundTripCharges } from './brokerCharges';
 import { getISTDateString, getISTMinutes } from '../utils/istUtils';
+import { extractCandlestickPatterns, PatternEvidence } from './patternAdapter';
+import { PatternStabilityManager } from './patternStability';
+import { detectLatestGap, GapEvidence } from './gapDetector';
+import { GapStabilityManager } from './gapStability';
+import { featureFlags } from '../config/featureFlags';
 
 const ANALYSIS_WINDOW_SIZE = 60; // matches live bot's MAX_BUFFER_SIZE in useStockFeed.ts
 
@@ -79,6 +84,11 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
   let tradesToday = 0;
   let i = config.warmupCandles;
 
+  // Fresh instances per backtest run so pattern/gap state never leaks
+  // between stocks or between re-runs in the same session.
+  const patternStabilityManager = new PatternStabilityManager();
+  const gapStabilityManager = new GapStabilityManager();
+
   while (i < candles.length - 1) {
     const signalCandle = candles[i];
     const dayKey = getISTDateString(signalCandle.timestamp ?? 0);
@@ -104,12 +114,23 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
     const numericWindow = toNumericWindow(windowCandles);
     const horizonCtx = buildHorizonCtx();
 
+    let confirmedPatterns: PatternEvidence[] = [];
+    if (featureFlags.enableCandlestickRepoPatterns) {
+      const rawPatterns = extractCandlestickPatterns(numericWindow);
+      confirmedPatterns = patternStabilityManager.processFrame(rawPatterns);
+    }
+    let confirmedGaps: GapEvidence[] = [];
+    if (featureFlags.enableGapDetection) {
+      const latestGap = detectLatestGap(numericWindow);
+      confirmedGaps = gapStabilityManager.processFrame(latestGap);
+    }
+
     const decision = evaluateSignal(
       numericWindow,
       config.techniquesList || [],
       horizonCtx,
-      [],
-      [],
+      confirmedPatterns,
+      confirmedGaps,
       undefined,
       undefined
     );
@@ -157,6 +178,17 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
       currentBarIndex: windowCandles.length - 1,
       currentPrice: entry,
     };
+
+    const patternNames = decision.topPatterns.bull.length > 0 ? decision.topPatterns.bull.join(',') : 'NONE';
+    const atrAtEntry = atr14Arr[atr14Arr.length - 1] ?? 0;
+    const validAtrHistory = atr14Arr.filter(v => isFinite(v) && v > 0);
+    const atrPercentile = validAtrHistory.length > 0
+      ? 100 * (validAtrHistory.filter(v => v <= atrAtEntry).length / validAtrHistory.length)
+      : 50;
+    const nowMin = ctx.nowISTMinutesSinceMidnight;
+    const entryTimeBucket: 'OPEN' | 'MID' | 'CLOSE' =
+      nowMin <= 600 ? 'OPEN' : nowMin >= 870 ? 'CLOSE' : 'MID'; // 9:15-10:00 OPEN, 14:30-15:30 CLOSE
+    const dayOfWeek = new Date(entryCandle.timestamp ?? 0).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'short' });
 
     const sl = calculateStopLoss(entry, config.scalpConfig.slMode, ctx);
     const riskPerShare = entry - sl;
@@ -208,6 +240,8 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
     let remainderQty = positionSize - tp1Qty;
     let tp1ExitPrice = 0;
     let currentStop = sl;
+    let runningMaxHigh = entry;
+    let runningMinLow = entry;
 
     let exitIdx = -1;
     let exitPrice = entry;
@@ -224,6 +258,8 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
 
       const cTimeStr = new Date(c.timestamp ?? 0).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' });
       log(`  -> [${cTimeStr}] Tick: H=${c.high.toFixed(2)} L=${c.low.toFixed(2)} C=${c.close.toFixed(2)}`);
+      runningMaxHigh = Math.max(runningMaxHigh, c.high);
+      runningMinLow = Math.min(runningMinLow, c.low);
 
       // Pessimistic: current stop (original SL, or breakeven once TP1 booked) checked first
       if (c.low <= currentStop) {
@@ -274,6 +310,8 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
     }
 
     const exitCandle = candles[exitIdx];
+    const mfeR = riskPerShare > 0 ? (runningMaxHigh - entry) / riskPerShare : 0;
+    const maeR = riskPerShare > 0 ? (entry - runningMinLow) / riskPerShare : 0;
 
     let netPnL: number;
     let totalCharges: number;
@@ -294,7 +332,21 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
     const rMultiple = riskPerShare > 0 ? netPnL / (riskPerShare * positionSize) : 0;
     const durationMinutes = ((exitCandle.timestamp ?? 0) - (entryCandle.timestamp ?? 0)) / 60000;
 
-    log(`[EXIT]  Outcome: ${outcome} | TP1Hit: ${tp1Hit} | ExitPrice: ₹${exitPrice.toFixed(2)} | NetPnL: ₹${netPnL.toFixed(2)} | R-Mult: ${rMultiple.toFixed(2)} | Charges: ₹${totalCharges.toFixed(2)} | Duration: ${durationMinutes}m\n`);
+    // First-pass loss-reason classifier — deterministic, derived only from logged
+    // numbers (MFE), no inferred/guessed categories. Only set for losing trades.
+    let lossReason: 'IMMEDIATE_REVERSAL' | 'PARTIAL_MOVE_REVERSAL' | 'POST_TP1_GIVEBACK' | null = null;
+    if (netPnL <= 0) {
+      if (tp1Hit) {
+        lossReason = 'POST_TP1_GIVEBACK';       // TP1 was booked, but combined trade still net negative
+      } else if (mfeR < 0.2) {
+        lossReason = 'IMMEDIATE_REVERSAL';       // never meaningfully moved in our favor
+      } else {
+        lossReason = 'PARTIAL_MOVE_REVERSAL';    // moved 0.2R-1R favorable, then reversed to stop before TP1
+      }
+    }
+
+    log(`[EXIT]  Outcome: ${outcome} | TP1Hit: ${tp1Hit} | ExitPrice: ₹${exitPrice.toFixed(2)} | NetPnL: ₹${netPnL.toFixed(2)} | R-Mult: ${rMultiple.toFixed(2)} | Charges: ₹${totalCharges.toFixed(2)} | Duration: ${durationMinutes}m | MFE: ${mfeR.toFixed(2)}R | MAE: ${maeR.toFixed(2)}R | LossReason: ${lossReason ?? 'N/A'}`);
+    log(`[CONTEXT] J1: ${decision.j1Score.toFixed(2)} | J2: ${decision.j2Score.toFixed(2)} | J3: ${decision.j3Score.toFixed(2)} | J4: ${decision.skepticVerdict} (${decision.j4PenaltyPct.toFixed(1)}%) | Pattern: ${patternNames} | ATR%ile: ${atrPercentile.toFixed(0)} | TimeBucket: ${entryTimeBucket} | Day: ${dayOfWeek}\n`);
 
     trades.push({
       id: `bt_${entryCandle.timestamp ?? i}_${i}`,
@@ -310,6 +362,19 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
       bullScore: decision.bullScore,
       bearScore: decision.bearScore,
       margin: decision.margin,
+      j1Score: decision.j1Score,
+      j2Score: decision.j2Score,
+      j3Score: decision.j3Score,
+      j4Verdict: decision.skepticVerdict,
+      j4PenaltyPct: decision.j4PenaltyPct,
+      patternNames,
+      atrAtEntry,
+      atrPercentile,
+      entryTimeBucket,
+      dayOfWeek,
+      mfeR,
+      maeR,
+      lossReason,
     });
 
     tradesToday++;

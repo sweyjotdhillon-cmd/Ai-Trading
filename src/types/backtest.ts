@@ -14,6 +14,19 @@ export interface BacktestTrade {
   bullScore:        number;
   bearScore:        number;
   margin:           number;       // bullScore - bearScore at signal time
+  j1Score:          number;
+  j2Score:          number;
+  j3Score:          number;
+  j4Verdict:        'ACCEPT' | 'CAUTION' | 'WEAK';
+  j4PenaltyPct:     number;
+  patternNames:     string;       // comma-joined bull patterns that fired, or 'NONE'
+  atrAtEntry:        number;
+  atrPercentile:     number;      // 0-100, this trade's ATR14 vs the trailing analysis window
+  entryTimeBucket:   'OPEN' | 'MID' | 'CLOSE';
+  dayOfWeek:         string;
+  mfeR:              number;      // max favorable excursion in R, entry to final exit
+  maeR:              number;      // max adverse excursion in R, entry to final exit
+  lossReason:        'IMMEDIATE_REVERSAL' | 'PARTIAL_MOVE_REVERSAL' | 'POST_TP1_GIVEBACK' | null; // null for winning trades
 }
 
 export interface BacktestResult {

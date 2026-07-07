@@ -204,7 +204,7 @@ export function BacktestScreen() {
         marginThreshold: MARGIN_THRESHOLD,
         maxTradesPerDay: MAX_TRADES_PER_DAY,
         warmupCandles: WARMUP_CANDLES,
-        scalpConfig: getDefaultScalpConfig(),
+        scalpConfig: getDefaultScalpConfig(), // tp1RMultiple back to default 1.0 — 0.5R test regressed win rate, reverted
         techniquesList: techniquesList,
       };
       const res = runBacktest(candles, config);
