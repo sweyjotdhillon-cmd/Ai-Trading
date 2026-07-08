@@ -2,6 +2,7 @@ import { TradeOutcome, ScalpConfig } from '../types';
 
 export interface BacktestTrade {
   id:               string;
+  symbol?:          string;       // optional stock symbol
   entryTime:        number;       // ms epoch of entry candle
   exitTime:         number | null;
   entryPrice:       number;
@@ -14,9 +15,13 @@ export interface BacktestTrade {
   bullScore:        number;
   bearScore:        number;
   margin:           number;       // bullScore - bearScore at signal time
-  j1Score:          number;
-  j2Score:          number;
-  j3Score:          number;
+  bullJ1:            number;      // 0-4.0, this judge's actual contribution to this trade
+  bullJ2:            number;      // 0-4.0
+  bullJ3:            number;      // 0-4.0
+  bullTotal:         number;      // 0-12.0
+  weakestJudgeWin:   'J1' | 'J2' | 'J3' | null; // set only if this trade won (pnl > 0), else null
+  weakestJudgeLoss:  'J1' | 'J2' | 'J3' | null; // set only if this trade lost (pnl <= 0), else null
+  weakestJudgeScore: number;      // that judge's actual score value, applies either way
   j4Verdict:        'ACCEPT' | 'CAUTION' | 'WEAK';
   j4PenaltyPct:     number;
   patternNames:     string;       // comma-joined bull patterns that fired, or 'NONE'

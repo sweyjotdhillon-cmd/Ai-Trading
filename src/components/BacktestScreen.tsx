@@ -10,26 +10,40 @@ const MARGIN_THRESHOLD = 2.5;
 const MAX_TRADES_PER_DAY = Infinity; // backtest: no daily cap, use every qualifying signal
 const WARMUP_CANDLES = 30;
 
+const ALL_STOCKS_OPTION: StockSearchResult = {
+  symbol: 'ALL_STOCKS',
+  name: 'All Stocks Together',
+  exchange: 'NSE'
+};
+
 function fmt(n: number): string {
   const sign = n < 0 ? '-' : '';
   return `${sign}₹${Math.abs(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function downloadTradesCSV(trades: BacktestTrade[], symbol: string) {
-  const headers = ['Entry Time', 'Exit Time', 'Entry Price', 'Exit Price', 'Outcome', 'PnL', 'R-Multiple', 'Duration (min)', 'Bull Score', 'Bear Score', 'Margin'];
-  const rows = trades.map(t => [
-    new Date(t.entryTime).toLocaleString('en-IN'),
-    t.exitTime ? new Date(t.exitTime).toLocaleString('en-IN') : '',
-    t.entryPrice.toFixed(2),
-    t.exitPrice !== null ? t.exitPrice.toFixed(2) : '',
-    t.outcome ?? '',
-    t.pnl.toFixed(2),
-    t.rMultiple.toFixed(2),
-    t.durationMinutes.toFixed(0),
-    t.bullScore.toFixed(2),
-    t.bearScore.toFixed(2),
-    t.margin.toFixed(2),
-  ]);
+  const isAll = symbol === 'ALL_STOCKS';
+  const headers = isAll
+    ? ['Stock', 'Entry Time', 'Exit Time', 'Entry Price', 'Exit Price', 'Outcome', 'PnL', 'R-Multiple', 'Duration (min)', 'Bull Score', 'Bear Score', 'Margin']
+    : ['Entry Time', 'Exit Time', 'Entry Price', 'Exit Price', 'Outcome', 'PnL', 'R-Multiple', 'Duration (min)', 'Bull Score', 'Bear Score', 'Margin'];
+
+  const rows = trades.map(t => {
+    const baseFields = [
+      new Date(t.entryTime).toLocaleString('en-IN'),
+      t.exitTime ? new Date(t.exitTime).toLocaleString('en-IN') : '',
+      t.entryPrice.toFixed(2),
+      t.exitPrice !== null ? t.exitPrice.toFixed(2) : '',
+      t.outcome ?? '',
+      t.pnl.toFixed(2),
+      t.rMultiple.toFixed(2),
+      t.durationMinutes.toFixed(0),
+      t.bullScore.toFixed(2),
+      t.bearScore.toFixed(2),
+      t.margin.toFixed(2),
+    ];
+    return isAll ? [t.symbol?.split(':')[0] ?? '', ...baseFields] : baseFields;
+  });
+
   const csv = [headers, ...rows].map(r => r.map(c => `"${c}"`).join(',')).join('\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
@@ -183,37 +197,149 @@ export function BacktestScreen() {
     setIsRunning(true);
     setError(null);
     setResult(null);
-    setStatusMessage('Loading bundled historical data...');
 
-    let candles;
-    try {
-      candles = await fetchBacktestHistory(selectedStock.symbol);
-    } catch (e: any) {
-      setError(e.message ?? 'Failed to fetch historical data');
-      setIsRunning(false);
-      return;
-    }
+    const isAllStocks = selectedStock.symbol === 'ALL_STOCKS';
 
-    setStatusMessage(`Fetched ${candles.length} candles. Running judges...`);
-    // Let the UI repaint the status message before the synchronous engine runs
-    await new Promise(resolve => setTimeout(resolve, 50));
+    if (isAllStocks) {
+      setStatusMessage('Loading bundled historical data for all stocks...');
+      const results: BacktestResult[] = [];
+      const allLogs: string[] = [];
+      let totalCandlesUsed = 0;
 
-    try {
-      const config: BacktestConfig = {
-        symbol: selectedStock.symbol,
-        marginThreshold: MARGIN_THRESHOLD,
-        maxTradesPerDay: MAX_TRADES_PER_DAY,
-        warmupCandles: WARMUP_CANDLES,
-        scalpConfig: getDefaultScalpConfig(), // tp1RMultiple back to default 1.0 — 0.5R test regressed win rate, reverted
-        techniquesList: techniquesList,
-      };
-      const res = runBacktest(candles, config);
-      setResult(res);
-    } catch (e: any) {
-      setError(e.message ?? 'Backtest engine failed');
-    } finally {
-      setIsRunning(false);
-      setStatusMessage('');
+      try {
+        for (const stock of POPULAR_STOCKS) {
+          setStatusMessage(`Loading history for ${stock.symbol}...`);
+          // Let the UI repaint the status message before continuing
+          await new Promise(resolve => setTimeout(resolve, 50));
+
+          const stockCandles = await fetchBacktestHistory(stock.symbol);
+          totalCandlesUsed += stockCandles.length;
+
+          setStatusMessage(`Running backtest for ${stock.symbol}...`);
+          // Let UI update
+          await new Promise(resolve => setTimeout(resolve, 50));
+
+          const config: BacktestConfig = {
+            symbol: stock.symbol,
+            marginThreshold: MARGIN_THRESHOLD,
+            maxTradesPerDay: MAX_TRADES_PER_DAY,
+            warmupCandles: WARMUP_CANDLES,
+            scalpConfig: getDefaultScalpConfig(),
+            techniquesList: techniquesList,
+          };
+          const res = runBacktest(stockCandles, config);
+          // Attach symbol to each trade
+          const tradesWithSymbol = res.trades.map(t => ({ ...t, symbol: stock.symbol }));
+          res.trades = tradesWithSymbol;
+          results.push(res);
+
+          if (res.logs) {
+            allLogs.push(`=========================================`);
+            allLogs.push(`=== BACKTEST LOGS FOR ${stock.symbol} ===`);
+            allLogs.push(`=========================================`);
+            allLogs.push(...res.logs);
+            allLogs.push('\n');
+          }
+        }
+
+        // Aggregate results
+        const allTrades = results.flatMap(r => r.trades).sort((a, b) => a.entryTime - b.entryTime);
+        const totalTrades = allTrades.length;
+        const wins = allTrades.filter(t => t.pnl > 0).length;
+        const losses = allTrades.filter(t => t.pnl <= 0).length;
+        const winRate = totalTrades > 0 ? wins / totalTrades : 0;
+        const totalPnL = allTrades.reduce((acc, t) => acc + t.pnl, 0);
+        const avgRMultiple = totalTrades > 0 ? allTrades.reduce((acc, t) => acc + t.rMultiple, 0) / totalTrades : 0;
+        const avgDurationMinutes = totalTrades > 0 ? allTrades.reduce((acc, t) => acc + t.durationMinutes, 0) / totalTrades : 0;
+
+        let cumPnL = 0;
+        let peak = 0;
+        let maxDrawdown = 0;
+        let consecLosses = 0;
+        let maxConsecutiveLosses = 0;
+
+        for (const t of allTrades) {
+          cumPnL += t.pnl;
+          if (cumPnL > peak) peak = cumPnL;
+          const dd = peak - cumPnL;
+          if (dd > maxDrawdown) maxDrawdown = dd;
+
+          if (t.pnl <= 0) {
+            consecLosses++;
+            if (consecLosses > maxConsecutiveLosses) maxConsecutiveLosses = consecLosses;
+          } else {
+            consecLosses = 0;
+          }
+        }
+
+        const startDates = results.map(r => r.startDate).filter(Boolean);
+        const endDates = results.map(r => r.endDate).filter(Boolean);
+        const startDate = startDates.length > 0 ? startDates.sort()[0] : '';
+        const endDate = endDates.length > 0 ? endDates.sort()[endDates.length - 1] : '';
+
+        setResult({
+          symbol: 'ALL_STOCKS',
+          timeframeMinutes: 5,
+          totalCandlesUsed,
+          trades: allTrades,
+          totalTrades,
+          wins,
+          losses,
+          winRate,
+          totalPnL,
+          avgRMultiple,
+          maxDrawdown,
+          maxConsecutiveLosses,
+          avgDurationMinutes,
+          startDate,
+          endDate,
+          logs: allLogs,
+        });
+
+      } catch (e: any) {
+        setError(e.message ?? 'Backtest engine failed for one of the stocks');
+      } finally {
+        setIsRunning(false);
+        setStatusMessage('');
+      }
+
+    } else {
+      setStatusMessage('Loading bundled historical data...');
+      // Let UI update
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      let candles;
+      try {
+        candles = await fetchBacktestHistory(selectedStock.symbol);
+      } catch (e: any) {
+        setError(e.message ?? 'Failed to fetch historical data');
+        setIsRunning(false);
+        return;
+      }
+
+      setStatusMessage(`Fetched ${candles.length} candles. Running judges...`);
+      // Let the UI repaint the status message before the synchronous engine runs
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      try {
+        const config: BacktestConfig = {
+          symbol: selectedStock.symbol,
+          marginThreshold: MARGIN_THRESHOLD,
+          maxTradesPerDay: MAX_TRADES_PER_DAY,
+          warmupCandles: WARMUP_CANDLES,
+          scalpConfig: getDefaultScalpConfig(),
+          techniquesList: techniquesList,
+        };
+        const res = runBacktest(candles, config);
+        // Attach symbol to single stock trade too
+        res.trades = res.trades.map(t => ({ ...t, symbol: selectedStock.symbol }));
+        setResult(res);
+      } catch (e: any) {
+        setError(e.message ?? 'Backtest engine failed');
+      } finally {
+        setIsRunning(false);
+        setStatusMessage('');
+      }
     }
   };
 
@@ -235,12 +361,17 @@ export function BacktestScreen() {
         <select
           value={selectedStock.symbol}
           onChange={(e) => {
-            const found = POPULAR_STOCKS.find(s => s.symbol === e.target.value);
-            if (found) setSelectedStock(found);
+            if (e.target.value === 'ALL_STOCKS') {
+              setSelectedStock(ALL_STOCKS_OPTION);
+            } else {
+              const found = POPULAR_STOCKS.find(s => s.symbol === e.target.value);
+              if (found) setSelectedStock(found);
+            }
           }}
           disabled={isRunning}
           className="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg p-2.5 text-sm font-mono focus:outline-none focus:border-[#D9B382]/50"
         >
+          <option value="ALL_STOCKS">[ALL STOCKS TOGETHER]</option>
           {POPULAR_STOCKS.map(s => (
             <option key={s.symbol} value={s.symbol}>{s.symbol} — {s.name}</option>
           ))}
@@ -328,7 +459,7 @@ export function BacktestScreen() {
         <>
           <div className="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 flex flex-col gap-3">
             <span className="text-xs uppercase font-black text-white tracking-widest font-mono">
-              {result.symbol} · {result.startDate} → {result.endDate}
+              {result.symbol === 'ALL_STOCKS' ? '[ALL STOCKS TOGETHER]' : result.symbol} · {result.startDate} → {result.endDate}
             </span>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
               <StatCard label="Total Trades" value={String(result.totalTrades)} />
@@ -377,6 +508,7 @@ export function BacktestScreen() {
                 <table className="w-full text-[10px] font-mono text-zinc-300">
                   <thead>
                     <tr className="text-zinc-500 border-b border-zinc-800">
+                      {result.symbol === 'ALL_STOCKS' && <th className="text-left py-1.5 pr-2">Stock</th>}
                       <th className="text-left py-1.5 pr-2">Entry</th>
                       <th className="text-left py-1.5 pr-2">Exit</th>
                       <th className="text-right py-1.5 pr-2">Entry ₹</th>
@@ -389,6 +521,11 @@ export function BacktestScreen() {
                   <tbody>
                     {result.trades.map(t => (
                       <tr key={t.id} className="border-b border-zinc-900/60 last:border-0">
+                        {result.symbol === 'ALL_STOCKS' && (
+                          <td className="py-1.5 pr-2 font-bold text-[#D9B382]">
+                            {t.symbol?.split(':')[0] ?? ''}
+                          </td>
+                        )}
                         <td className="py-1.5 pr-2">{new Date(t.entryTime).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</td>
                         <td className="py-1.5 pr-2">{t.exitTime ? new Date(t.exitTime).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}</td>
                         <td className="py-1.5 pr-2 text-right">{t.entryPrice.toFixed(2)}</td>

@@ -136,10 +136,14 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
     );
 
     const qualifies = decision.winner === 'BULL' && decision.margin >= config.marginThreshold;
-    
-    // Log signals that are reasonably strong even if they don't meet the margin
+
+    // Log signals that are reasonably strong even if they don't meet the margin.
+    // Includes J1/J2/J3 for both qualified AND rejected candles, so the two
+    // populations can be compared directly — this is the only way to check
+    // whether judge scores actually discriminate at the qualification gate,
+    // rather than assuming they do.
     if (decision.margin > 1.0 || qualifies) {
-      log(`[${candleTimeStr}] EVAL ${decision.winner} | Bull: ${decision.bullScore.toFixed(2)} Bear: ${decision.bearScore.toFixed(2)} Margin: ${decision.margin.toFixed(2)} -> ${qualifies ? 'QUALIFIED ✨' : 'REJECTED'}`);
+      log(`[${candleTimeStr}] EVAL ${decision.winner} | Bull: ${decision.bullScore.toFixed(2)} Bear: ${decision.bearScore.toFixed(2)} Margin: ${decision.margin.toFixed(2)} | J1: ${decision.bullJ1.toFixed(2)}/4.0 | J2: ${decision.bullJ2.toFixed(2)}/4.0 | J3: ${decision.bullJ3.toFixed(2)}/4.0 | Total: ${decision.bullTotal.toFixed(2)}/12.0 -> ${qualifies ? 'QUALIFIED' : 'REJECTED'}`);
     }
 
     if (!qualifies) {
@@ -345,8 +349,19 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
       }
     }
 
+    const judgeVals: { name: 'J1' | 'J2' | 'J3'; score: number }[] = [
+      { name: 'J1', score: decision.bullJ1 },
+      { name: 'J2', score: decision.bullJ2 },
+      { name: 'J3', score: decision.bullJ3 },
+    ];
+    const weakest = judgeVals.reduce((min, j) => j.score < min.score ? j : min, judgeVals[0]);
+    const isWin = netPnL > 0;
+    const weakestJudgeWin = isWin ? weakest.name : null;
+    const weakestJudgeLoss = isWin ? null : weakest.name;
+    const weakestJudgeScore = weakest.score;
+
     log(`[EXIT]  Outcome: ${outcome} | TP1Hit: ${tp1Hit} | ExitPrice: ₹${exitPrice.toFixed(2)} | NetPnL: ₹${netPnL.toFixed(2)} | R-Mult: ${rMultiple.toFixed(2)} | Charges: ₹${totalCharges.toFixed(2)} | Duration: ${durationMinutes}m | MFE: ${mfeR.toFixed(2)}R | MAE: ${maeR.toFixed(2)}R | LossReason: ${lossReason ?? 'N/A'}`);
-    log(`[CONTEXT] J1: ${decision.j1Score.toFixed(2)} | J2: ${decision.j2Score.toFixed(2)} | J3: ${decision.j3Score.toFixed(2)} | J4: ${decision.skepticVerdict} (${decision.j4PenaltyPct.toFixed(1)}%) | Pattern: ${patternNames} | ATR%ile: ${atrPercentile.toFixed(0)} | TimeBucket: ${entryTimeBucket} | Day: ${dayOfWeek}\n`);
+    log(`[CONTEXT] J1: ${decision.bullJ1.toFixed(2)}/4.0 | J2: ${decision.bullJ2.toFixed(2)}/4.0 | J3: ${decision.bullJ3.toFixed(2)}/4.0 | Total: ${decision.bullTotal.toFixed(2)}/12.0 | WeakestJudge: ${weakest.name} (${weakestJudgeScore.toFixed(2)}) | Result: ${isWin ? 'WIN' : 'LOSS'} | J4: ${decision.skepticVerdict} (${decision.j4PenaltyPct.toFixed(1)}%) | Pattern: ${patternNames} | ATR%ile: ${atrPercentile.toFixed(0)} | TimeBucket: ${entryTimeBucket} | Day: ${dayOfWeek}\n`);
 
     trades.push({
       id: `bt_${entryCandle.timestamp ?? i}_${i}`,
@@ -362,9 +377,13 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
       bullScore: decision.bullScore,
       bearScore: decision.bearScore,
       margin: decision.margin,
-      j1Score: decision.j1Score,
-      j2Score: decision.j2Score,
-      j3Score: decision.j3Score,
+      bullJ1: decision.bullJ1,
+      bullJ2: decision.bullJ2,
+      bullJ3: decision.bullJ3,
+      bullTotal: decision.bullTotal,
+      weakestJudgeWin,
+      weakestJudgeLoss,
+      weakestJudgeScore,
       j4Verdict: decision.skepticVerdict,
       j4PenaltyPct: decision.j4PenaltyPct,
       patternNames,
