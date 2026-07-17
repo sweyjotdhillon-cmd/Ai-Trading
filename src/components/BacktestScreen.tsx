@@ -129,6 +129,11 @@ export function BacktestScreen() {
   const [result, setResult]               = useState<BacktestResult | null>(null);
   const [error, setError]                 = useState<string | null>(null);
 
+  const [exitMode, setExitMode]           = useState<'DYNAMIC' | 'FIXED_RR' | 'FIXED_PCT'>('DYNAMIC');
+  const [fixedRRRatio, setFixedRRRatio]   = useState<number>(2.0);
+  const [fixedSLPct, setFixedSLPct]       = useState<number>(0.5);
+  const [fixedTPPct, setFixedTPPct]       = useState<number>(1.0);
+
   const [techniquesList, setTechniquesList] = useState<any[]>(() => {
     try {
       const stored = localStorage.getItem('user_techniques_list');
@@ -226,6 +231,10 @@ export function BacktestScreen() {
             warmupCandles: WARMUP_CANDLES,
             scalpConfig: getDefaultScalpConfig(),
             techniquesList: techniquesList,
+            exitMode,
+            fixedRRRatio,
+            fixedSLPct,
+            fixedTPPct,
           };
           const res = runBacktest(stockCandles, config);
           // Attach symbol to each trade
@@ -329,6 +338,10 @@ export function BacktestScreen() {
           warmupCandles: WARMUP_CANDLES,
           scalpConfig: getDefaultScalpConfig(),
           techniquesList: techniquesList,
+          exitMode,
+          fixedRRRatio,
+          fixedSLPct,
+          fixedTPPct,
         };
         const res = runBacktest(candles, config);
         // Attach symbol to single stock trade too
@@ -376,6 +389,92 @@ export function BacktestScreen() {
             <option key={s.symbol} value={s.symbol}>{s.symbol} — {s.name}</option>
           ))}
         </select>
+
+        {/* Exit Strategy Controls */}
+        <div className="flex flex-col gap-1.5 mt-1">
+          <label className="text-xs uppercase font-black text-zinc-400 tracking-widest font-mono">
+            Exit Strategy
+          </label>
+          <select
+            value={exitMode}
+            onChange={(e) => setExitMode(e.target.value as any)}
+            disabled={isRunning}
+            className="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg p-2.5 text-sm font-mono focus:outline-none focus:border-[#D9B382]/50"
+          >
+            <option value="DYNAMIC">Dynamic System Exits (TP1, TP2, Breakeven, Trailing SL)</option>
+            <option value="FIXED_RR">Strict Fixed Risk-to-Reward Ratio (No partials, no breakeven)</option>
+            <option value="FIXED_PCT">Strict Fixed % Stop Loss & Take Profit (No partials, no breakeven)</option>
+          </select>
+        </div>
+
+        {exitMode === 'FIXED_RR' && (
+          <div className="flex flex-col gap-1.5 p-3.5 bg-zinc-950/40 border border-zinc-800 rounded-xl mt-1">
+            <span className="text-[10px] uppercase font-black text-[#D9B382] tracking-wider font-mono">
+              Fixed R:R Settings
+            </span>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-mono text-zinc-400">Target Reward-to-Risk (R-Multiple):</label>
+              <input
+                type="number"
+                step="0.1"
+                min="0.1"
+                max="20"
+                value={fixedRRRatio}
+                onChange={(e) => setFixedRRRatio(Math.max(0.1, parseFloat(e.target.value) || 1.0))}
+                disabled={isRunning}
+                className="bg-zinc-800 text-white border border-zinc-700 rounded-lg px-3 py-1.5 text-xs font-mono focus:outline-none focus:border-[#D9B382]/50 w-full max-w-[200px]"
+              />
+            </div>
+            <p className="text-[10px] text-zinc-500 font-mono leading-relaxed mt-1">
+              Stop Loss is determined by your chosen SL Mode (e.g. ATR or Structure). The Take Profit is set strictly at <strong>{fixedRRRatio.toFixed(1)}x</strong> the Stop Loss distance. There is no partial profit booking or moving stops to breakeven.
+            </p>
+          </div>
+        )}
+
+        {exitMode === 'FIXED_PCT' && (
+          <div className="flex flex-col gap-3 p-3.5 bg-zinc-950/40 border border-zinc-800 rounded-xl mt-1">
+            <span className="text-[10px] uppercase font-black text-[#D9B382] tracking-wider font-mono">
+              Fixed Percentage Settings
+            </span>
+            <div className="grid grid-cols-2 gap-3.5">
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-mono text-zinc-400">Stop Loss %:</label>
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="number"
+                    step="0.05"
+                    min="0.05"
+                    max="100"
+                    value={fixedSLPct}
+                    onChange={(e) => setFixedSLPct(Math.max(0.05, parseFloat(e.target.value) || 0.5))}
+                    disabled={isRunning}
+                    className="bg-zinc-800 text-white border border-zinc-700 rounded-lg px-3 py-1.5 text-xs font-mono focus:outline-none focus:border-[#D9B382]/50 w-full"
+                  />
+                  <span className="text-zinc-500 text-xs font-mono">%</span>
+                </div>
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-mono text-zinc-400">Take Profit %:</label>
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="number"
+                    step="0.05"
+                    min="0.05"
+                    max="100"
+                    value={fixedTPPct}
+                    onChange={(e) => setFixedTPPct(Math.max(0.05, parseFloat(e.target.value) || 1.0))}
+                    disabled={isRunning}
+                    className="bg-zinc-800 text-white border border-zinc-700 rounded-lg px-3 py-1.5 text-xs font-mono focus:outline-none focus:border-[#D9B382]/50 w-full"
+                  />
+                  <span className="text-zinc-500 text-xs font-mono">%</span>
+                </div>
+              </div>
+            </div>
+            <p className="text-[10px] text-zinc-500 font-mono leading-relaxed">
+              Every trade uses a strict percentage-based Stop Loss at <strong>{fixedSLPct}%</strong> below entry, and a strict Take Profit at <strong>{fixedTPPct}%</strong> above entry. No technical SL checks or dynamic trailing are applied.
+            </p>
+          </div>
+        )}
 
         {/* Technique File Upload Section */}
         <div className="flex flex-col gap-1.5 mt-1">
@@ -426,6 +525,11 @@ export function BacktestScreen() {
           <span className="bg-zinc-950/60 border border-zinc-850 rounded px-2 py-1">Margin ≥ {MARGIN_THRESHOLD}</span>
           <span className="bg-zinc-950/60 border border-zinc-850 rounded px-2 py-1">No daily trade cap</span>
           <span className="bg-zinc-950/60 border border-zinc-850 rounded px-2 py-1">5-minute candles</span>
+          <span className="bg-[#D9B382]/15 border border-[#D9B382]/30 text-[#D9B382] rounded px-2 py-1 font-bold">
+            {exitMode === 'DYNAMIC' && 'DYNAMIC EXITS'}
+            {exitMode === 'FIXED_RR' && `STRICT FIXED R:R (1:${fixedRRRatio.toFixed(1)})`}
+            {exitMode === 'FIXED_PCT' && `STRICT FIXED % (SL ${fixedSLPct}%, TP ${fixedTPPct}%)`}
+          </span>
         </div>
 
         <button

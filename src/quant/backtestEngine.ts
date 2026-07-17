@@ -143,7 +143,11 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
     // whether judge scores actually discriminate at the qualification gate,
     // rather than assuming they do.
     if (decision.margin > 1.0 || qualifies) {
-      log(`[${candleTimeStr}] EVAL ${decision.winner} | Bull: ${decision.bullScore.toFixed(2)} Bear: ${decision.bearScore.toFixed(2)} Margin: ${decision.margin.toFixed(2)} | J1: ${decision.bullJ1.toFixed(2)}/4.0 | J2: ${decision.bullJ2.toFixed(2)}/4.0 | J3: ${decision.bullJ3.toFixed(2)}/4.0 | Total: ${decision.bullTotal.toFixed(2)}/12.0 -> ${qualifies ? 'QUALIFIED' : 'REJECTED'}`);
+      const j3Components = (decision.auditTrail?.judgeContribs ?? [])
+        .filter((c: any) => c.judge === 'J3' && c.side === 'BULL')
+        .map((c: any) => `${c.contributor}:${c.value.toFixed(2)}`)
+        .join(',') || 'NONE';
+      log(`[${candleTimeStr}] EVAL ${decision.winner} | Bull: ${decision.bullScore.toFixed(2)} Bear: ${decision.bearScore.toFixed(2)} Margin: ${decision.margin.toFixed(2)} | J1: ${decision.bullJ1.toFixed(2)}/4.0 | J2: ${decision.bullJ2.toFixed(2)}/4.0 | J3: ${decision.bullJ3.toFixed(2)}/4.0 (raw: ${decision.bullJ3Raw.toFixed(2)}) | Total: ${decision.bullTotal.toFixed(2)}/12.0 -> ${qualifies ? 'QUALIFIED' : 'REJECTED'} | J3Components: ${j3Components}`);
     }
 
     if (!qualifies) {
@@ -194,23 +198,39 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
       nowMin <= 600 ? 'OPEN' : nowMin >= 870 ? 'CLOSE' : 'MID'; // 9:15-10:00 OPEN, 14:30-15:30 CLOSE
     const dayOfWeek = new Date(entryCandle.timestamp ?? 0).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'short' });
 
-    const sl = calculateStopLoss(entry, config.scalpConfig.slMode, ctx);
-    const riskPerShare = entry - sl;
-    if (!isFinite(riskPerShare) || riskPerShare <= 0) {
-      log(`[${candleTimeStr}] Invalid SL (${sl}) or Risk/Share (${riskPerShare}). Skipping.`);
-      i++;
-      continue;
-    }
-
+    let sl = calculateStopLoss(entry, config.scalpConfig.slMode, ctx);
     const exits = buildExitPlan(entry, sl, ctx);
     if (!exits) {
       log(`[${candleTimeStr}] Failed to build exit plan. Skipping.`);
       i++;
       continue;
     }
-    const tp1 = exits.tp1;
-    const tp2 = exits.tp2;
-    const breakEvenPrice = exits.breakEvenAfter === exits.tp1 ? entry : exits.breakEvenAfter;
+
+    let tp1 = exits.tp1;
+    let tp2 = exits.tp2;
+    let breakEvenPrice = exits.breakEvenAfter === exits.tp1 ? entry : exits.breakEvenAfter;
+
+    const exitMode = config.exitMode ?? 'DYNAMIC';
+    if (exitMode === 'FIXED_RR') {
+      const rr = config.fixedRRRatio ?? 2.0;
+      tp1 = Infinity; // Disable TP1 partial booking
+      tp2 = entry + (entry - sl) * rr;
+      breakEvenPrice = sl; // Keep at original SL, no breakeven move
+    } else if (exitMode === 'FIXED_PCT') {
+      const slPct = config.fixedSLPct ?? 0.5;
+      const tpPct = config.fixedTPPct ?? 1.0;
+      sl = entry * (1 - slPct / 100);
+      tp1 = Infinity; // Disable TP1 partial booking
+      tp2 = entry * (1 + tpPct / 100);
+      breakEvenPrice = sl; // Keep at original SL, no breakeven move
+    }
+
+    const riskPerShare = entry - sl;
+    if (!isFinite(riskPerShare) || riskPerShare <= 0) {
+      log(`[${candleTimeStr}] Invalid SL (${sl}) or Risk/Share (${riskPerShare}). Skipping.`);
+      i++;
+      continue;
+    }
 
     const capitalRupees = config.scalpConfig.capitalRupees ?? 100000;
     const riskPerTradePct = config.scalpConfig.riskPerTradePct ?? 1.0;
@@ -363,6 +383,11 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
     log(`[EXIT]  Outcome: ${outcome} | TP1Hit: ${tp1Hit} | ExitPrice: ₹${exitPrice.toFixed(2)} | NetPnL: ₹${netPnL.toFixed(2)} | R-Mult: ${rMultiple.toFixed(2)} | Charges: ₹${totalCharges.toFixed(2)} | Duration: ${durationMinutes}m | MFE: ${mfeR.toFixed(2)}R | MAE: ${maeR.toFixed(2)}R | LossReason: ${lossReason ?? 'N/A'}`);
     log(`[CONTEXT] J1: ${decision.bullJ1.toFixed(2)}/4.0 | J2: ${decision.bullJ2.toFixed(2)}/4.0 | J3: ${decision.bullJ3.toFixed(2)}/4.0 | Total: ${decision.bullTotal.toFixed(2)}/12.0 | WeakestJudge: ${weakest.name} (${weakestJudgeScore.toFixed(2)}) | Result: ${isWin ? 'WIN' : 'LOSS'} | J4: ${decision.skepticVerdict} (${decision.j4PenaltyPct.toFixed(1)}%) | Pattern: ${patternNames} | ATR%ile: ${atrPercentile.toFixed(0)} | TimeBucket: ${entryTimeBucket} | Day: ${dayOfWeek}\n`);
 
+    const tradesJ3Components = (decision.auditTrail?.judgeContribs ?? [])
+      .filter((c: any) => c.judge === 'J3' && c.side === 'BULL')
+      .map((c: any) => `${c.contributor}:${c.value.toFixed(2)}`)
+      .join(',') || 'NONE';
+
     trades.push({
       id: `bt_${entryCandle.timestamp ?? i}_${i}`,
       entryTime: entryCandle.timestamp ?? 0,
@@ -394,6 +419,7 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
       mfeR,
       maeR,
       lossReason,
+      j3Components: tradesJ3Components,
     });
 
     tradesToday++;

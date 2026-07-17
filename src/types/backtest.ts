@@ -32,6 +32,7 @@ export interface BacktestTrade {
   mfeR:              number;      // max favorable excursion in R, entry to final exit
   maeR:              number;      // max adverse excursion in R, entry to final exit
   lossReason:        'IMMEDIATE_REVERSAL' | 'PARTIAL_MOVE_REVERSAL' | 'POST_TP1_GIVEBACK' | null; // null for winning trades
+  j3Components:      string;
 }
 
 export interface BacktestResult {
@@ -53,6 +54,8 @@ export interface BacktestResult {
   logs?:              string[];   // Detailed backtest event log
 }
 
+export type BacktestExitMode = 'DYNAMIC' | 'FIXED_RR' | 'FIXED_PCT';
+
 export interface BacktestConfig {
   symbol:            string;
   marginThreshold:   number;      // default 2.5
@@ -60,4 +63,8 @@ export interface BacktestConfig {
   warmupCandles:     number;      // default 30
   scalpConfig:       ScalpConfig; // reused for SL/TP and position sizing
   techniquesList:    any[];       // same uploaded techniques as the live bot, [] if none
+  exitMode?:         BacktestExitMode;
+  fixedRRRatio?:     number;
+  fixedSLPct?:       number;
+  fixedTPPct?:       number;
 }

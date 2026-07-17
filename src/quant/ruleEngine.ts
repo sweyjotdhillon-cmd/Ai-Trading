@@ -57,7 +57,8 @@ export interface DecisionResult extends JudgeVerdict {
   j3Score: number;
   bullJ1: number;   // cases.bull.j1 alone (0-4.0) — the actual score driving this specific trade
   bullJ2: number;   // cases.bull.j2 alone (0-4.0)
-  bullJ3: number;   // cases.bull.j3 alone (0-4.0)
+  bullJ3: number;   // cases.bull.j3 alone (0-4.0), clamped
+  bullJ3Raw: number; // bullJ3 BEFORE the Math.min(4.0, ...) clamp — diagnostic only, to see true distribution
   bullTotal: number; // cases.bull.total (0-12.0)
   j4Score: number;       // DEPRECATED — kept for legacy callers only, equals j4PenaltyPct
   j4PenaltyPct: number;  // Skeptic penalty as a percentage (0–100). NOT a judge score. "Skeptic stripped X% confidence."
@@ -141,6 +142,7 @@ export function evaluateSignal(
       bullJ1: 0,
       bullJ2: 0,
       bullJ3: 0,
+      bullJ3Raw: 0,
       bullTotal: 0,
       j4Score: isNoTech ? 0 : 70,
       j4PenaltyPct: isNoTech ? 0 : 70,
@@ -1671,6 +1673,7 @@ ${rulingStr}
     bullJ1: cases.bull.j1,
     bullJ2: cases.bull.j2,
     bullJ3: cases.bull.j3,
+    bullJ3Raw: bullJ3Raw,
     bullTotal: cases.bull.total,
     
     j4PenaltyPct: skepticPenalty,  // Skeptic stripped X% confidence — not a judge score
