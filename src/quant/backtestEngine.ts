@@ -148,6 +148,13 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
         .map((c: any) => `${c.contributor}:${c.value.toFixed(2)}`)
         .join(',') || 'NONE';
       log(`[${candleTimeStr}] EVAL ${decision.winner} | Bull: ${decision.bullScore.toFixed(2)} Bear: ${decision.bearScore.toFixed(2)} Margin: ${decision.margin.toFixed(2)} | J1: ${decision.bullJ1.toFixed(2)}/4.0 | J2: ${decision.bullJ2.toFixed(2)}/4.0 | J3: ${decision.bullJ3.toFixed(2)}/4.0 (raw: ${decision.bullJ3Raw.toFixed(2)}) | Total: ${decision.bullTotal.toFixed(2)}/12.0 -> ${qualifies ? 'QUALIFIED' : 'REJECTED'} | J3Components: ${j3Components}`);
+      
+      const techVotesStr = (decision.auditTrail?.techniquesEvaluated ?? [])
+        .filter((v: any) => v.vote === 'BULL' || v.vote === 'BEAR')
+        .map((v: any) => `${v.name}(${v.id || '-'}):${v.vote}:${v.vote === 'BULL' ? v.bullPoints.toFixed(2) : v.bearPoints.toFixed(2)}`)
+        .join(',');
+      log(`[TECH] ${techVotesStr}`);
+      log(`[TECHDUP] shard=${JSON.stringify(decision.auditTrail?.shardPassVotes ?? [])} | engine=${JSON.stringify(decision.auditTrail?.techEnginePassVotes ?? [])}`);
     }
 
     if (!qualifies) {
@@ -197,6 +204,38 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
     const entryTimeBucket: 'OPEN' | 'MID' | 'CLOSE' =
       nowMin <= 600 ? 'OPEN' : nowMin >= 870 ? 'CLOSE' : 'MID'; // 9:15-10:00 OPEN, 14:30-15:30 CLOSE
     const dayOfWeek = new Date(entryCandle.timestamp ?? 0).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'short' });
+
+    // --- Quality Gate (Deliverable: post-hoc analysis on 2,593-trade backtest showed these
+    // four slices underperform baseline and are worth cutting even though individually weak):
+    //   - CLOSE-of-day entries: 35.3% win vs ~46% elsewhere
+    //   - Bottom ATR-percentile quartile: 41.8% win vs 44-48% elsewhere
+    //   - J3 adx_flat_range component fired: 27.5% win (n=69)
+    //   - J3 lower_wick_rejection component fired: 41.7% win (n=551), only borderline-significant
+    //     component but negative in direction, cut alongside the others
+    // This gate runs AFTER the judges qualify the signal but BEFORE any capital is committed,
+    // so none of J1/J2/J3/J4 math is touched — this is purely an entry filter layered on top.
+    const bullJudgeContribs = (decision.auditTrail?.judgeContribs ?? []).filter(
+      (c: any) => c.judge === 'J3' && c.side === 'BULL' && c.value !== 0
+    );
+    const hasAdxFlatRange = bullJudgeContribs.some((c: any) => c.contributor === 'intrinsic.adx_flat_range');
+    const hasLowerWickRejection = bullJudgeContribs.some((c: any) => c.contributor === 'intrinsic.lower_wick_rejection');
+
+    let qualityGateReason: string | null = null;
+    if (entryTimeBucket === 'CLOSE') {
+      qualityGateReason = 'CLOSE_BUCKET';
+    } else if (atrPercentile < 25) {
+      qualityGateReason = 'LOW_ATR_QUARTILE';
+    } else if (hasAdxFlatRange) {
+      qualityGateReason = 'ADX_FLAT_RANGE_COMPONENT';
+    } else if (hasLowerWickRejection) {
+      qualityGateReason = 'LOWER_WICK_REJECTION_COMPONENT';
+    }
+
+    if (qualityGateReason) {
+      log(`[${candleTimeStr}] Signal qualified but BLOCKED by quality gate: ${qualityGateReason} | ATR%ile: ${atrPercentile.toFixed(0)} | TimeBucket: ${entryTimeBucket}`);
+      i++;
+      continue;
+    }
 
     let sl = calculateStopLoss(entry, config.scalpConfig.slMode, ctx);
     const exits = buildExitPlan(entry, sl, ctx);

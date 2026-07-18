@@ -343,11 +343,13 @@ export function evaluateSignal(
   }
 
   const evaluationVotes: any[] = [];
+  const shardPassVotes: any[] = [];
   const deadTechniques: string[] = [];
   for (let i = 0; i < shards.length; i++) {
     const shard = shards[i];
     const shardResult = evaluateShard(shard, ohlcSeries, i * shardSize, techCache);
     evaluationVotes.push(...shardResult.votes);
+    shardPassVotes.push(...shardResult.votes);
     if (shardResult.deadTechniques) {
       deadTechniques.push(...shardResult.deadTechniques);
     }
@@ -426,6 +428,7 @@ export function evaluateSignal(
   });
 
   // Integrate the TechniqueEngine pass as a bounded secondary check
+  const techEnginePassVotes: any[] = [];
   tcResult.techniqueBreakdown.forEach(br => {
     const matchedItem = activeList.find((t: any) => t.name === br.name);
     const code = matchedItem && typeof matchedItem === 'object' ? matchedItem.code : '';
@@ -450,6 +453,7 @@ export function evaluateSignal(
       bearPoints: br.bearScore,
       reason: br.status === "SKIPPED" ? "No executable conditions" : `BULL=${br.bullScore.toFixed(1)} BEAR=${br.bearScore.toFixed(1)}`
     });
+    techEnginePassVotes.push({ id: br.id, name: br.name, vote: br.status === "SKIPPED" ? "SKIP" : (br.bullScore > br.bearScore ? 'BULL' : (br.bearScore > br.bullScore ? 'BEAR' : 'NEUTRAL')) });
     
     evaluatedCount++;
     if (br.bullScore > 0 || br.bearScore > 0) processedCount++;
@@ -1550,6 +1554,8 @@ ${rulingStr}
       bearPoints: v.bearPoints ?? (v.vote === 'BEAR' ? v.score : 0),
       reason: v.reason
     })),
+    shardPassVotes: shardPassVotes.map(v => ({ id: v.id, name: v.name, vote: v.vote })),
+    techEnginePassVotes: techEnginePassVotes.map(v => ({ id: v.id, name: v.name, vote: v.vote })),
     judges: {
       J1: {
         techOnlyBull: techBullJ1,

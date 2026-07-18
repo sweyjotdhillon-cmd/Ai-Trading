@@ -130,9 +130,9 @@ export function BacktestScreen() {
   const [error, setError]                 = useState<string | null>(null);
 
   const [exitMode, setExitMode]           = useState<'DYNAMIC' | 'FIXED_RR' | 'FIXED_PCT'>('DYNAMIC');
-  const [fixedRRRatio, setFixedRRRatio]   = useState<number>(2.0);
-  const [fixedSLPct, setFixedSLPct]       = useState<number>(0.5);
-  const [fixedTPPct, setFixedTPPct]       = useState<number>(1.0);
+  const [fixedRRRatio, setFixedRRRatio]   = useState<string>('2.0');
+  const [fixedSLPct, setFixedSLPct]       = useState<string>('0.5');
+  const [fixedTPPct, setFixedTPPct]       = useState<string>('1.0');
 
   const [techniquesList, setTechniquesList] = useState<any[]>(() => {
     try {
@@ -232,9 +232,9 @@ export function BacktestScreen() {
             scalpConfig: getDefaultScalpConfig(),
             techniquesList: techniquesList,
             exitMode,
-            fixedRRRatio,
-            fixedSLPct,
-            fixedTPPct,
+            fixedRRRatio: parseFloat(fixedRRRatio) || 2.0,
+            fixedSLPct: parseFloat(fixedSLPct) || 0.5,
+            fixedTPPct: parseFloat(fixedTPPct) || 1.0,
           };
           const res = runBacktest(stockCandles, config);
           // Attach symbol to each trade
@@ -339,9 +339,9 @@ export function BacktestScreen() {
           scalpConfig: getDefaultScalpConfig(),
           techniquesList: techniquesList,
           exitMode,
-          fixedRRRatio,
-          fixedSLPct,
-          fixedTPPct,
+          fixedRRRatio: parseFloat(fixedRRRatio) || 2.0,
+          fixedSLPct: parseFloat(fixedSLPct) || 0.5,
+          fixedTPPct: parseFloat(fixedTPPct) || 1.0,
         };
         const res = runBacktest(candles, config);
         // Attach symbol to single stock trade too
@@ -420,13 +420,13 @@ export function BacktestScreen() {
                 min="0.1"
                 max="20"
                 value={fixedRRRatio}
-                onChange={(e) => setFixedRRRatio(Math.max(0.1, parseFloat(e.target.value) || 1.0))}
+                onChange={(e) => setFixedRRRatio(e.target.value)}
                 disabled={isRunning}
                 className="bg-zinc-800 text-white border border-zinc-700 rounded-lg px-3 py-1.5 text-xs font-mono focus:outline-none focus:border-[#D9B382]/50 w-full max-w-[200px]"
               />
             </div>
             <p className="text-[10px] text-zinc-500 font-mono leading-relaxed mt-1">
-              Stop Loss is determined by your chosen SL Mode (e.g. ATR or Structure). The Take Profit is set strictly at <strong>{fixedRRRatio.toFixed(1)}x</strong> the Stop Loss distance. There is no partial profit booking or moving stops to breakeven.
+              Stop Loss is determined by your chosen SL Mode (e.g. ATR or Structure). The Take Profit is set strictly at <strong>{(parseFloat(fixedRRRatio) || 2.0).toFixed(1)}x</strong> the Stop Loss distance. There is no partial profit booking or moving stops to breakeven.
             </p>
           </div>
         )}
@@ -446,7 +446,7 @@ export function BacktestScreen() {
                     min="0.05"
                     max="100"
                     value={fixedSLPct}
-                    onChange={(e) => setFixedSLPct(Math.max(0.05, parseFloat(e.target.value) || 0.5))}
+                    onChange={(e) => setFixedSLPct(e.target.value)}
                     disabled={isRunning}
                     className="bg-zinc-800 text-white border border-zinc-700 rounded-lg px-3 py-1.5 text-xs font-mono focus:outline-none focus:border-[#D9B382]/50 w-full"
                   />
@@ -462,7 +462,7 @@ export function BacktestScreen() {
                     min="0.05"
                     max="100"
                     value={fixedTPPct}
-                    onChange={(e) => setFixedTPPct(Math.max(0.05, parseFloat(e.target.value) || 1.0))}
+                    onChange={(e) => setFixedTPPct(e.target.value)}
                     disabled={isRunning}
                     className="bg-zinc-800 text-white border border-zinc-700 rounded-lg px-3 py-1.5 text-xs font-mono focus:outline-none focus:border-[#D9B382]/50 w-full"
                   />
@@ -471,7 +471,7 @@ export function BacktestScreen() {
               </div>
             </div>
             <p className="text-[10px] text-zinc-500 font-mono leading-relaxed">
-              Every trade uses a strict percentage-based Stop Loss at <strong>{fixedSLPct}%</strong> below entry, and a strict Take Profit at <strong>{fixedTPPct}%</strong> above entry. No technical SL checks or dynamic trailing are applied.
+              Every trade uses a strict percentage-based Stop Loss at <strong>{parseFloat(fixedSLPct) || 0.5}%</strong> below entry, and a strict Take Profit at <strong>{parseFloat(fixedTPPct) || 1.0}%</strong> above entry. No technical SL checks or dynamic trailing are applied.
             </p>
           </div>
         )}
@@ -527,8 +527,8 @@ export function BacktestScreen() {
           <span className="bg-zinc-950/60 border border-zinc-850 rounded px-2 py-1">5-minute candles</span>
           <span className="bg-[#D9B382]/15 border border-[#D9B382]/30 text-[#D9B382] rounded px-2 py-1 font-bold">
             {exitMode === 'DYNAMIC' && 'DYNAMIC EXITS'}
-            {exitMode === 'FIXED_RR' && `STRICT FIXED R:R (1:${fixedRRRatio.toFixed(1)})`}
-            {exitMode === 'FIXED_PCT' && `STRICT FIXED % (SL ${fixedSLPct}%, TP ${fixedTPPct}%)`}
+            {exitMode === 'FIXED_RR' && `STRICT FIXED R:R (1:${(parseFloat(fixedRRRatio) || 2.0).toFixed(1)})`}
+            {exitMode === 'FIXED_PCT' && `STRICT FIXED % (SL ${parseFloat(fixedSLPct) || 0.5}%, TP ${parseFloat(fixedTPPct) || 1.0}%)`}
           </span>
         </div>
 
