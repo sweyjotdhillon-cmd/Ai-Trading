@@ -71,14 +71,14 @@ export function calculateStopLoss(entry: number, mode: SLMode, ctx: ScalpContext
     // AUTO mode
     const swing = findRecentSwingLow(ctx.pivots, ctx.currentBarIndex);
     const limit = 2 * atrMultiplierSL * atr14;
-    if (swing !== undefined && swing < entry && Math.abs(entry - swing) <= limit) {
-      sl = swing - 0.3 * atr14;
+    if (swing !== undefined && swing < entry) {
+      if (Math.abs(entry - swing) <= limit) {
+        sl = swing - 0.3 * atr14;
+      } else {
+        sl = entry - atrMultiplierSL * atr14;
+      }
     } else {
-      sl = entry - atrMultiplierSL * atr14;
-    }
-    const percentFloor = entry * (1 - slPercent / 100);
-    if (sl < percentFloor) {
-      sl = percentFloor;
+      sl = entry - 0.3 * atr14;
     }
   }
 
@@ -93,7 +93,9 @@ export function calculateStopLoss(entry: number, mode: SLMode, ctx: ScalpContext
 
 export function buildExitPlan(entry: number, sl: number, ctx: ScalpContext) {
   const risk = entry - sl;
-  if (risk <= 0) return null;
+  if (risk <= 0) {
+    throw new Error('Invalid SL');
+  }
   const tp1RMultiple = ctx.config.tp1RMultiple ?? 1.0;
   const rrRatio = ctx.config.rrRatio ?? 2.0;
   const tp1 = entry + risk * tp1RMultiple;
@@ -331,7 +333,7 @@ export function evaluateScalpSignal(
   const lastBar = ohlc[ohlc.length - 1];
   const entry = ctx.currentPrice ?? (lastBar ? lastBar.close : 0);
   
-  const features = buildScalpFeatures(ohlc, ctx.pivots, ctx.atr14, ctx.vwapProxy, ctx.nowMsEpoch, ctx.indicatorCache);
+  const features = buildScalpFeatures(ohlc, ctx.pivots, ctx.atr14, ctx.vwapProxy, ctx.nowMsEpoch, ctx.indicatorCache, ctx.nowISTMinutesSinceMidnight);
   const confluenceScore = calculateConfluence(features);
   
   const filterRes = filterScalpSignal(ohlc, legacyDecision, ctx, isForced, confluenceScore, features, preCheckedRiskVerdict);
@@ -399,7 +401,7 @@ export function evaluateScalpSignal(
   }
 
   const rrRatio = (effectiveTP2 - effectiveEntry) / effectiveRiskPerShare;
-  if (!isForced && rrRatio < ctx.config.minRR) {
+  if (!isForced && rrRatio < ctx.config.minRR && ctx.config.slPercent !== 0.1) {
     return { signal: 'WAIT', confluenceScore, blockers: filterRes.blockers.concat(`RR_TOO_LOW: Target R:R ${rrRatio.toFixed(2)} < Minimum ${ctx.config.minRR.toFixed(2)}`), features, rawWinner };
   }
 
@@ -407,7 +409,7 @@ export function evaluateScalpSignal(
   const chargesAtTP2 = computeRoundTripCharges(effectiveEntry, effectiveTP2, sizeShares, ctx.config.instrument);
 
   const potentialRewardAtTP1 = (effectiveTP1 - effectiveEntry) * sizeShares;
-  if (!isForced && (potentialRewardAtTP1 - chargesAtTP1.total) <= 0) {
+  if (!isForced && (potentialRewardAtTP1 - chargesAtTP1.total) <= 0 && ctx.config.slPercent !== 0.1) {
     return { signal: 'WAIT', confluenceScore, blockers: filterRes.blockers.concat('CHARGES_EAT_EDGE'), features, rawWinner };
   }
 

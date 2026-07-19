@@ -67,4 +67,5 @@ export interface BacktestConfig {
   fixedRRRatio?:     number;
   fixedSLPct?:       number;
   fixedTPPct?:       number;
+  compositeSeries?:  Map<number, 'UP' | 'DOWN' | 'FLAT'>; // timestamp -> 9-stock equal-weighted composite direction
 }

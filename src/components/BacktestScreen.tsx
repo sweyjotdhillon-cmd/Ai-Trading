@@ -212,12 +212,33 @@ export function BacktestScreen() {
       let totalCandlesUsed = 0;
 
       try {
+        // Pre-fetch all 9 stocks' candles once to build a composite market-direction series.
+        setStatusMessage('Building composite market series...');
+        const allStockCandles: Record<string, Awaited<ReturnType<typeof fetchBacktestHistory>>> = {};
+        for (const stock of POPULAR_STOCKS) {
+          allStockCandles[stock.symbol] = await fetchBacktestHistory(stock.symbol);
+        }
+        const byTimestamp: Record<number, number[]> = {};
+        for (const symbol of Object.keys(allStockCandles)) {
+          for (const c of allStockCandles[symbol]) {
+            const ret = c.open ? (c.close - c.open) / c.open : 0;
+            if (!byTimestamp[c.timestamp]) byTimestamp[c.timestamp] = [];
+            byTimestamp[c.timestamp].push(ret);
+          }
+        }
+        const FLAT_THRESHOLD = 0.0005; // 0.05% - tune later if needed, not a scoring parameter yet
+        const compositeSeries = new Map<number, 'UP' | 'DOWN' | 'FLAT'>();
+        for (const [ts, rets] of Object.entries(byTimestamp)) {
+          const avg = rets.reduce((a, b) => a + b, 0) / rets.length;
+          compositeSeries.set(Number(ts), avg > FLAT_THRESHOLD ? 'UP' : avg < -FLAT_THRESHOLD ? 'DOWN' : 'FLAT');
+        }
+
         for (const stock of POPULAR_STOCKS) {
           setStatusMessage(`Loading history for ${stock.symbol}...`);
           // Let the UI repaint the status message before continuing
           await new Promise(resolve => setTimeout(resolve, 50));
 
-          const stockCandles = await fetchBacktestHistory(stock.symbol);
+          const stockCandles = allStockCandles[stock.symbol];
           totalCandlesUsed += stockCandles.length;
 
           setStatusMessage(`Running backtest for ${stock.symbol}...`);
@@ -235,6 +256,7 @@ export function BacktestScreen() {
             fixedRRRatio: parseFloat(fixedRRRatio) || 2.0,
             fixedSLPct: parseFloat(fixedSLPct) || 0.5,
             fixedTPPct: parseFloat(fixedTPPct) || 1.0,
+            compositeSeries,
           };
           const res = runBacktest(stockCandles, config);
           // Attach symbol to each trade

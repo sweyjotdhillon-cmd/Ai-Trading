@@ -33,7 +33,8 @@ export function buildScalpFeatures(
   atr14: number[],
   vwapVals: number[],
   nowMs: number,
-  indicatorCache?: any
+  indicatorCache?: any,
+  nowISTMinutesSinceMidnight?: number
 ): ScalpFeatures {
   const highs = ohlc.map(c => c.high);
   const lows = ohlc.map(c => c.low);
@@ -113,7 +114,7 @@ export function buildScalpFeatures(
   const predictabilityPassed = predData.isPredictable === true || closes.length < 10;
   
   // Market hours gate (NSE 09:20 - 15:00 IST)
-  const istMins = getISTMinutesSinceMidnight(nowMs);
+  const istMins = nowISTMinutesSinceMidnight !== undefined ? nowISTMinutesSinceMidnight : getISTMinutesSinceMidnight(nowMs);
   const withinMarketHours = istMins >= 555 && istMins <= 930;
   
   let timeOfDayQuality: 'OPTIMAL' | 'ACCEPTABLE' | 'AVOID' = 'OPTIMAL';

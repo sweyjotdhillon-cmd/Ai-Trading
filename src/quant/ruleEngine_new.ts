@@ -95,13 +95,6 @@ export function evaluateSignal(
   }
 ): DecisionResult {
   const tStart = performance.now();
-  const log = (msg: string) => {
-    if (onLog) {
-      onLog('signal', msg);
-    } else {
-      console.log(msg);
-    }
-  };
   const isNoTech = !techniquesList || !Array.isArray(techniquesList) || techniquesList.length === 0;
 
   const judgeContribs: Array<{
@@ -243,17 +236,15 @@ export function evaluateSignal(
   });
 
   const isCustomList = techniquesList && Array.isArray(techniquesList) && techniquesList.length > 0;
-  if (!hardBlockReason) {
-    if (isBypass) {
-      // Bypasses the technique-related checks below
-    } else if (isCustomList) {
-      if (activeList.length === 0) {
-        hardBlockReason = `No custom techniques provided. Include at least 1 technique in your upload.`;
-      }
-    } else if (!isNoTech) {
-      if (activeList.length < 10) {
-        hardBlockReason = `Insufficient tech consensus. Found ${activeList.length} but need minimum 10 techniques.`;
-      }
+  if (isBypass) {
+    hardBlockReason = null;
+  } else if (isCustomList) {
+    if (activeList.length === 0) {
+      hardBlockReason = `No custom techniques provided. Include at least 1 technique in your upload.`;
+    }
+  } else if (!isNoTech) {
+    if (activeList.length < 10) {
+      hardBlockReason = `Insufficient tech consensus. Found ${activeList.length} but need minimum 10 techniques.`;
     }
   }
 
@@ -447,10 +438,9 @@ export function evaluateSignal(
     const addBull = Math.min(br.bullScore, 1.0);
     const addBear = Math.min(br.bearScore, 1.0);
 
-    // Technique double-counting fix: stop tcResult from adding to techBull/Bear totals
-    // if (cat === 'J1') { techBullJ1 += addBull; techBearJ1 += addBear; }
-    // else if (cat === 'J2') { techBullJ2 += addBull; techBearJ2 += addBear; }
-    // else if (cat === 'J3') { techBullJ3 += addBull; techBearJ3 += addBear; }
+    if (cat === 'J1') { techBullJ1 += addBull; techBearJ1 += addBear; }
+    else if (cat === 'J2') { techBullJ2 += addBull; techBearJ2 += addBear; }
+    else if (cat === 'J3') { techBullJ3 += addBull; techBearJ3 += addBear; }
     
     if (br.status === "SKIPPED") deadTechniques.push(br.name);
     
@@ -1165,7 +1155,7 @@ export function evaluateSignal(
   let H_exp = NaN;
   let hurstExplanation = "Neutral range_balanced";
   
-  if (ohlcSeries.length >= 30) {
+  if (ohlcSeries.length >= 64) {
     H_exp = rescaledRangeHurst(Array.from(closes).slice(-64));
   } else {
     hurstExplanation = "Insufficient candles for Hurst — regime neutral";
@@ -1289,7 +1279,19 @@ export function evaluateSignal(
     skepticReasons.push(`Extreme low RQA structural stability (laminarity=${rqa.laminarity.toFixed(2)}, determinism=${rqa.determinism.toFixed(2)})`);
   }
 
-  log(`[J4RAW] zScore: ${zScoreData.zScore.toFixed(2)} | atrRatio: ${(currentAtr/atrMean).toFixed(2)} | slopeAtrUnits: ${slopeInAtrUnits.toFixed(3)} | laminarity: ${rqa.laminarity.toFixed(2)} | determinism: ${rqa.determinism.toFixed(2)}`);
+  // 5. Timeframe Trend Stability adjustment: Higher timeframes (e.g. 15m or 30m) are structurally more reliable and less noisy than low timeframes
+  let tfMultiplier = 1.0;
+  if (graphTimeframeMinutes >= 30) {
+    tfMultiplier = 1.15;
+    skepticReasons.push(`30-Minute High Timeframe trend stability boost (1.15x multiplier)`);
+  } else if (graphTimeframeMinutes >= 15) {
+    tfMultiplier = 1.05;
+    skepticReasons.push(`15-Minute Structural trend stability boost (1.05x multiplier)`);
+  } else {
+    tfMultiplier = 0.90;
+    skepticReasons.push(`Low Timeframe noise correction (0.90x modifier)`);
+  }
+  skepticMultiplier *= tfMultiplier;
 
   if (isNoTech) {
     const extremeZ = Math.abs(zScoreData.zScore) > 2.5;
@@ -1651,7 +1653,7 @@ ${rulingStr}
     signal: finalSignal,
     decision: decisionLabel,
     cases,
-    winner: hardBlockReason ? 'NO_TRADE' : (finalSignal === 'LONG' ? 'BULL' : (margin >= 2.0 ? (rawWinner === 'BEAR' ? 'BEAR' : 'BULL') : 'NO_TRADE')),
+    winner: finalSignal === 'NO_TRADE' ? 'NO_TRADE' : finalSignal === 'LONG' ? 'BULL' : 'BEAR',
     margin,
     skepticMultiplier,
     skepticPenalty,

@@ -148,13 +148,6 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
         .map((c: any) => `${c.contributor}:${c.value.toFixed(2)}`)
         .join(',') || 'NONE';
       log(`[${candleTimeStr}] EVAL ${decision.winner} | Bull: ${decision.bullScore.toFixed(2)} Bear: ${decision.bearScore.toFixed(2)} Margin: ${decision.margin.toFixed(2)} | J1: ${decision.bullJ1.toFixed(2)}/4.0 | J2: ${decision.bullJ2.toFixed(2)}/4.0 | J3: ${decision.bullJ3.toFixed(2)}/4.0 (raw: ${decision.bullJ3Raw.toFixed(2)}) | Total: ${decision.bullTotal.toFixed(2)}/12.0 -> ${qualifies ? 'QUALIFIED' : 'REJECTED'} | J3Components: ${j3Components}`);
-      
-      const techVotesStr = (decision.auditTrail?.techniquesEvaluated ?? [])
-        .filter((v: any) => v.vote === 'BULL' || v.vote === 'BEAR')
-        .map((v: any) => `${v.name}(${v.id || '-'}):${v.vote}:${v.vote === 'BULL' ? v.bullPoints.toFixed(2) : v.bearPoints.toFixed(2)}`)
-        .join(',');
-      log(`[TECH] ${techVotesStr}`);
-      log(`[TECHDUP] shard=${JSON.stringify(decision.auditTrail?.shardPassVotes ?? [])} | engine=${JSON.stringify(decision.auditTrail?.techEnginePassVotes ?? [])}`);
     }
 
     if (!qualifies) {
@@ -204,6 +197,17 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
     const entryTimeBucket: 'OPEN' | 'MID' | 'CLOSE' =
       nowMin <= 600 ? 'OPEN' : nowMin >= 870 ? 'CLOSE' : 'MID'; // 9:15-10:00 OPEN, 14:30-15:30 CLOSE
     const dayOfWeek = new Date(entryCandle.timestamp ?? 0).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'short' });
+
+    // HH/HL momentum-structure count: how many of the 5 candles before entry
+    // showed BOTH a higher high AND a higher low than the candle before it.
+    const hhhlWindow = candles.slice(Math.max(0, i - 4), i + 1); // 5 candles ending at signalCandle
+    let hhhlCount = 0;
+    for (let w = 1; w < hhhlWindow.length; w++) {
+      if (hhhlWindow[w].high > hhhlWindow[w - 1].high && hhhlWindow[w].low > hhhlWindow[w - 1].low) {
+        hhhlCount++;
+      }
+    }
+    const openZeroHHHL = entryTimeBucket === 'OPEN' && hhhlCount === 0;
 
     // --- Quality Gate (Deliverable: post-hoc analysis on 2,593-trade backtest showed these
     // four slices underperform baseline and are worth cutting even though individually weak):
@@ -324,7 +328,17 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
       runningMaxHigh = Math.max(runningMaxHigh, c.high);
       runningMinLow = Math.min(runningMinLow, c.low);
 
-      // Pessimistic: current stop (original SL, or breakeven once TP1 booked) checked first
+      // TP1 check (only before it's been booked)
+      const candleHigh = c.high;
+      if (!tp1Hit && candleHigh >= tp1) {
+        log('[TP1_CHECK] hit at candle ' + k);
+        tp1Hit = true;
+        tp1ExitPrice = tp1;
+        currentStop = breakEvenPrice;
+        log(`  -> TP1 HIT at ${tp1.toFixed(2)} (Candle High: ${c.high.toFixed(2)}) | Booked ${tp1Qty} shares | Stop moved to breakeven ${breakEvenPrice.toFixed(2)} for remaining ${remainderQty}`);
+      }
+
+      // Pessimistic: current stop (original SL, or breakeven once TP1 booked) checked second
       if (c.low <= currentStop) {
         outcome = tp1Hit ? 'BREAK_EVEN' : 'SL_HIT';
         exitPrice = currentStop;
@@ -333,15 +347,6 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
           ? `  -> BREAKEVEN STOP HIT at ${currentStop.toFixed(2)} on remainder (Candle Low: ${c.low.toFixed(2)})`
           : `  -> SL HIT at ${currentStop.toFixed(2)} (Candle Low: ${c.low.toFixed(2)})`);
         break;
-      }
-
-      // TP1 check (only before it's been booked). Not retroactive — breakeven stop
-      // only becomes active from the NEXT candle onward, never this same candle.
-      if (!tp1Hit && c.high >= tp1) {
-        tp1Hit = true;
-        tp1ExitPrice = tp1;
-        currentStop = breakEvenPrice;
-        log(`  -> TP1 HIT at ${tp1.toFixed(2)} (Candle High: ${c.high.toFixed(2)}) | Booked ${tp1Qty} shares | Stop moved to breakeven ${breakEvenPrice.toFixed(2)} for remaining ${remainderQty}`);
       }
 
       if (c.high >= tp2) {
@@ -421,6 +426,8 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
 
     log(`[EXIT]  Outcome: ${outcome} | TP1Hit: ${tp1Hit} | ExitPrice: ₹${exitPrice.toFixed(2)} | NetPnL: ₹${netPnL.toFixed(2)} | R-Mult: ${rMultiple.toFixed(2)} | Charges: ₹${totalCharges.toFixed(2)} | Duration: ${durationMinutes}m | MFE: ${mfeR.toFixed(2)}R | MAE: ${maeR.toFixed(2)}R | LossReason: ${lossReason ?? 'N/A'}`);
     log(`[CONTEXT] J1: ${decision.bullJ1.toFixed(2)}/4.0 | J2: ${decision.bullJ2.toFixed(2)}/4.0 | J3: ${decision.bullJ3.toFixed(2)}/4.0 | Total: ${decision.bullTotal.toFixed(2)}/12.0 | WeakestJudge: ${weakest.name} (${weakestJudgeScore.toFixed(2)}) | Result: ${isWin ? 'WIN' : 'LOSS'} | J4: ${decision.skepticVerdict} (${decision.j4PenaltyPct.toFixed(1)}%) | Pattern: ${patternNames} | ATR%ile: ${atrPercentile.toFixed(0)} | TimeBucket: ${entryTimeBucket} | Day: ${dayOfWeek}\n`);
+    const compositeDir = config.compositeSeries?.get(entryCandle.timestamp ?? 0) ?? 'N/A';
+    log(`[REGIME] OpenZeroHHHL: ${openZeroHHHL} | HHHLCount: ${hhhlCount} | Composite: ${compositeDir}`);
 
     const tradesJ3Components = (decision.auditTrail?.judgeContribs ?? [])
       .filter((c: any) => c.judge === 'J3' && c.side === 'BULL')

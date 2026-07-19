@@ -387,7 +387,7 @@ export function evaluateShard(
         bullPoints = res.bullPoints;
         bearPoints = res.bearPoints;
       } else {
-        vote = 'SKIP';
+        vote = 'NEUTRAL';
         score = 0;
         reason = typeof techItem === 'object' 
           ? 'Technique has no executable conditions or code field.' 
@@ -410,4 +410,65 @@ export function evaluateShard(
   }
 
   return { votes, deadTechniques };
+}
+
+export async function evaluateAllShards(
+  list: any[],
+  ohlc: NumericOHLC[],
+  horizonCtx: any
+): Promise<{ totalEvaluated: number; votes: TechniqueVote[]; proofTokens: string }> {
+  const shardSize = 15;
+  const shards = shardTechniques(list, shardSize);
+  const votes: TechniqueVote[] = [];
+  const deadTechniques: string[] = [];
+  
+  const cache: IndicatorCache = {
+    closes: ohlc.map(c => c.close)
+  };
+  (cache as any).context = horizonCtx;
+
+  for (let i = 0; i < shards.length; i++) {
+    const shardResult = evaluateShard(shards[i], ohlc, i * shardSize, cache);
+    votes.push(...shardResult.votes);
+    if (shardResult.deadTechniques) {
+      deadTechniques.push(...shardResult.deadTechniques);
+    }
+  }
+
+  const proofTokens = votes.map(v => `${v.id}:${v.vote}:${v.score.toFixed(2)}`).join(' ');
+
+  return {
+    totalEvaluated: votes.length,
+    votes,
+    proofTokens
+  };
+}
+
+export function validateProofTokens(tokenStr: string, expectedCount: number): {
+  valid: boolean;
+  missing: number[];
+  found: number;
+} {
+  const tokens = tokenStr.trim().split(/\s+/).filter(Boolean);
+  const foundSet = new Set<number>();
+  for (const tok of tokens) {
+    const m = tok.match(/^T(\d+):/);
+    if (m) {
+      foundSet.add(parseInt(m[1], 10));
+    }
+  }
+  const missing: number[] = [];
+  let found = 0;
+  for (let i = 1; i <= expectedCount; i++) {
+    if (foundSet.has(i)) {
+      found++;
+    } else {
+      missing.push(i);
+    }
+  }
+  return {
+    valid: missing.length === 0,
+    missing,
+    found
+  };
 }
