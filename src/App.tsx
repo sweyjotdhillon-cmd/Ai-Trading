@@ -236,10 +236,16 @@ function App() {
             </View>
             <View>
               <Text style={styles.headerTitle}>CHARTLENS</Text>
-              <Text style={styles.headerSubtitle}>PRO TERMINAL · {buildStamp}</Text>
+              <Text style={styles.headerSubtitle}>PRO TERMINAL</Text>
             </View>
           </View>
           <View style={styles.headerRight}>
+            {/* Code Update Time Bar */}
+            <View style={styles.updateTimeBar}>
+              <View style={styles.updateTimeIndicator} />
+              <Text style={styles.updateTimeText}>UPDATED: {buildStamp}</Text>
+            </View>
+
             <Pressable 
               style={({ pressed }) => [styles.headerAction, { opacity: pressed ? 0.7 : 1 }]}
               onPress={() => setTimeout(() => setShowSystemSettings(true), 10)}
@@ -621,7 +627,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     color: 'white',
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '900',
     letterSpacing: 1,
   },
@@ -634,6 +640,31 @@ const styles = StyleSheet.create({
   headerRight: {
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  updateTimeBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(217, 179, 130, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(217, 179, 130, 0.15)',
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    marginRight: 4,
+  },
+  updateTimeIndicator: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: '#10B981',
+    marginRight: 4,
+  },
+  updateTimeText: {
+    color: '#D9B382',
+    fontSize: 8,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontWeight: 'bold',
+    letterSpacing: 0.3,
   },
   headerAction: {
     width: 36,

@@ -33,6 +33,8 @@ export interface BacktestTrade {
   maeR:              number;      // max adverse excursion in R, entry to final exit
   lossReason:        'IMMEDIATE_REVERSAL' | 'PARTIAL_MOVE_REVERSAL' | 'POST_TP1_GIVEBACK' | null; // null for winning trades
   j3Components:      string;
+  gateIsCompressed?: boolean;
+  gateIsBreakout?:   boolean;
 }
 
 export interface BacktestResult {
@@ -68,4 +70,6 @@ export interface BacktestConfig {
   fixedSLPct?:       number;
   fixedTPPct?:       number;
   compositeSeries?:  Map<number, 'UP' | 'DOWN' | 'FLAT'>; // timestamp -> 9-stock equal-weighted composite direction
+  atrCompressionPctileMax?: number;
+  microRangeLookback?:      number;
 }

@@ -198,6 +198,29 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
       nowMin <= 600 ? 'OPEN' : nowMin >= 870 ? 'CLOSE' : 'MID'; // 9:15-10:00 OPEN, 14:30-15:30 CLOSE
     const dayOfWeek = new Date(entryCandle.timestamp ?? 0).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'short' });
 
+    // Signed volume (tick rule): classify each of the last 10 candles before 
+    // entry as buyer- or seller-initiated based on where its close sits in its 
+    // own high-low range, then sum the signed volume.
+    const signedVolWindow = candles.slice(Math.max(0, i - 9), i + 1); // 10 candles ending at signalCandle
+    let cumulativeSignedVolume = 0;
+    for (const c of signedVolWindow) {
+      const range = c.high - c.low;
+      if (range <= 0) continue;
+      const closePosition = (c.close - c.low) / range; // 0 = closed at low, 1 = closed at high
+      const sign = closePosition >= 0.5 ? 1 : -1;
+      cumulativeSignedVolume += sign * (c.volume ?? 0);
+    }
+
+    // Range expansion relative to recent ATR, and whether volume expanded alongside it
+    const currentRange = signalCandle.high - signalCandle.low;
+    const avgAtr = atr14Arr.length > 0 ? atr14Arr[atr14Arr.length - 1] : 0;
+    const rangeExpansionRatio = avgAtr > 0 ? currentRange / avgAtr : 0;
+    const recentVolWindow = candles.slice(Math.max(0, i - 19), i);
+    const avgRecentVolume = recentVolWindow.length > 0
+      ? recentVolWindow.reduce((sum, c) => sum + (c.volume ?? 0), 0) / recentVolWindow.length
+      : 0;
+    const volumeExpansionRatio = avgRecentVolume > 0 ? (signalCandle.volume ?? 0) / avgRecentVolume : 0;
+
     // HH/HL momentum-structure count: how many of the 5 candles before entry
     // showed BOTH a higher high AND a higher low than the candle before it.
     const hhhlWindow = candles.slice(Math.max(0, i - 4), i + 1); // 5 candles ending at signalCandle
@@ -209,13 +232,15 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
     }
     const openZeroHHHL = entryTimeBucket === 'OPEN' && hhhlCount === 0;
 
-    // --- Quality Gate (Deliverable: post-hoc analysis on 2,593-trade backtest showed these
-    // four slices underperform baseline and are worth cutting even though individually weak):
+    // --- Quality Gate (Deliverable: post-hoc analysis showed these five slices
+    // underperform baseline and are worth cutting even though individually weak):
     //   - CLOSE-of-day entries: 35.3% win vs ~46% elsewhere
     //   - Bottom ATR-percentile quartile: 41.8% win vs 44-48% elsewhere
     //   - J3 adx_flat_range component fired: 27.5% win (n=69)
-    //   - J3 lower_wick_rejection component fired: 41.7% win (n=551), only borderline-significant
-    //     component but negative in direction, cut alongside the others
+    //   - J3 lower_wick_rejection component fired: 41.7% win (n=551)
+    //   - J1 below its 4.0 cap AND J2 nonzero: 31.8% win (n=192, z=-2.64), consistent
+    //     across 8 of 9 stocks — oscillator confirmation firing without price-action
+    //     confirmation behind it
     // This gate runs AFTER the judges qualify the signal but BEFORE any capital is committed,
     // so none of J1/J2/J3/J4 math is touched — this is purely an entry filter layered on top.
     const bullJudgeContribs = (decision.auditTrail?.judgeContribs ?? []).filter(
@@ -223,6 +248,29 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
     );
     const hasAdxFlatRange = bullJudgeContribs.some((c: any) => c.contributor === 'intrinsic.adx_flat_range');
     const hasLowerWickRejection = bullJudgeContribs.some((c: any) => c.contributor === 'intrinsic.lower_wick_rejection');
+    const weakJ1StrongJ2 = decision.bullJ1 < 4.0 && decision.bullJ2 > 0;
+
+    // ATR Compression Breakout Gate
+    // This gate tests whether volatility compression followed by a directional breakout improves trade follow-through, versus either condition alone. See control buckets in backtest report.
+    const compressionThresh = config.atrCompressionPctileMax ?? 30;
+    const microRangeLookback = config.microRangeLookback ?? 8;
+    const gateIsCompressed = atrPercentile <= compressionThresh;
+
+    let microHigh = -Infinity;
+    let microLow = Infinity;
+    const microWindow = candles.slice(Math.max(0, i - microRangeLookback), i);
+    for (const c of microWindow) {
+      if (c.high > microHigh) microHigh = c.high;
+      if (c.low < microLow) microLow = c.low;
+    }
+
+    const isLong = decision.winner === 'BULL';
+    const isShort = decision.winner === 'BEAR';
+    const breakoutLong = signalCandle.close > microHigh;
+    const breakoutShort = signalCandle.close < microLow;
+    const gateIsBreakout = isLong ? breakoutLong : (isShort ? breakoutShort : false);
+
+    const atrGatePass = gateIsCompressed && gateIsBreakout;
 
     let qualityGateReason: string | null = null;
     if (entryTimeBucket === 'CLOSE') {
@@ -233,10 +281,14 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
       qualityGateReason = 'ADX_FLAT_RANGE_COMPONENT';
     } else if (hasLowerWickRejection) {
       qualityGateReason = 'LOWER_WICK_REJECTION_COMPONENT';
+    } else if (weakJ1StrongJ2) {
+      qualityGateReason = 'WEAK_J1_NONZERO_J2';
+    } else if (featureFlags.enableATRCompressionBreakoutGate && !atrGatePass) {
+      qualityGateReason = 'ATR_COMPRESSION_BREAKOUT_GATE';
     }
 
     if (qualityGateReason) {
-      log(`[${candleTimeStr}] Signal qualified but BLOCKED by quality gate: ${qualityGateReason} | ATR%ile: ${atrPercentile.toFixed(0)} | TimeBucket: ${entryTimeBucket}`);
+      log(`[${candleTimeStr}] Signal qualified but BLOCKED by quality gate: ${qualityGateReason} | ATR%ile: ${atrPercentile.toFixed(0)} | TimeBucket: ${entryTimeBucket} | J1: ${decision.bullJ1.toFixed(2)} | J2: ${decision.bullJ2.toFixed(2)}`);
       i++;
       continue;
     }
@@ -426,8 +478,9 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
 
     log(`[EXIT]  Outcome: ${outcome} | TP1Hit: ${tp1Hit} | ExitPrice: ₹${exitPrice.toFixed(2)} | NetPnL: ₹${netPnL.toFixed(2)} | R-Mult: ${rMultiple.toFixed(2)} | Charges: ₹${totalCharges.toFixed(2)} | Duration: ${durationMinutes}m | MFE: ${mfeR.toFixed(2)}R | MAE: ${maeR.toFixed(2)}R | LossReason: ${lossReason ?? 'N/A'}`);
     log(`[CONTEXT] J1: ${decision.bullJ1.toFixed(2)}/4.0 | J2: ${decision.bullJ2.toFixed(2)}/4.0 | J3: ${decision.bullJ3.toFixed(2)}/4.0 | Total: ${decision.bullTotal.toFixed(2)}/12.0 | WeakestJudge: ${weakest.name} (${weakestJudgeScore.toFixed(2)}) | Result: ${isWin ? 'WIN' : 'LOSS'} | J4: ${decision.skepticVerdict} (${decision.j4PenaltyPct.toFixed(1)}%) | Pattern: ${patternNames} | ATR%ile: ${atrPercentile.toFixed(0)} | TimeBucket: ${entryTimeBucket} | Day: ${dayOfWeek}\n`);
-    const compositeDir = config.compositeSeries?.get(entryCandle.timestamp ?? 0) ?? 'N/A';
+    const compositeDir = config.compositeSeries?.get(signalCandle.timestamp) ?? 'N/A';
     log(`[REGIME] OpenZeroHHHL: ${openZeroHHHL} | HHHLCount: ${hhhlCount} | Composite: ${compositeDir}`);
+    log(`[ORDERFLOW] SignedVol10: ${cumulativeSignedVolume.toFixed(0)} | RangeExpansion: ${rangeExpansionRatio.toFixed(2)} | VolExpansion: ${volumeExpansionRatio.toFixed(2)}`);
 
     const tradesJ3Components = (decision.auditTrail?.judgeContribs ?? [])
       .filter((c: any) => c.judge === 'J3' && c.side === 'BULL')
@@ -466,6 +519,8 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
       maeR,
       lossReason,
       j3Components: tradesJ3Components,
+      gateIsCompressed,
+      gateIsBreakout,
     });
 
     tradesToday++;
