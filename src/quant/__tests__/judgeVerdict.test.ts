@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { evaluateSignal } from '../ruleEngine';
 import { NumericOHLC } from '../../vision/pipeline';
 
@@ -89,6 +89,18 @@ function generateSeries(type: 'uptrend' | 'downtrend' | 'sideways' | 'explosive'
 }
 
 describe('Judge Verdict', () => {
+  beforeEach(() => {
+    let seed = 12345;
+    vi.spyOn(Math, 'random').mockImplementation(() => {
+      seed = (seed * 1664525 + 1013904223) % 4294967296;
+      return seed / 4294967296;
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('1. Strong uptrend synthetic series', () => {
     const series = generateSeries('uptrend', 150);
     console.log("LAST 5 CANDLES IN UPTREND TEST:", JSON.stringify(series.slice(-5), null, 2));
