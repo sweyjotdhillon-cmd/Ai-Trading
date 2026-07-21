@@ -29,6 +29,11 @@ export default defineConfig({
       },
     },
   },
+  preview: {
+    host: true,
+    port: process.env.PORT ? parseInt(process.env.PORT, 10) : 4173,
+    allowedHosts: true,
+  },
   define: {
     'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development'),
     'import.meta.env.VITE_BUILD_STAMP': JSON.stringify(new Date().toLocaleString('en-US', {
