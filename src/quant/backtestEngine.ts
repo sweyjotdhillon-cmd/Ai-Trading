@@ -355,7 +355,7 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
     log(`[ENTER] ${entryTimeStr} | Price: ₹${entry.toFixed(2)} | Qty: ${positionSize} | SL: ₹${sl.toFixed(2)} | TP2: ₹${tp2.toFixed(2)} | Risk/Share: ₹${riskPerShare.toFixed(2)}`);
 
     let tp1Hit = false;
-    let tp1Qty = Math.floor(positionSize / 2);
+    let tp1Qty = config.scalpConfig.useFixedRR ? 0 : Math.floor(positionSize / 2);
     let remainderQty = positionSize - tp1Qty;
     let tp1ExitPrice = 0;
     let currentStop = sl;
@@ -380,9 +380,9 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
       runningMaxHigh = Math.max(runningMaxHigh, c.high);
       runningMinLow = Math.min(runningMinLow, c.low);
 
-      // TP1 check (only before it's been booked)
+      // TP1 check (only before it's been booked) - skipped entirely in fixed-R:R mode
       const candleHigh = c.high;
-      if (!tp1Hit && candleHigh >= tp1) {
+      if (!config.scalpConfig.useFixedRR && !tp1Hit && candleHigh >= tp1) {
         log('[TP1_CHECK] hit at candle ' + k);
         tp1Hit = true;
         tp1ExitPrice = tp1;
