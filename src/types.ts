@@ -272,6 +272,7 @@ export interface ScalpConfig {
   atrMultiplierSL: number;      // default 1.2
   slPercent: number;            // default 0.4
   tpMode: TPMode;               // default 'PARTIAL_RR'
+  useFixedRR?: boolean;         // when true, disables partial TP1 booking; single target at rrRatio, no breakeven step
   rrRatio: number;              // default 2.0
   tp1RMultiple: number;         // default 1.0
   trailMultiplier: number;      // default 1.5
