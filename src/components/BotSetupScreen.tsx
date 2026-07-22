@@ -265,15 +265,6 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
         } catch (e) {
           console.error('[BotSetupScreen] Failed to init balance:', e);
         }
-      } else if (active) {
-          // Fallback to local storage for anonymous usage
-          try {
-            const cached = localStorage.getItem('user_virtual_balance');
-            const bal = cached ? parseFloat(cached) : 100000;
-            setVirtualBalance(bal);
-            setCapitalInput(String(Math.floor(bal)));
-            setInvestmentPerTrade(prev => Math.max(500, Math.min(prev, Math.floor(bal))));
-          } catch (e) {}
       }
       if (active) {
         setLoadingBalance(false);

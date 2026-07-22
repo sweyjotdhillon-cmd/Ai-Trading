@@ -302,7 +302,7 @@ function App() {
       <View style={styles.main}>
         <LayoutGroup>
           <AnimatePresence mode="wait">
-            {false ? (
+            {!user ? (
               <motion.div
                 key="login"
                 layout
@@ -446,7 +446,7 @@ function App() {
       </View>
 
       {/* Persistent Beautiful Responsive Bottom Tab Bar */}
-      {heroDismissed && (
+      {user && heroDismissed && (
         <View style={styles.bottomBar}>
           <Pressable 
             style={[styles.bottomBarItem]} 

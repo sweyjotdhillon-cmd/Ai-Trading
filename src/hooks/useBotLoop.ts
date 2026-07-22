@@ -357,23 +357,19 @@ export function useBotLoop(
     // 3. Update session stats locally first (and write stats async)
     setSessionStats(prev => {
       const next = updateStats(prev, closed);
-      const todayPnL = [closed, ...tradeHistoryRef.current]
-        .filter(t => {
-          const effTime = t.closedAt ?? t.openedAt;
-          const tDate = new Date(effTime + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
-          const today = new Date(Date.now()  + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
-          return tDate === today;
-        })
-        .reduce((sum, t) => sum + (t.netPnL ?? t.realizedPnL ?? 0), 0);
-
       if (uidRef.current) {
+        const todayPnL = [closed, ...tradeHistoryRef.current]
+          .filter(t => {
+            const effTime = t.closedAt ?? t.openedAt;
+            const tDate = new Date(effTime + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
+            const today = new Date(Date.now()  + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
+            return tDate === today;
+          })
+          .reduce((sum, t) => sum + (t.netPnL ?? t.realizedPnL ?? 0), 0);
+
          writeStats_Update(uidRef.current, next, todayPnL).catch(e =>
           console.error('[BotLoop] writeStats_Update fail:', e)
         );
-      } else {
-         try {
-           localStorage.setItem('chartlens_local_stats', JSON.stringify({ stats: next, dailyPnL: todayPnL }));
-         } catch(e) {}
       }
       return next;
     });
@@ -393,20 +389,6 @@ export function useBotLoop(
         .catch(err => {
           console.error('[BotLoop] Background writeTrade_Close fail:', err);
         });
-    } else {
-      try {
-        const trStr = localStorage.getItem('chartlens_local_trades') || '[]';
-        const trs = JSON.parse(trStr);
-        // Find existing trade and close it
-        const idx = trs.findIndex((t: any) => t.id === closed.id);
-        if (idx !== -1) {
-          trs[idx] = { ...closed, exitPrice, netPnL, chargesActual, closedAt: Date.now() };
-        } else {
-          trs.push({ ...closed, exitPrice, netPnL, chargesActual, closedAt: Date.now() });
-        }
-        localStorage.setItem('chartlens_local_trades', JSON.stringify(trs));
-        localStorage.setItem('user_virtual_balance', String(newBalance));
-      } catch(e) {}
     }
 
   }, [activeConfig, symbol]);
@@ -580,14 +562,6 @@ export function useBotLoop(
       setVirtualBalanceValue(uidRef.current, newBal).catch(err =>
         console.error('[BotLoop] Failed to decrease virtual balance on manual open:', err)
       );
-    } else {
-      try {
-        const trStr = localStorage.getItem('chartlens_local_trades') || '[]';
-        const trs = JSON.parse(trStr);
-        trs.push(trade);
-        localStorage.setItem('chartlens_local_trades', JSON.stringify(trs));
-        localStorage.setItem('user_virtual_balance', String(newBal));
-      } catch(e) {}
     }
   }, [symbol, feed.currentPrice, feed.ohlcvBuffer, activeConfig]);
 
@@ -886,14 +860,6 @@ export function useBotLoop(
         setVirtualBalanceValue(uidRef.current, newBal).catch(err =>
           console.error('[BotLoop] Failed to decrease virtual balance on auto open:', err)
         );
-      } else {
-        try {
-          const trStr = localStorage.getItem('chartlens_local_trades') || '[]';
-          const trs = JSON.parse(trStr);
-          trs.push(trade);
-          localStorage.setItem('chartlens_local_trades', JSON.stringify(trs));
-          localStorage.setItem('user_virtual_balance', String(newBal));
-        } catch(e) {}
       }
 
     } catch (err: any) {

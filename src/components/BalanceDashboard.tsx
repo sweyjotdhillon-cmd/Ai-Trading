@@ -181,21 +181,6 @@ export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) 
       if (user?.uid) {
         fetchAllData(user.uid);
       } else {
-        // Fallback to local storage for anonymous usage
-        try {
-          const statsStr = localStorage.getItem('chartlens_local_stats');
-          const tradesStr = localStorage.getItem('chartlens_local_trades');
-          if (statsStr) {
-            const { stats, dailyPnL } = JSON.parse(statsStr);
-            setStats(stats);
-            setTodayPnl(dailyPnL);
-          }
-          if (tradesStr) {
-            const trs = JSON.parse(tradesStr);
-            trs.sort((a: any, b: any) => b.openedAt - a.openedAt);
-            setAllTrades(trs);
-          }
-        } catch(e) {}
         setLoading(false);
       }
     });
@@ -205,21 +190,6 @@ export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) 
   const handleManualRefresh = () => {
     if (uid) {
       fetchAllData(uid);
-    } else {
-      try {
-        const statsStr = localStorage.getItem('chartlens_local_stats');
-        const tradesStr = localStorage.getItem('chartlens_local_trades');
-        if (statsStr) {
-          const { stats, dailyPnL } = JSON.parse(statsStr);
-          setStats(stats);
-          setTodayPnl(dailyPnL);
-        }
-        if (tradesStr) {
-          const trs = JSON.parse(tradesStr);
-          trs.sort((a: any, b: any) => b.openedAt - a.openedAt);
-          setAllTrades(trs);
-        }
-      } catch(e) {}
     }
     if (onRefreshTriggered) {
       onRefreshTriggered();
