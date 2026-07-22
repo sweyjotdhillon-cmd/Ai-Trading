@@ -390,6 +390,16 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
         log(`  -> TP1 HIT at ${tp1.toFixed(2)} (Candle High: ${c.high.toFixed(2)}) | Booked ${tp1Qty} shares | Stop moved to breakeven ${breakEvenPrice.toFixed(2)} for remaining ${remainderQty}`);
       }
 
+      // Trailing stop after TP1 (replaces flat breakeven if enabled) - ratchets the
+      // stop up behind the running high, never down, never below the breakeven floor.
+      if (config.scalpConfig.useTrailAfterTP1 && tp1Hit) {
+        const trailDistanceR = config.scalpConfig.trailDistanceR ?? 0.0;
+        const trailStop = runningMaxHigh - riskPerShare * trailDistanceR;
+        if (trailStop > currentStop) {
+          currentStop = trailStop;
+        }
+      }
+
       // Pessimistic: current stop (original SL, or breakeven once TP1 booked) checked second
       if (c.low <= currentStop) {
         outcome = tp1Hit ? 'BREAK_EVEN' : 'SL_HIT';
@@ -430,6 +440,10 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
     }
 
     const exitCandle = candles[exitIdx];
+    if (config.scalpConfig.useTrailAfterTP1 && tp1Hit) {
+      log(`[TRAIL] Final trail stop: ${currentStop.toFixed(2)} | Running high: ${runningMaxHigh.toFixed(2)} | Breakeven would have been: ${breakEvenPrice.toFixed(2)} | Outcome: ${outcome}`);
+    }
+
     const mfeR = riskPerShare > 0 ? (runningMaxHigh - entry) / riskPerShare : 0;
     const maeR = riskPerShare > 0 ? (entry - runningMinLow) / riskPerShare : 0;
 
