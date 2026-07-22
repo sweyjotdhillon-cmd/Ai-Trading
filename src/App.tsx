@@ -302,151 +302,41 @@ function App() {
       <View style={styles.main}>
         <LayoutGroup>
           <AnimatePresence mode="wait">
-            {!user ? (
-              <motion.div
-                key="login"
-                layout
-                initial={{ opacity: 0, scale: 0.96 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.96 }}
-                transition={transitionProps}
-                style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, flexGrow: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}
-              >
-                <div className="w-full max-w-lg bg-[#0E1014] border border-[#D9B382] border-opacity-20 rounded-2xl p-8 shadow-2xl relative overflow-hidden flex flex-col items-center">
-                  {/* Glowing background bubble */}
-                  <div className="absolute top-0 left-1/4 w-52 h-52 bg-[#D9B382] bg-opacity-[0.02] rounded-full blur-3xl pointer-events-none" />
-                  
-                  <div className="w-14 h-14 rounded-2xl bg-[#D9B382] bg-opacity-10 items-center justify-center flex mb-5 border border-[#D9B382] border-opacity-25">
-                    <Activity color="#D9B382" size={26} />
-                  </div>
-
-                  <h2 className="text-lg font-black text-white tracking-widest text-center uppercase mb-1">
-                    CHARTLENS PRO TERMINAL
-                  </h2>
-                  <p className="text-[#D9B382] text-[10px] font-mono tracking-widest uppercase mb-5">
-                    Live Session Verification Required
-                  </p>
-
-                  <div className="bg-[#14161C] border border-white border-opacity-[0.03] rounded-xl p-4 w-full mb-6">
-                     <p className="text-zinc-400 text-xs leading-relaxed text-center">
-                       To unlock the Pro Scalp Copilot, live signal debate terminal, and autonomous trading loops, a verified Google session is required. All trade logs, configuration parameters, and daily P&L metrics will be securely stored in the Firebase cloud ledger.
-                     </p>
-                  </div>
-
-                  {/* Bullet Benefits */}
-                  <div className="w-full space-y-3.5 mb-7">
-                    <div className="flex items-start gap-3">
-                      <span className="text-[#D9B382] text-xs pt-0.5">📊</span>
-                      <div className="flex-1">
-                        <p className="text-white text-xs font-black uppercase tracking-wider">Cloud Ledger Storage</p>
-                        <p className="text-zinc-500 text-[11px] leading-normal">Your daily performance stats, backtests, and active sessions survive tab closures and local refreshes.</p>
-                      </div>
-                    </div>
-                    <div className="flex items-start gap-4">
-                      <span className="text-[#D9B382] text-xs pt-0.5">⚡</span>
-                      <div className="flex-1">
-                        <p className="text-white text-xs font-black uppercase tracking-wider">Autonomous Bot Integration</p>
-                        <p className="text-zinc-500 text-[11px] leading-normal">Tethers your custom risk caps, timeframe periods, and selected scalp techniques with secure live Firebase Auth records.</p>
-                      </div>
-                    </div>
-                    <div className="flex items-start gap-4">
-                      <span className="text-[#D9B382] text-xs pt-0.5">🔒</span>
-                      <div className="flex-1">
-                        <p className="text-white text-xs font-black uppercase tracking-wider">Safe Environment</p>
-                        <p className="text-zinc-500 text-[11px] leading-normal">Ensures secure diagnostic autopsy logs and prevents trade leaks or cross-profile interference.</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {authError && (
-                    <div className="w-full bg-red-950/20 border border-red-500/30 p-3 rounded-xl mb-4">
-                      <p className="text-red-400 text-xs text-center font-medium leading-normal">{authError}</p>
-                    </div>
-                  )}
-
-                  <Pressable
-                    onPress={handleSignIn}
-                    disabled={signingIn}
-                    style={({ pressed }) => [
-                      {
-                        backgroundColor: '#D9B382',
-                        paddingVertical: 14,
-                        paddingHorizontal: 20,
-                        borderRadius: 12,
-                        width: '100%',
-                        flexDirection: 'row',
-                        justifyContent: 'center',
-                        alignItems: 'center',
-                        opacity: (pressed || signingIn) ? 0.75 : 1,
-                      }
-                    ]}
-                  >
-                    {signingIn ? (
-                      <motion.div
-                        animate={{ rotate: 360 }}
-                        transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
-                        style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
-                      >
-                        <RefreshCw color="#1A1308" size={16} />
-                      </motion.div>
-                    ) : (
-                      <LogIn color="#1A1308" size={16} />
-                    )}
-                    <span className="text-[#1A1308] font-black text-sm tracking-widest pl-2 uppercase">
-                      {signingIn ? 'CONNECTING...' : 'CONTINUE WITH GOOGLE'}
-                    </span>
-                  </Pressable>
-                </div>
-              </motion.div>
-            ) : !heroDismissed ? (
-              <motion.div
-                key="hero"
-                layout
-                initial={{ opacity: 0, y: prefersReducedMotion ? 0 : 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: prefersReducedMotion ? 0 : -12, filter: prefersReducedMotion ? 'none' : 'blur(4px)' }}
-                transition={transitionProps}
-                style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, flexGrow: 1 }}
-              >
-                <HeroIntro onLaunch={handleLaunch} />
-              </motion.div>
-            ) : (
-              <motion.div
-                key={activeTab === 'bot' ? (botPayload ? 'dashboard' : 'setup') : activeTab === 'backtest' ? 'backtest' : 'balance'}
-                layout
-                initial={{ opacity: 0, y: prefersReducedMotion ? 0 : 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: prefersReducedMotion ? 0 : -12 }}
-                transition={transitionProps}
-                style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, flexGrow: 1, overflow: 'hidden' }}
-              >
-                <TerminalErrorBoundary>
-                  {activeTab === 'bot' ? (
-                    botPayload ? (
-                      <BotDashboard
-                        bot={bot}
-                        capital={botPayload.capital}
-                        symbol={botPayload.symbol}
-                        onStop={handleStopBot}
-                        onPause={() => bot.pauseBot()}
-                      />
-                    ) : (
-                      <BotSetupScreen onStart={(payload) => setBotPayload(payload)} />
-                    )
-                  ) : activeTab === 'backtest' ? (
-                    <BacktestScreen />
+            <motion.div
+              key={activeTab === 'bot' ? (botPayload ? 'dashboard' : 'setup') : activeTab === 'backtest' ? 'backtest' : 'balance'}
+              layout
+              initial={{ opacity: 0, y: prefersReducedMotion ? 0 : 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: prefersReducedMotion ? 0 : -12 }}
+              transition={transitionProps}
+              style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, flexGrow: 1, overflow: 'hidden' }}
+            >
+              <TerminalErrorBoundary>
+                {activeTab === 'bot' ? (
+                  botPayload ? (
+                    <BotDashboard
+                      bot={bot}
+                      capital={botPayload.capital}
+                      symbol={botPayload.symbol}
+                      onStop={handleStopBot}
+                      onPause={() => bot.pauseBot()}
+                    />
                   ) : (
-                    <BalanceDashboard />
-                  )}
-                </TerminalErrorBoundary>
-              </motion.div>
-            )}
+                    <BotSetupScreen onStart={(payload) => setBotPayload(payload)} />
+                  )
+                ) : activeTab === 'backtest' ? (
+                  <BacktestScreen />
+                ) : (
+                  <BalanceDashboard />
+                )}
+              </TerminalErrorBoundary>
+            </motion.div>
           </AnimatePresence>
         </LayoutGroup>
       </View>
 
       {/* Persistent Beautiful Responsive Bottom Tab Bar */}
-      {user && heroDismissed && (
+      {(
         <View style={styles.bottomBar}>
           <Pressable 
             style={[styles.bottomBarItem]} 

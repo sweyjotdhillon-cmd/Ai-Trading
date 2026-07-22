@@ -44,7 +44,7 @@ export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) 
   const [selectedRange, setSelectedRange] = useState<string>('TODAY');
   const [loading, setLoading] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [uid, setUid] = useState<string | null>(auth.currentUser?.uid ?? null);
+  const [uid, setUid] = useState<string | null>(auth.currentUser?.uid ?? 'local_user');
 
   const [syncError, setSyncError] = useState<string | null>(null);
   
@@ -177,12 +177,8 @@ export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) 
 
   useEffect(() => {
     const unsub = auth.onAuthStateChanged(user => {
-      setUid(user?.uid ?? null);
-      if (user?.uid) {
-        fetchAllData(user.uid);
-      } else {
-        setLoading(false);
-      }
+      setUid(user?.uid ?? 'local_user');
+      fetchAllData(user?.uid ?? 'local_user');
     });
     return () => unsub();
   }, []);

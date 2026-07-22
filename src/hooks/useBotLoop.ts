@@ -225,8 +225,8 @@ export function useBotLoop(
   const [isInTrade, setIsInTrade] = useState<boolean>(false);
   const isInTradeRef = useRef<boolean>(false);
 
-  const [userId, setUserId] = useState<string | null>(auth.currentUser?.uid ?? null);
-  const uidRef = useRef<string | null>(auth.currentUser?.uid ?? null);
+  const [userId, setUserId] = useState<string | null>(auth.currentUser?.uid ?? 'local_user');
+  const uidRef = useRef<string | null>(auth.currentUser?.uid ?? 'local_user');
   const hasHydratedRef = useRef<boolean>(false);
 
   // Release wake lock on unmount
@@ -239,8 +239,8 @@ export function useBotLoop(
   // Keep uid in sync with Firebase Auth state
   useEffect(() => {
     const unsub = auth.onAuthStateChanged(user => {
-      setUserId(user?.uid ?? null);
-      uidRef.current = user?.uid ?? null;
+      setUserId(user?.uid ?? 'local_user');
+      uidRef.current = user?.uid ?? 'local_user';
     });
     return () => unsub();
   }, []);
