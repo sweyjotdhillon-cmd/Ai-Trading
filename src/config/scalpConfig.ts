@@ -16,7 +16,7 @@ export function getDefaultScalpConfig(): ScalpConfig {
     atrMultiplierSL: 1.2,
     slPercent: 0.4,
     tpMode: 'PARTIAL_RR',
-    useFixedRR: true,
+    useFixedRR: false,
     useTrailAfterTP1: true,
     trailDistanceR: 0.0,
     rrRatio: 2.5,

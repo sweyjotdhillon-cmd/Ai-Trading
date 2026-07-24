@@ -7,3 +7,6 @@ dist/
 !.dev.vars.example
 .env*
 !.env.example
+backtest_output_stdout.txt
+backtest_output.txt
+analysis/

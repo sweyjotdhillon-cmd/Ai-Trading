@@ -117,9 +117,9 @@ async function runAll() {
     output += res.logs.join('\n') + '\n\n';
   }
 
-  fs.mkdirSync('/home/user/analysis', { recursive: true });
-  fs.writeFileSync('/home/user/analysis/backtest_log.txt', output);
-  console.log("Backtest logs written to /home/user/analysis/backtest_log.txt successfully!");
+  fs.mkdirSync('./analysis', { recursive: true });
+  fs.writeFileSync('./analysis/backtest_log.txt', output);
+  console.log("Backtest logs written to ./analysis/backtest_log.txt successfully!");
 }
 
 runAll().catch(err => {
