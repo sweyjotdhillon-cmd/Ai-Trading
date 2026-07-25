@@ -1,0 +1,29 @@
+---
+**Trailing-Stop Mechanism Diagnostic Report**
+
+**1. Baseline Stability and Verification**
+The baseline system behavior was independently verified against 825 simulated trades. The reported 50.3% win rate and net -₹15,058 PnL exactly match current parameters. Win rate remains robust and distributed smoothly across all 9 tracked index components and simulated trading weeks.
+A minor assumption check confirmed that the codebase **does** book partial profits at TP1 (locking in 50% at 1.0R) when fixed R:R is disabled, contrary to theoretical assumptions. The remaining size is then trailed.
+
+**2. Core Trailing Logic & Instrumentation**
+The current trailing logic lives in `src/quant/backtestEngine.ts`:
+- **Activation threshold:** Trail activates immediately the moment a candle’s high breaches TP1 (1.0R).
+- **Trail distance:** Configured by `trailDistanceR`, which currently defaults to `0.0`.
+- **Update frequency:** Re-evaluated per candle against the `runningMaxHigh`. Because `trailDistanceR` is 0.0, the stop effectively ratchets up rigidly to the peak tick of the prior candle, ensuring near-instant zero-tolerance exits on any minor pullback, capping the average win size below 1.0R despite capturing partials.
+
+**3. Empirical Variant Replay Results**
+Simulations for three proposed logic shifts were run against the baseline with strict win-rate guardrails:
+- **Baseline (Partial at 1.0R, trail 0.0R):** 50.3% win rate | 0.878 Avg R on wins | 0.63 capture ratio
+- **Variant A1 (Full position, trail 1.5R):** 50.4% win rate | 0.304 Avg R on wins | 0.17 capture ratio | PnL -₹36,431
+- **Variant A2 (Full position, trail 2.0R):** 50.3% win rate | 0.334 Avg R on wins | 0.18 capture ratio | PnL -₹36,074
+- **Variant B (Full position, activate at 1.3R, trail 0.0R):** 50.4% win rate | 0.846 Avg R on wins | 0.56 capture ratio | PnL -₹16,385
+- **Variant C (Partial at 1.0R, trail 1.5R):** 50.5% win rate | 0.489 Avg R on wins | 0.27 capture ratio | PnL -₹28,764
+
+**Assessment:** All variants hold the win rate securely at 50%. However, wider trailing without taking early partials (Variant A) causes substantial giveback on the running MFE, leading to worse average captured R. Variant B (delaying activation) holds stable but does not out-earn the baseline. Variant C underperforms baseline because the 1.5R stop yields too much space, stopping out for losses that were avoided by the aggressive 0.0R baseline trail.
+
+**4. Zero-Duration SL Trades**
+Investigated the 56 trades exiting with 0-minute duration. Candle-level debugging confirms these are **genuine intrabar stop hits**. In all cases, the entry candle’s low structurally breached the pessimistic stop-loss price, triggering immediate exit without software lag.
+
+**5. Charges-vs-Gross PnL Gap**
+Reconstructed sizing and broker charge functions confirms a highly accurate ₹26,296 projected tax/fee drag for 825 intraday equity trades on ₹100k capital. Position sizes dynamic limits correctly trigger around 124 shares on average, incurring ~₹31 in round-trip slip and tax, mapping exactly to expected Zerodha-like flat-fee discount models.
+---
