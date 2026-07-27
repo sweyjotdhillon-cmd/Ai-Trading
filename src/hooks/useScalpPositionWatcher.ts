@@ -49,9 +49,11 @@ export function useScalpPositionWatcher(
 
     // Trailing shift after TP1
     if (tp1Hit) {
-      const newTrail = currentPrice - plan.trailingDistance;
-      if (newTrail > trailSL) {
-        setTrailSL(newTrail);
+      if (currentPrice >= plan.trailingActivate) {
+        const newTrail = currentPrice - plan.trailingDistance;
+        if (newTrail > trailSL) {
+          setTrailSL(newTrail);
+        }
       }
     }
 
