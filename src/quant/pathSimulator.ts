@@ -81,12 +81,10 @@ export function simulateScalpTrade(
 
     // Trail after TP1
     if (tp1Hit && config.tpMode === 'PARTIAL_RR') {
-      if (c.high >= plan.trailingActivate) {
-        const newTrail = c.high - plan.trailingDistance;
-        if (newTrail > currentSL) {
-          currentSL = newTrail;
-          events.push({ barIndex: i, price: c.high, event: 'TRAIL_UPDATE', newSL: currentSL });
-        }
+      const newTrail = c.high - plan.trailingDistance;
+      if (newTrail > currentSL) {
+        currentSL = newTrail;
+        events.push({ barIndex: i, price: c.high, event: 'TRAIL_UPDATE', newSL: currentSL });
       }
     }
 

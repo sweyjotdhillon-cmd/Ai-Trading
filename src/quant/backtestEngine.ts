@@ -393,13 +393,10 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
       // Trailing stop after TP1 (replaces flat breakeven if enabled) - ratchets the
       // stop up behind the running high, never down, never below the breakeven floor.
       if (config.scalpConfig.useTrailAfterTP1 && tp1Hit) {
-        const trailActivationPrice = entry + riskPerShare * 1.3;
-        if (runningMaxHigh >= trailActivationPrice) {
-          const trailDistanceR = 0.75; // Widened from 0.5R effective
-          const trailStop = runningMaxHigh - riskPerShare * trailDistanceR;
-          if (trailStop > currentStop) {
-            currentStop = trailStop;
-          }
+        const trailDistanceR = 0.25; // D1: 0.5x of original 0.5R effective
+        const trailStop = runningMaxHigh - riskPerShare * trailDistanceR;
+        if (trailStop > currentStop) {
+          currentStop = trailStop;
         }
       }
 
