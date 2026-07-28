@@ -140,9 +140,11 @@ describe('pathSimulator', () => {
     ];
     const res = simulateScalpTrade(oddPlan, candles, defaultConfig, dummyCharges);
     // position size = 1. Math.floor(1 / 2) = 0. So no shares are partially booked at TP1.
-    // The trailing SL trails to high 102 - trailingDistance 1.5 = 100.5. Hits on the next candle!
+    // Trail activates AFTER TP1 candle, trailingDistance 1.5. But TP1 is 101.
+    // Candle 1: H=102, TP1 hit. No trailing SL set yet (happens after). SL shifts to BE (100).
+    // Candle 2: H=102, L=99.2. SL (100) is hit!
     expect(res.outcome).toBe('TRAIL_HIT');
-    expect(res.realizedPnLGross).toBe(0.5);
+    expect(res.realizedPnLGross).toBe(0); // Exited at BE = 100 -> 0 PnL
   });
 
   it('runs out immediately with 0 P&L if empty candles array is passed (Case 8)', () => {

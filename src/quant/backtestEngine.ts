@@ -396,9 +396,11 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
 
       // TP1 check (only before it's been booked) - skipped entirely in fixed-R:R mode
       const candleHigh = c.high;
+      let tp1HitThisCandle = false;
       if (!config.scalpConfig.useFixedRR && !tp1Hit && candleHigh >= tp1) {
         log('[TP1_CHECK] hit at candle ' + k);
         tp1Hit = true;
+        tp1HitThisCandle = true;
         tp1ExitPrice = tp1;
         currentStop = breakEvenPrice;
         log(`  -> TP1 HIT at ${tp1.toFixed(2)} (Candle High: ${c.high.toFixed(2)}) | Booked ${tp1Qty} shares | Stop moved to breakeven ${breakEvenPrice.toFixed(2)} for remaining ${remainderQty}`);
@@ -414,8 +416,8 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
 
       // Trailing stop AFTER TP1 (replaces flat breakeven if enabled) - ratchets the stop up
       // behind the running high for use starting the NEXT candle.
-      if (config.scalpConfig.useTrailAfterTP1 && tp1Hit) {
-        const trailDistanceR = 0.25; // Variant D1 (0.5x of original 0.5R)
+      if (config.scalpConfig.useTrailAfterTP1 && tp1Hit && !tp1HitThisCandle) {
+        const trailDistanceR = config.scalpConfig.trailDistanceR ?? 0.25;
         const trailStop = runningMaxHigh - riskPerShare * trailDistanceR;
         if (trailStop > currentStop) {
           currentStop = trailStop;
