@@ -377,8 +377,28 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
 
       const cTimeStr = new Date(c.timestamp ?? 0).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' });
       log(`  -> [${cTimeStr}] Tick: H=${c.high.toFixed(2)} L=${c.low.toFixed(2)} C=${c.close.toFixed(2)}`);
-      runningMaxHigh = Math.max(runningMaxHigh, c.high);
-      runningMinLow = Math.min(runningMinLow, c.low);
+
+      // Stop check uses currentStop as it stood BEFORE this candle (based only on fully
+      // closed prior candles). We never fold this candle's own high into the stop before
+      // checking this candle's own low — OHLC data can't tell us which happened first
+      // inside the candle, so the conservative assumption is required to avoid look-ahead bias.
+      if (c.low <= currentStop) {
+        outcome = tp1Hit ? 'BREAK_EVEN' : 'SL_HIT';
+        exitPrice = currentStop;
+        exitIdx = k;
+        log(tp1Hit
+          ? `  -> BREAKEVEN/TRAIL STOP HIT at ${currentStop.toFixed(2)} on remainder (Candle Low: ${c.low.toFixed(2)})`
+          : `  -> SL HIT at ${currentStop.toFixed(2)} (Candle Low: ${c.low.toFixed(2)})`);
+        break;
+      }
+
+      if (c.high >= tp2) {
+        outcome = 'TP2_HIT';
+        exitPrice = tp2;
+        exitIdx = k;
+        log(`  -> TP2 HIT at ${tp2.toFixed(2)} (Candle High: ${c.high.toFixed(2)})`);
+        break;
+      }
 
       // TP1 check (only before it's been booked) - skipped entirely in fixed-R:R mode
       const candleHigh = c.high;
@@ -390,36 +410,22 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
         log(`  -> TP1 HIT at ${tp1.toFixed(2)} (Candle High: ${c.high.toFixed(2)}) | Booked ${tp1Qty} shares | Stop moved to breakeven ${breakEvenPrice.toFixed(2)} for remaining ${remainderQty}`);
       }
 
+      // Running high/low updated AFTER this candle's own stop/TP2 checks, so the trailing
+      // stop below only ever uses fully-closed-candle information starting the NEXT candle.
+      runningMaxHigh = Math.max(runningMaxHigh, c.high);
+      runningMinLow = Math.min(runningMinLow, c.low);
+
       // Trailing stop after TP1 (replaces flat breakeven if enabled) - ratchets the
       // stop up behind the running high, never down, never below the breakeven floor.
       if (config.scalpConfig.useTrailAfterTP1 && tp1Hit) {
         const trailActivationPrice = entry + riskPerShare * 1.3;
         if (runningMaxHigh >= trailActivationPrice) {
-          const trailDistanceR = 0.75; // Widened from 0.5R effective
+          const trailDistanceR = config.scalpConfig.trailDistanceR ?? 0.5;
           const trailStop = runningMaxHigh - riskPerShare * trailDistanceR;
           if (trailStop > currentStop) {
             currentStop = trailStop;
           }
         }
-      }
-
-      // Pessimistic: current stop (original SL, or breakeven once TP1 booked) checked second
-      if (c.low <= currentStop) {
-        outcome = tp1Hit ? 'BREAK_EVEN' : 'SL_HIT';
-        exitPrice = currentStop;
-        exitIdx = k;
-        log(tp1Hit
-          ? `  -> BREAKEVEN STOP HIT at ${currentStop.toFixed(2)} on remainder (Candle Low: ${c.low.toFixed(2)})`
-          : `  -> SL HIT at ${currentStop.toFixed(2)} (Candle Low: ${c.low.toFixed(2)})`);
-        break;
-      }
-
-      if (c.high >= tp2) {
-        outcome = 'TP2_HIT';
-        exitPrice = tp2;
-        exitIdx = k;
-        log(`  -> TP2 HIT at ${tp2.toFixed(2)} (Candle High: ${c.high.toFixed(2)})`);
-        break;
       }
 
       const next = candles[k + 1];
