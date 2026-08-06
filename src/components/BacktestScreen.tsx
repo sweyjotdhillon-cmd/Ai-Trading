@@ -233,6 +233,9 @@ export function BacktestScreen() {
           compositeSeries.set(Number(ts), avg > FLAT_THRESHOLD ? 'UP' : avg < -FLAT_THRESHOLD ? 'DOWN' : 'FLAT');
         }
 
+        allLogs.push(`[BUILD_VERSION] buildStamp=${import.meta.env.VITE_BUILD_STAMP ?? 'UNKNOWN'} useFixedRR=true useTrailAfterTP1=false rrRatio=2.5`);
+        allLogs.push('');
+
         for (const stock of POPULAR_STOCKS) {
           setStatusMessage(`Loading history for ${stock.symbol}...`);
           // Let the UI repaint the status message before continuing
@@ -245,12 +248,17 @@ export function BacktestScreen() {
           // Let UI update
           await new Promise(resolve => setTimeout(resolve, 50));
 
+          const scalpConfig = getDefaultScalpConfig();
+          scalpConfig.useFixedRR = true;
+          scalpConfig.useTrailAfterTP1 = false;
+          scalpConfig.rrRatio = 2.5;
+
           const config: BacktestConfig = {
             symbol: stock.symbol,
             marginThreshold: MARGIN_THRESHOLD,
             maxTradesPerDay: MAX_TRADES_PER_DAY,
             warmupCandles: WARMUP_CANDLES,
-            scalpConfig: getDefaultScalpConfig(),
+            scalpConfig,
             techniquesList: techniquesList,
             exitMode,
             fixedRRRatio: parseFloat(fixedRRRatio) || 2.0,
@@ -353,12 +361,17 @@ export function BacktestScreen() {
       await new Promise(resolve => setTimeout(resolve, 50));
 
       try {
+        const scalpConfig = getDefaultScalpConfig();
+        scalpConfig.useFixedRR = true;
+        scalpConfig.useTrailAfterTP1 = false;
+        scalpConfig.rrRatio = 2.5;
+
         const config: BacktestConfig = {
           symbol: selectedStock.symbol,
           marginThreshold: MARGIN_THRESHOLD,
           maxTradesPerDay: MAX_TRADES_PER_DAY,
           warmupCandles: WARMUP_CANDLES,
-          scalpConfig: getDefaultScalpConfig(),
+          scalpConfig,
           techniquesList: techniquesList,
           exitMode,
           fixedRRRatio: parseFloat(fixedRRRatio) || 2.0,
