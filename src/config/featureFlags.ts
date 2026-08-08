@@ -15,6 +15,7 @@ export const featureFlags = {
   ENABLE_MARKET_HOURS_GATE: true,     // market hours gate enabled
   ENABLE_BROKER_CHARGES_NET: true,    // net-of-charges P&L enabled
   enableATRCompressionBreakoutGate: false, // ATR Compression Breakout gate
+  ENABLE_J2_GATE: true,               // J2 Range gateway
 };
 
 export type FeatureFlagKey = keyof typeof featureFlags;

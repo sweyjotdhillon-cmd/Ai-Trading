@@ -35,6 +35,7 @@ export interface BacktestTrade {
   j3Components:      string;
   gateIsCompressed?: boolean;
   gateIsBreakout?:   boolean;
+  j2Range?:          string;
 }
 
 export interface BacktestResult {
