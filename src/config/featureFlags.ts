@@ -14,6 +14,7 @@ export const featureFlags = {
   ENABLE_PREDICTABILITY_GATE: true,   // predictability gate enabled
   ENABLE_MARKET_HOURS_GATE: true,     // market hours gate enabled
   ENABLE_BROKER_CHARGES_NET: true,    // net-of-charges P&L enabled
+  ENABLE_J1_GATE: true,               // J1 Range gateway enabled
   enableATRCompressionBreakoutGate: false, // ATR Compression Breakout gate
 };
 
