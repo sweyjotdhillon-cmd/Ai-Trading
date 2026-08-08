@@ -352,7 +352,7 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
     log(`[SIZING] TargetRisk: ₹${targetRiskRupees.toFixed(0)} | Risk/Share: ₹${riskPerShare.toFixed(2)} | Qty: ${positionSize} | ActualRisk: ₹${actualRiskRupees.toFixed(0)} | NotionalCapQty: ${notionalCappedSize}`);
 
     const entryTimeStr = new Date(entryCandle.timestamp ?? 0).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
-    log(`[ENTER] ${entryTimeStr} | Price: ₹${entry.toFixed(2)} | Qty: ${positionSize} | SL: ₹${sl.toFixed(2)} | TP2: ₹${tp2.toFixed(2)} | Risk/Share: ₹${riskPerShare.toFixed(2)}`);
+    log(`[ENTER] ${entryTimeStr} | Price: ₹${entry.toFixed(2)} | Qty: ${positionSize} | SL: ₹${sl.toFixed(2)} | TP2: ₹${tp2.toFixed(2)} | Risk/Share: ₹${riskPerShare.toFixed(2)} | ATR%ile: ${atrPercentile.toFixed(0)} | TimeBucket: ${entryTimeBucket}`);
 
     let tp1Hit = false;
     let tp1Qty = config.scalpConfig.useFixedRR ? 0 : Math.floor(positionSize / 2);

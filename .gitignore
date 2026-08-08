@@ -10,3 +10,4 @@ dist/
 backtest_output_stdout.txt
 backtest_output.txt
 analysis/
+test_run.log
