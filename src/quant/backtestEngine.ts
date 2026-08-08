@@ -155,22 +155,7 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
       continue;
     }
 
-    let j2Range = 'NONE';
-    if (decision.bullJ2 >= 1.5 && decision.bullJ2 < 2.0) {
-      j2Range = 'J2_1.5_2.0';
-    } else if (decision.bullJ2 >= 2.0 && decision.bullJ2 < 2.5) {
-      j2Range = 'J2_2.0_2.5';
-    } else if (decision.bullJ2 >= 2.5 && decision.bullJ2 < 3.0) {
-      j2Range = 'J2_2.5_3.0';
-    } else if (decision.bullJ2 >= 3.0 && decision.bullJ2 < 3.5) {
-      j2Range = 'J2_3.0_3.5';
-    }
 
-    if (featureFlags.ENABLE_J2_GATE) {
-      const displayRange = j2Range === 'NONE' ? 'NONE' : j2Range.replace('J2_', '').replace('_', '-');
-      log(`[${candleTimeStr}] J2 GATE | J2: ${decision.bullJ2.toFixed(2)} | RANGE: ${displayRange} | ${j2Range !== 'NONE' ? 'PASS' : 'BLOCK'}`);
-      if (j2Range === 'NONE') {
-        log(`[${candleTimeStr}] Signal qualified but BLOCKED by J2 GATE`);
         i++;
         continue;
       }
@@ -565,7 +550,7 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
       j3Components: tradesJ3Components,
       gateIsCompressed,
       gateIsBreakout,
-      j2Range,
+
     });
 
     tradesToday++;
