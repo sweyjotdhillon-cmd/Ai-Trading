@@ -211,6 +211,29 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
       }
     }
 
+    let j3RangeStr = 'NONE';
+    if (featureFlags.ENABLE_J3_GATE) {
+      const j3 = decision.winner === 'BEAR' ? decision.cases.bear.j3 : decision.cases.bull.j3;
+      let gateStatus = 'PASS';
+
+      if (j3 >= 0.5 && j3 < 1.0) {
+        j3RangeStr = 'J3_0.5_1.0';
+        gateStatus = 'BLOCK';
+      } else if (j3 < 0.5) {
+        j3RangeStr = 'J3_BELOW_0.5';
+      } else {
+        j3RangeStr = 'J3_1.0_PLUS';
+      }
+
+      log(`[${candleTimeStr}] J3 GATE | J3: ${j3.toFixed(2)} | RANGE: ${j3RangeStr} | ${gateStatus}`);
+
+      if (gateStatus === 'BLOCK') {
+        log(`[${candleTimeStr}] Signal qualified but BLOCKED by J3 GATE`);
+        i++;
+        continue;
+      }
+    }
+
     const entryCandle = candles[i + 1];
     if (!entryCandle) {
       log(`[${candleTimeStr}] No next candle available for entry. Ending.`);
@@ -602,6 +625,7 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
       gateIsBreakout,
       j1Range: j1RangeStr,
       j2Range: j2RangeStr,
+      j3Range: j3RangeStr,
     });
 
     tradesToday++;
