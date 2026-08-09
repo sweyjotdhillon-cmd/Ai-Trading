@@ -155,7 +155,57 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
       continue;
     }
 
+    let j1RangeStr = 'NONE';
+    if (featureFlags.ENABLE_J1_GATE) {
+      const j1 = decision.winner === 'BEAR' ? decision.bearJ1 : decision.bullJ1;
+      let gateStatus = 'BLOCK';
 
+      if (j1 >= 2.0 && j1 < 2.5) {
+        j1RangeStr = 'J1_2.0_2.5';
+        gateStatus = 'PASS';
+      } else if (j1 >= 2.5 && j1 < 3.0) {
+        j1RangeStr = 'J1_2.5_3.0';
+        gateStatus = 'PASS';
+      } else if (j1 >= 3.0 && j1 < 3.5) {
+        j1RangeStr = 'J1_3.0_3.5';
+        gateStatus = 'PASS';
+      } else if (j1 >= 3.5 && j1 <= 4.0) {
+        j1RangeStr = 'J1_3.5_4.0';
+        gateStatus = 'PASS';
+      }
+
+      log(`[${candleTimeStr}] J1 GATE | J1: ${j1.toFixed(2)} | RANGE: ${j1RangeStr} | ${gateStatus}`);
+
+      if (gateStatus === 'BLOCK') {
+        log(`[${candleTimeStr}] Signal qualified but BLOCKED by J1 GATE`);
+        i++;
+        continue;
+      }
+    }
+
+    let j2RangeStr = 'NONE';
+    if (featureFlags.ENABLE_J2_GATE) {
+      const j2 = decision.winner === 'BEAR' ? decision.bearJ2 : decision.bullJ2;
+      let gateStatus = 'BLOCK';
+
+      if (j2 >= 1.5 && j2 < 2.0) {
+        j2RangeStr = 'J2_1.5_2.0';
+        gateStatus = 'PASS';
+      } else if (j2 >= 2.0 && j2 < 2.5) {
+        j2RangeStr = 'J2_2.0_2.5';
+        gateStatus = 'PASS';
+      } else if (j2 >= 2.5 && j2 < 3.0) {
+        j2RangeStr = 'J2_2.5_3.0';
+        gateStatus = 'PASS';
+      } else if (j2 >= 3.0 && j2 < 3.5) {
+        j2RangeStr = 'J2_3.0_3.5';
+        gateStatus = 'PASS';
+      }
+
+      log(`[${candleTimeStr}] J2 GATE | J2: ${j2.toFixed(2)} | RANGE: ${j2RangeStr} | ${gateStatus}`);
+
+      if (gateStatus === 'BLOCK') {
+        log(`[${candleTimeStr}] Signal qualified but BLOCKED by J2 GATE`);
         i++;
         continue;
       }
@@ -550,7 +600,8 @@ export function runBacktest(candles: OHLCV[], config: BacktestConfig): BacktestR
       j3Components: tradesJ3Components,
       gateIsCompressed,
       gateIsBreakout,
-
+      j1Range: j1RangeStr,
+      j2Range: j2RangeStr,
     });
 
     tradesToday++;
