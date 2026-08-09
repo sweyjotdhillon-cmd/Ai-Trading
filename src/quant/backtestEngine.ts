@@ -717,10 +717,18 @@ export function runPortfolioBacktest(
     availableCash: initialCapital,
     realizedPnL: 0,
     totalInvestedCapital: 0,
-    openPositions: []
+    openPositions: [],
+    sequenceId: 1
   };
 
-  log(`[INIT] Starting Portfolio Backtest | Initial Capital: ₹${initialCapital} | Max Trades/Day: ${config.maxTradesPerDay} | Margin Thresh: ${config.marginThreshold}`);
+  log(`[PORTFOLIO INIT]
+initialCapital: ₹${initialCapital}
+availableCash: ₹${initialCapital}
+realizedPnL: 0
+totalInvestedCapital: 0
+openPositions: 0
+`);
+  log(`[INIT] Starting Portfolio Backtest | Max Trades/Day: ${config.maxTradesPerDay} | Margin Thresh: ${config.marginThreshold}`);
 
   // 1. Collect and sort all unique timestamps across all stocks
   const uniqueTimestamps = new Set<number>();
@@ -861,9 +869,31 @@ export function runPortfolioBacktest(
         const cashReleased = pos.investmentAmount + netPnL;
         const availableCashBefore = state.availableCash;
         state.availableCash += cashReleased;
+        const realizedPnLBefore = state.realizedPnL;
         state.realizedPnL += netPnL;
 
-        log(`[EXIT] [${timeStr}] ${pos.symbol} | Outcome: ${outcome} | PnL: ₹${netPnL.toFixed(2)} | Cash ${availableCashBefore.toFixed(0)} -> ${state.availableCash.toFixed(0)}`);
+        const seq = String((state.sequenceId = (state.sequenceId ?? 0) + 1)).padStart(3, '0');
+        log(`[PORTFOLIO EVENT #${seq}] [PORTFOLIO EXIT]
+timestamp: ${timeStr}
+symbol: ${pos.symbol}
+entryTime: ${new Date(pos.entryTime).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}
+entryPrice: ₹${pos.entryPrice.toFixed(2)}
+exitPrice: ₹${exitPrice.toFixed(2)}
+quantity: ${pos.positionSize}
+originalInvestment: ₹${pos.investmentAmount.toFixed(2)}
+grossPnL: ₹${(netPnL + totalCharges).toFixed(2)}
+charges: ₹${totalCharges.toFixed(2)}
+netPnL: ₹${netPnL.toFixed(2)}
+capitalReleased: ₹${cashReleased.toFixed(2)}
+availableCashBefore: ₹${availableCashBefore.toFixed(2)}
+availableCashAfter: ₹${state.availableCash.toFixed(2)}
+realizedPnLBefore: ₹${realizedPnLBefore.toFixed(2)}
+realizedPnLAfter: ₹${state.realizedPnL.toFixed(2)}
+openPositionsBefore: ${state.openPositions.length}
+openPositionsAfter: ${state.openPositions.length - 1}
+totalInvestedCapitalAfter: ₹${(state.totalInvestedCapital - pos.investmentAmount).toFixed(2)}
+totalEquityAfter: ₹${(state.availableCash + (state.totalInvestedCapital - pos.investmentAmount) + state.realizedPnL).toFixed(2)}
+`);
 
         // Assemble final BacktestTrade
         const finalTrade = {
@@ -976,6 +1006,14 @@ export function runPortfolioBacktest(
       return a.symbol.localeCompare(b.symbol);
     });
 
+    if (entryCandidates.length > 1) {
+      log(`\n[ENTRY ORDER]\ntimestamp: ${timeStr}\n`);
+      entryCandidates.forEach((c, i) => {
+        log(`${i + 1}. ${c.symbol} (Margin: ${c.decision.margin.toFixed(2)})`);
+      });
+      log(`\n`);
+    }
+
     for (const cand of entryCandidates) {
       const entry = cand.nextCandle.open;
       const highs = cand.windowCandles.map((c: OHLCV) => c.high);
@@ -1027,14 +1065,9 @@ export function runPortfolioBacktest(
       const maxPositionPctCapital = config.scalpConfig.maxPositionPctCapital ?? 30;
       const lotSize = config.scalpConfig.lotSize ?? 1;
 
-      // For equity, maxPositionPctCapital determines the allocation block.
-      // E.g. if maxPositionPct is 30%, we want to deploy 30% of AVAILABLE CASH into this position.
-      // Then, we check if the SL risk on that position size exceeds our max risk (riskPerTradePct).
-
       const allocationPct = maxPositionPctCapital;
       const desiredNotional = state.availableCash * (allocationPct / 100);
 
-      // Calculate risk-based limit (using % of available cash as well, to be proportional and safe)
       const maxRiskRupees = state.availableCash * (riskPerTradePct / 100);
       const riskBasedSize = Math.floor(maxRiskRupees / riskPerShare);
 
@@ -1048,14 +1081,56 @@ export function runPortfolioBacktest(
       const actualInvestment = positionSize * entry;
       const availableCashBefore = state.availableCash;
 
+      let accepted = true;
+      let skipReason = 'NONE';
       if (positionSize <= 0 || actualInvestment > state.availableCash) {
-        log(`[PORTFOLIO CASH GATE] [${timeStr}] ${cand.symbol} SKIPPED - Req: ₹${actualInvestment.toFixed(0)}, Avail: ₹${state.availableCash.toFixed(0)}`);
-        continue; // Skip this trade
+        accepted = false;
+        skipReason = `Insufficient cash (Req: ₹${actualInvestment.toFixed(0)}, Avail: ₹${state.availableCash.toFixed(0)})`;
+      }
+
+      const candSeq = String((state.sequenceId = (state.sequenceId ?? 0) + 1)).padStart(3, '0');
+      log(`[PORTFOLIO EVENT #${candSeq}] [ENTRY CANDIDATE]
+timestamp: ${timeStr}
+symbol: ${cand.symbol}
+availableCashBefore: ₹${availableCashBefore.toFixed(2)}
+requestedAllocationPct: ${allocationPct}%
+requestedInvestment: ₹${desiredNotional.toFixed(2)}
+calculatedRiskBasedSize: ${riskBasedSize}
+calculatedNotionalSize: ${notionalCappedSize}
+finalPositionSize: ${positionSize}
+actualInvestment: ₹${actualInvestment.toFixed(2)}
+decision: ${cand.decision.winner} (Margin: ${cand.decision.margin.toFixed(2)})
+accepted: ${accepted}
+skipReason: ${skipReason}
+`);
+
+      if (!accepted) {
+        continue;
       }
 
       // Deduct cash and open position
       state.availableCash -= actualInvestment;
       state.totalInvestedCapital += actualInvestment;
+      if (state.availableCash < 0) {
+        throw new Error(`[RECONCILIATION ERROR] availableCash dropped below 0 (₹${state.availableCash.toFixed(2)})`);
+      }
+
+      const entrySeq = String((state.sequenceId = (state.sequenceId ?? 0) + 1)).padStart(3, '0');
+      log(`[PORTFOLIO EVENT #${entrySeq}] [PORTFOLIO ENTRY]
+timestamp: ${timeStr}
+symbol: ${cand.symbol}
+entryPrice: ₹${entry.toFixed(2)}
+quantity: ${positionSize}
+investment: ₹${actualInvestment.toFixed(2)}
+availableCashBefore: ₹${availableCashBefore.toFixed(2)}
+cashDeducted: ₹${actualInvestment.toFixed(2)}
+availableCashAfter: ₹${state.availableCash.toFixed(2)}
+totalInvestedCapitalAfter: ₹${state.totalInvestedCapital.toFixed(2)}
+openPositionsAfter: ${state.openPositions.length + 1}
+realizedPnL: ₹${state.realizedPnL.toFixed(2)}
+totalEquityAfter: ₹${(state.availableCash + state.totalInvestedCapital + state.realizedPnL).toFixed(2)}
+`);
+
 
       tradesTodayByStock[cand.symbol] = (tradesTodayByStock[cand.symbol] ?? 0) + 1;
 
@@ -1130,7 +1205,18 @@ export function runPortfolioBacktest(
         }
       });
     }
-  }
+    if (state.openPositions.length > 0) {
+      log(`[PORTFOLIO SNAPSHOT]
+timestamp: ${timeStr}
+availableCash: ₹${state.availableCash.toFixed(2)}
+investedCapital: ₹${state.totalInvestedCapital.toFixed(2)}
+realizedPnL: ₹${state.realizedPnL.toFixed(2)}
+totalEquity: ₹${(state.availableCash + state.totalInvestedCapital + state.realizedPnL).toFixed(2)}
+openPositionCount: ${state.openPositions.length}
+`);
+    }
+
+  } // End of timeline loop
 
   // FORCE CLOSE ANY REMAINING OPEN POSITIONS AT THE END OF THE BACKTEST
   for (const pos of state.openPositions) {
@@ -1179,7 +1265,8 @@ export function runPortfolioBacktest(
   const finalCapital = state.availableCash;
   const theoreticalFinal = state.initialCapital + state.realizedPnL;
   if (Math.abs(finalCapital - theoreticalFinal) > 1.0) {
-    log(`[ERROR] RECONCILIATION FAILED: Final ${finalCapital.toFixed(2)} != Initial + PnL ${theoreticalFinal.toFixed(2)}`);
+    log(`[RECONCILIATION ERROR] Final ${finalCapital.toFixed(2)} != Initial ${state.initialCapital.toFixed(2)} + PnL ${state.realizedPnL.toFixed(2)}`);
+    throw new Error(`Reconciliation Failed: Final Capital (${finalCapital}) does not match Initial + PnL (${theoreticalFinal})`);
   } else {
     log(`[RECONCILIATION] PASSED: Initial(₹${state.initialCapital}) + PnL(₹${state.realizedPnL.toFixed(2)}) = Final(₹${finalCapital.toFixed(2)})`);
   }

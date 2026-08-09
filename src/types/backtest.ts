@@ -121,4 +121,5 @@ export interface PortfolioState {
   realizedPnL: number;
   totalInvestedCapital: number;
   openPositions: OpenPosition[];
+  sequenceId?: number;
 }
