@@ -37,6 +37,7 @@ export interface BacktestTrade {
   gateIsBreakout?:   boolean;
   j1Range?:          string;
   j2Range?:          string;
+  j3Range?:          string;
 }
 
 export interface BacktestResult {

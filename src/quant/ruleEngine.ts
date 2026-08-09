@@ -1666,6 +1666,7 @@ ${rulingStr}
     techniquesUsed: "Execution Driven Only",
     techUsedCount: activeList.length,
     
+    formattedReport: `Signal: ${finalSignal}`,
     hallucinationDetected,
     hallucinationMetrics,
     tradeDetails: {
@@ -1688,6 +1689,8 @@ ${rulingStr}
     deadTechniques,
     auditTrail,
     noTechniquesUploaded: isNoTech,
+
+    j4Score: skepticPenalty,
 
     // Legacy fields
     confidence: finalConfidence,

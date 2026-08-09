@@ -128,6 +128,7 @@ export function evaluateSignal(
       decision: 'WEAK',
       skepticVerdict: 'WEAK',
       primaryEvidence: 'Insufficient or Invalid Data',
+      confidenceRange: 0,
       noTradeReason: reasonText,
       topPatterns: { bull: [], bear: [] },
       formattedReport: `┌─────────────────────────────────────┐\n│  ARBITRATOR FINAL VERDICT           │\n│  Signal: NO_TRADE                   │\n│  Confidence: 0%                     │\n├─────────────────────────────────────┤\n│  CASE 1 — BULL                      │\n│  J1 Reasoning: 0.0 / 4.0           │\n│  J2 Vehicle:   0.0 / 4.0           │\n│  J3 Reversal:  0.0 / 4.0           │\n│  Total:        0.0 / 12.0          │\n├─────────────────────────────────────┤\n│  CASE 2 — BEAR                      │\n│  J1 Reasoning: 0.0 / 4.0           │\n│  J2 Vehicle:   0.0 / 4.0           │\n│  J3 Reversal:  0.0 / 4.0           │\n│  Total:        0.0 / 12.0          │\n├─────────────────────────────────────┤\n│  SKEPTIC VETO:  0.30 (WEAK)        │\n│  Margin:        0.0                 │\n│  Final Score:   0.0                 │\n├─────────────────────────────────────┤\n│  RULING:                            │\n│  NO_TRADE — ${reasonText.substring(0, 20)}...   │\n└─────────────────────────────────────┘`,
@@ -1668,6 +1669,7 @@ ${rulingStr}
     techniquesUsed: "Execution Driven Only",
     techUsedCount: activeList.length,
     
+    formattedReport: `Signal: ${finalSignal}`,
     hallucinationDetected,
     hallucinationMetrics,
     tradeDetails: {
@@ -1690,6 +1692,8 @@ ${rulingStr}
     deadTechniques,
     auditTrail,
     noTechniquesUploaded: isNoTech,
+
+    j4Score: skepticPenalty,
 
     // Legacy fields
     confidence: finalConfidence,
