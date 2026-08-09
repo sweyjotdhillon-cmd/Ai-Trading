@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { BarChart2, Download, AlertTriangle, Loader2 } from 'lucide-react';
 import { POPULAR_STOCKS, StockSearchResult } from './BotSetupScreen';
 import { fetchBacktestHistory } from '../services/backtestDataService';
-import { runBacktest } from '../quant/backtestEngine';
+import { runBacktest, runPortfolioBacktest } from '../quant/backtestEngine';
 import { BacktestConfig, BacktestResult, BacktestTrade } from '../types/backtest';
 import { getDefaultScalpConfig } from '../config/scalpConfig';
 
@@ -133,6 +133,7 @@ export function BacktestScreen() {
   const [fixedRRRatio, setFixedRRRatio]   = useState<string>('2.0');
   const [fixedSLPct, setFixedSLPct]       = useState<string>('0.5');
   const [fixedTPPct, setFixedTPPct]       = useState<string>('1.0');
+  const [initialCapital, setInitialCapital] = useState<string>('100000');
 
   const [techniquesList, setTechniquesList] = useState<any[]>(() => {
     try {
@@ -222,8 +223,10 @@ export function BacktestScreen() {
         for (const symbol of Object.keys(allStockCandles)) {
           for (const c of allStockCandles[symbol]) {
             const ret = c.open ? (c.close - c.open) / c.open : 0;
-            if (!byTimestamp[c.timestamp]) byTimestamp[c.timestamp] = [];
-            byTimestamp[c.timestamp].push(ret);
+            if (c.timestamp) {
+              if (!byTimestamp[c.timestamp]) byTimestamp[c.timestamp] = [];
+              byTimestamp[c.timestamp].push(ret);
+            }
           }
         }
         const FLAT_THRESHOLD = 0.0005; // 0.05% - tune later if needed, not a scoring parameter yet
@@ -368,6 +371,7 @@ export function BacktestScreen() {
 
         const config: BacktestConfig = {
           symbol: selectedStock.symbol,
+          initialCapital: parseFloat(initialCapital) || 100000,
           marginThreshold: MARGIN_THRESHOLD,
           maxTradesPerDay: MAX_TRADES_PER_DAY,
           warmupCandles: WARMUP_CANDLES,
@@ -378,9 +382,8 @@ export function BacktestScreen() {
           fixedSLPct: parseFloat(fixedSLPct) || 0.5,
           fixedTPPct: parseFloat(fixedTPPct) || 1.0,
         };
-        const res = runBacktest(candles, config);
-        // Attach symbol to single stock trade too
-        res.trades = res.trades.map(t => ({ ...t, symbol: selectedStock.symbol }));
+        const allStockCandles = { [selectedStock.symbol]: candles };
+        const res = runPortfolioBacktest(allStockCandles, config);
         setResult(res);
       } catch (e: any) {
         setError(e.message ?? 'Backtest engine failed');
@@ -424,6 +427,21 @@ export function BacktestScreen() {
             <option key={s.symbol} value={s.symbol}>{s.symbol} — {s.name}</option>
           ))}
         </select>
+
+        <div className="flex flex-col gap-1.5 mt-1">
+          <label className="text-xs uppercase font-black text-zinc-400 tracking-widest font-mono">
+            Initial / Deployment Capital (₹)
+          </label>
+          <input
+            type="number"
+            step="1000"
+            min="1000"
+            value={initialCapital}
+            onChange={(e) => setInitialCapital(e.target.value)}
+            disabled={isRunning}
+            className="bg-zinc-800 text-white border border-zinc-700 rounded-lg p-2.5 text-sm font-mono focus:outline-none focus:border-[#D9B382]/50"
+          />
+        </div>
 
         {/* Exit Strategy Controls */}
         <div className="flex flex-col gap-1.5 mt-1">
