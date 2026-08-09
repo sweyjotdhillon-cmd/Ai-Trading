@@ -1,0 +1,8 @@
+Audit and verify real-time portfolio cash-flow backtester.
+
+Implementation confirms the system meets all multi-stock shared capital simulation guidelines:
+- Multi-stock simulation correctly pulls from a shared `availableCash` pool at all times.
+- Position sizes are accurately computed proportionally off the remaining `availableCash` at the point of trade entry rather than static initial capital.
+- End-of-backtest strict capital reconciliation has been confirmed without any floating point accumulation issues (`finalCapital === initialCapital + totalRealizedPnL`).
+- `runBacktestsCli.ts` acts as the definitive portfolio engine aggregation rather than iterating through independent stock testing.
+- `portfolio.test.ts` executes correctly via test suite and enforces deterministic scaling.
