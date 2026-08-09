@@ -7,6 +7,11 @@ export interface BacktestTrade {
   exitTime:         number | null;
   entryPrice:       number;
   exitPrice:        number | null;
+  requestedInvestment?: number;
+  actualInvestment?: number;
+  availableCashBefore?: number;
+  availableCashAfter?: number;
+  allocationPct?: number;
   outcome:          Extract<TradeOutcome, 'SL_HIT' | 'TP2_HIT' | 'TIME_EXIT' | 'BREAK_EVEN'> | null;
   tp1Hit:           boolean;      // true if TP1 partial (50%) was booked before final exit
   pnl:              number;       // ₹, net, combined across both legs if TP1 was hit
@@ -41,6 +46,12 @@ export interface BacktestTrade {
 }
 
 export interface BacktestResult {
+  initialCapital?: number;
+  finalCapital?: number;
+  availableCash?: number;
+  totalInvestedCapital?: number;
+  openPositionValue?: number;
+  unrealizedPnL?: number;
   symbol:             string;
   timeframeMinutes:   number;
   totalCandlesUsed:   number;
@@ -62,6 +73,7 @@ export interface BacktestResult {
 export type BacktestExitMode = 'DYNAMIC' | 'FIXED_RR' | 'FIXED_PCT';
 
 export interface BacktestConfig {
+  initialCapital?: number;
   symbol:            string;
   marginThreshold:   number;      // default 2.5
   maxTradesPerDay:   number;      // default 5
@@ -75,4 +87,38 @@ export interface BacktestConfig {
   compositeSeries?:  Map<number, 'UP' | 'DOWN' | 'FLAT'>; // timestamp -> 9-stock equal-weighted composite direction
   atrCompressionPctileMax?: number;
   microRangeLookback?:      number;
+}
+
+export interface OpenPosition {
+  id: string;
+  symbol: string;
+  entryTime: number;
+  entryPrice: number;
+  positionSize: number;
+  riskPerShare: number;
+  sl: number;
+  tp1: number;
+  tp2: number;
+  tp1Hit: boolean;
+  tp1Qty: number;
+  remainderQty: number;
+  tp1ExitPrice: number;
+  currentStop: number;
+  runningMaxHigh: number;
+  runningMinLow: number;
+  investmentAmount: number;
+  breakEvenPrice: number;
+  tradeContext: Partial<BacktestTrade>;
+  instrument: import('../types').ScalpInstrument;
+  useFixedRR: boolean;
+  useTrailAfterTP1: boolean;
+  trailDistanceR: number;
+}
+
+export interface PortfolioState {
+  initialCapital: number;
+  availableCash: number;
+  realizedPnL: number;
+  totalInvestedCapital: number;
+  openPositions: OpenPosition[];
 }
