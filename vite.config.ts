@@ -29,6 +29,11 @@ export default defineConfig({
       },
     },
   },
+  preview: {
+    host: true,
+    allowedHosts: true,
+    port: Number(process.env.PORT) || 4173,
+  },
   define: {
     'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development'),
     'import.meta.env.VITE_BUILD_STAMP': JSON.stringify(new Date().toLocaleString('en-US', {
