@@ -448,6 +448,7 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
               onClick={onPause}
               className="p-2.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-400 transition-colors"
               title="Pause bot"
+              aria-label="Pause bot"
             >
               <Pause size={14} />
             </button>
@@ -455,6 +456,7 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
               onClick={onStop}
               className="p-2.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 transition-colors"
               title="Stop bot"
+              aria-label="Stop bot"
             >
               <Square size={14} />
             </button>
