@@ -32,6 +32,9 @@ importers:
       d3:
         specifier: ^7.9.0
         version: 7.9.0
+      esbuild:
+        specifier: ^0.28.0
+        version: 0.28.0
       express:
         specifier: ^5.2.1
         version: 5.2.1
@@ -98,6 +101,9 @@ importers:
       twrnc:
         specifier: ^2.1.0
         version: 2.3.0(autoprefixer@10.5.0(postcss@8.5.15))(postcss@8.5.15)(react-native@0.85.3(@babel/core@7.29.0)(@react-native-community/cli@12.3.7)(@types/react@18.3.29)(react@18.2.0))
+      vite:
+        specifier: ^6.4.2
+        version: 6.4.2(@types/node@26.1.1)(jiti@1.21.7)(terser@5.47.1)(tsx@4.22.3)(yaml@2.9.0)
     devDependencies:
       '@cloudflare/vite-plugin':
         specifier: ^1.37.3
@@ -144,9 +150,6 @@ importers:
       autoprefixer:
         specifier: ^10.4.20
         version: 10.5.0(postcss@8.5.15)
-      esbuild:
-        specifier: ^0.28.0
-        version: 0.28.0
       eslint:
         specifier: ^9.21.0
         version: 9.39.4(jiti@1.21.7)
@@ -174,9 +177,6 @@ importers:
       typescript-eslint:
         specifier: ^8.24.1
         version: 8.59.4(eslint@9.39.4(jiti@1.21.7))(typescript@5.7.3)
-      vite:
-        specifier: ^6.4.2
-        version: 6.4.2(@types/node@26.1.1)(jiti@1.21.7)(terser@5.47.1)(tsx@4.22.3)(yaml@2.9.0)
       vitest:
         specifier: ^4.1.6
         version: 4.1.7(@types/node@26.1.1)(vite@6.4.2(@types/node@26.1.1)(jiti@1.21.7)(terser@5.47.1)(tsx@4.22.3)(yaml@2.9.0))
