@@ -9,6 +9,8 @@ import { loadScalpConfig, getDefaultScalpConfig } from '../config/scalpConfig';
 import { loadRiskState, resetRiskState, checkRiskCaps } from '../quant/riskGuard';
 import { featureFlags } from '../config/featureFlags';
 import { getScalpBuyRate, scalpOverTradingPenalty } from '../quant/neutralityGuard';
+import { ConfidenceBadge } from './cognitive/ConfidenceBadge';
+import { RiskBoundaryCard } from './cognitive/RiskBoundaryCard';
 
 interface ScalpCopilotHUDProps {
   analysis: any;
@@ -126,53 +128,29 @@ export const ScalpCopilotHUD: React.FC<ScalpCopilotHUDProps> = ({
       {/* Main Grid View */}
       <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
         {/* Risk Limits/Symmetry Guards (Left) */}
-        <div className="md:col-span-4 bg-zinc-900/40 rounded-xl border border-zinc-800/40 p-3.5">
-          <div className="flex flex-row justify-between items-center mb-2.5">
-            <h4 className="font-sans font-black text-[11px] text-zinc-400 uppercase tracking-widest flex items-center gap-1.5">
-              <Shield size={12} className="text-zinc-500" /> State Limits & Caps
-            </h4>
-            <button 
-              onClick={handleResetState}
-              className="text-[9px] font-bold text-zinc-500 hover:text-amber-400 transition-colors flex items-center gap-1"
-              title="Reset trade counts & losses for a fresh session"
-            >
-              <RefreshCw size={10} /> Reset
-            </button>
-          </div>
-
-          <div className="space-y-2 font-mono text-[11px]">
-            <div className="flex flex-row justify-between border-b border-zinc-800/30 pb-1.5">
-              <span className="text-zinc-500">Daily PnL:</span>
-              <span className={`font-bold ${risk.dailyPnL < 0 ? 'text-rose-400' : (risk.dailyPnL > 0 ? 'text-emerald-400' : 'text-zinc-400')}`}>
-                ₹{risk.dailyPnL.toFixed(1)} / -₹{config.risk.dailyLossCapRupees}
-              </span>
+        <div className="md:col-span-4 flex flex-col gap-2">
+          <RiskBoundaryCard
+            title="Copilot Risk Guard"
+            drawdownLimitPct={Math.round((config.risk.dailyLossCapRupees / (config.capitalRupees || 100000)) * 100)}
+            currentDrawdownPct={Math.max(0, -((risk.dailyPnL) / (config.capitalRupees || 100000)) * 100)}
+            cooldownActive={!capCheck.allow}
+            warnings={!capCheck.allow ? [capCheck.reason || 'Risk limit reached'] : []}
+          />
+          <div className="bg-zinc-900/40 rounded-xl border border-zinc-800/40 p-2.5 flex flex-col gap-1.5 text-[10px] font-mono text-zinc-400">
+            <div className="flex justify-between items-center">
+              <span>Trades Executed: {risk.tradesToday}/{config.risk.maxTradesPerDay}</span>
+              <button
+                onClick={handleResetState}
+                className="font-bold text-zinc-500 hover:text-amber-400 transition-colors flex items-center gap-1"
+                title="Reset trade counts & losses for a fresh session"
+              >
+                <RefreshCw size={10} /> Reset
+              </button>
             </div>
-
-            <div className="flex flex-row justify-between border-b border-zinc-800/30 pb-1.5">
-              <span className="text-zinc-500">Trades executed:</span>
-              <span className={`font-bold ${risk.tradesToday >= config.risk.maxTradesPerDay ? 'text-red-400' : 'text-zinc-300'}`}>
-                {risk.tradesToday} / {config.risk.maxTradesPerDay}
-              </span>
-            </div>
-
-            <div className="flex flex-row justify-between border-b border-zinc-800/30 pb-1.5">
-              <span className="text-zinc-500">Consecutive Losses:</span>
-              <span className={`font-bold ${risk.consecutiveLosses >= config.risk.maxConsecutiveLosses ? 'text-red-400' : 'text-zinc-300'}`}>
-                {risk.consecutiveLosses} / {config.risk.maxConsecutiveLosses}
-              </span>
-            </div>
-
-            <div className="flex flex-row justify-between border-b border-zinc-800/30 pb-1.5">
-              <span className="text-zinc-500">Over-trading penalty:</span>
-              <span className={`font-bold ${overtradingPenalty > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
-                {overtradingPenalty > 0 ? `+${(overtradingPenalty * 10).toFixed(1)} Confluence` : 'No penalty'}
-              </span>
-            </div>
-
-            <div className="flex flex-row justify-between pt-0.5">
-              <span className="text-zinc-500">Risk status:</span>
-              <span className={`font-sans font-black text-[9px] uppercase px-1.5 py-0.5 rounded ${capCheck.allow ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-500'}`}>
-                {capCheck.allow ? 'READY' : (capCheck.reason || 'BLOCKED')}
+            <div className="flex justify-between items-center text-[9.5px]">
+              <span>Consecutive Losses: {risk.consecutiveLosses}/{config.risk.maxConsecutiveLosses}</span>
+              <span className={overtradingPenalty > 0 ? 'text-rose-400 font-bold' : 'text-emerald-400'}>
+                {overtradingPenalty > 0 ? `Penalty: +${(overtradingPenalty * 10).toFixed(1)}` : 'No Penalty'}
               </span>
             </div>
           </div>
@@ -235,18 +213,19 @@ export const ScalpCopilotHUD: React.FC<ScalpCopilotHUDProps> = ({
           {/* Quick Stats Summary / Charges */}
           {isCopilotEnabled && isScalpBuy && plan && (
             <div className="flex flex-row justify-between items-center pt-2 mt-2 border-t border-zinc-800/30 text-[10px] font-mono text-zinc-500">
-              <span className="flex items-center gap-1">
-                <Award size={10} className="text-[#D9B382]" />
-                Confluence score: <strong className="text-emerald-400 font-extrabold">{plan.confluenceScore}/10</strong>
-              </span>
-              <span>
-                Position size: <strong className="text-zinc-300 font-extrabold">{plan.positionSize} Shares ({plan.instrument})</strong>
-              </span>
+              <div className="flex items-center gap-2">
+                <ConfidenceBadge
+                  confidence={Math.round((plan.confluenceScore / 10) * 100)}
+                  signal="LONG"
+                  size="sm"
+                />
+                <span>Position: <strong className="text-zinc-300 font-extrabold">{plan.positionSize} Shares</strong></span>
+              </div>
               <span className="text-zinc-300 font-extrabold">
-                Est Round-Trip Charges: <strong className="text-rose-400 font-bold">₹{plan.brokerCharges.toFixed(1)}</strong>
+                Charges: <strong className="text-rose-400 font-bold">₹{plan.brokerCharges.toFixed(1)}</strong>
               </span>
               <span>
-                Net expected P&L: <strong className="text-emerald-400 font-extrabold">₹{plan.netExpectedPnL.toFixed(1)}</strong>
+                Net expected: <strong className="text-emerald-400 font-extrabold">₹{plan.netExpectedPnL.toFixed(1)}</strong>
               </span>
             </div>
           )}

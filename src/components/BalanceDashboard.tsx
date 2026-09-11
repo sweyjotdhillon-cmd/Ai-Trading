@@ -14,6 +14,8 @@ import { auth } from '../services/firebase';
 import { loadStats, loadAllTrades, filterTradesByRange, getArchiveStats } from '../services/botTradeService';
 import { computeRoundTripCharges } from '../quant/brokerCharges';
 import { BotSessionStats, BotTradeRecord } from '../hooks/useBotLoop';
+import { ConfidenceBadge } from './cognitive/ConfidenceBadge';
+import { RiskBoundaryCard } from './cognitive/RiskBoundaryCard';
 
 interface BalanceDashboardProps {
   onRefreshTriggered?: () => void;
@@ -869,21 +871,29 @@ export function BalanceDashboard({ onRefreshTriggered }: BalanceDashboardProps) 
               <div className="bg-zinc-950/30 p-3 rounded-lg border border-zinc-850 flex flex-col justify-between min-h-[96px]">
                 <div>
                   <span className="text-[9px] text-zinc-400 font-mono uppercase font-bold">Trading Consistency Index</span>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <p className="text-base font-black text-[#D9B382] font-mono">
-                      {compositeConsistency}/100
-                    </p>
-                    <span className={`text-[8.5px] px-1.5 py-0.5 rounded font-bold uppercase ${
-                      compositeConsistency >= 70 ? 'bg-emerald-500/10 text-emerald-400' : compositeConsistency >= 40 ? 'bg-amber-500/10 text-amber-400' : 'bg-red-500/10 text-red-400'
-                    }`}>
-                      {compositeConsistency >= 70 ? 'STABLE' : compositeConsistency >= 40 ? 'MODERATE' : 'WEAK'}
-                    </span>
+                  <div className="flex items-center gap-2 mt-1">
+                    <ConfidenceBadge
+                      confidence={compositeConsistency}
+                      decision={compositeConsistency >= 70 ? 'STABLE' : compositeConsistency >= 40 ? 'MODERATE' : 'WEAK'}
+                      size="sm"
+                    />
                   </div>
                 </div>
                 <p className="text-[8px] text-zinc-500 font-mono leading-normal mt-1.5">
                   Statistically modeled scoring integrating payout edge, trading consistency, and winrate.
                 </p>
               </div>
+            </div>
+
+            {/* Cognitive Risk Boundary Reference */}
+            <div className="mt-1">
+              <RiskBoundaryCard
+                title="Portfolio Drawdown Guard"
+                drawdownLimitPct={15}
+                currentDrawdownPct={drawdownPct}
+                cooldownActive={drawdownPct >= 15}
+                warnings={drawdownPct >= 10 ? ['Peak-to-valley drawdown elevated'] : []}
+              />
             </div>
           </div>
 

@@ -8,6 +8,8 @@ import { UseBotLoopResult, BotPhase, BotTradeRecord } from '../hooks/useBotLoop'
 import { filterTradesByRange } from '../services/botTradeService';
 import { auth } from '../services/firebase';
 import { fetchLivePrice } from '../services/stockPriceFeed';
+import { ConfidenceBadge } from './cognitive/ConfidenceBadge';
+import { RiskBoundaryCard } from './cognitive/RiskBoundaryCard';
 
 interface BotDashboardProps {
   bot:      UseBotLoopResult;
@@ -688,48 +690,23 @@ export function BotDashboard({ bot, capital, symbol, onStop, onPause }: BotDashb
           </div>
         </div>
 
-        <div className="bg-zinc-900/40 border border-zinc-800/40 rounded-xl p-3.5">
-          <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-wider">Confidence</span>
-          <div className="mt-2 relative">
-            {/* Arc gauge — SVG */}
-            <svg viewBox="0 0 80 48" className="w-full h-12">
-              {/* Background arc */}
-              <path
-                d="M 8 44 A 32 32 0 0 1 72 44"
-                fill="none" stroke="#27272a" strokeWidth="5"
-                strokeLinecap="round"
-              />
-              {/* Filled arc based on confidence */}
-              <path
-                d="M 8 44 A 32 32 0 0 1 72 44"
-                fill="none"
-                stroke={
-                  bot.lastConfidence >= 75 ? '#34d399' :
-                  bot.lastConfidence >= 60 ? '#D9B382' : '#71717a'
-                }
-                strokeWidth="5"
-                strokeLinecap="round"
-                strokeDasharray={`${(bot.lastConfidence / 100) * 100.5} 100.5`}
-              />
-              {/* Value text */}
-              <text x="40" y="43" textAnchor="middle"
-                fontSize="11" fontWeight="900" fontFamily="monospace"
-                fill={
-                  bot.lastConfidence >= 75 ? '#34d399' :
-                  bot.lastConfidence >= 60 ? '#D9B382' : '#71717a'
-                }
-              >
-                {bot.lastConfidence.toFixed(0)}%
-              </text>
-            </svg>
-            <div className="absolute left-0 right-0 text-center text-[7px] text-zinc-500 font-mono -bottom-2.5 leading-none">
-              {bot.lastAnalysisResult?.confidenceRange != null ? `±${bot.lastAnalysisResult.confidenceRange}` : ''}
+        <div className="bg-zinc-900/40 border border-zinc-800/40 rounded-xl p-3.5 flex flex-col justify-between">
+          <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-wider">Signal Confidence</span>
+          <div className="mt-2 flex flex-col items-start gap-2">
+            <ConfidenceBadge
+              confidence={Math.round(bot.lastConfidence)}
+              signal={bot.lastSignal || undefined}
+              decision={bot.lastAnalysisResult?.judge?.decision}
+              size="md"
+            />
+            <div className="text-[9px] text-zinc-500 font-mono">
+              {bot.lastAnalysisResult?.confidenceRange != null ? `Margin of Error: ±${bot.lastAnalysisResult.confidenceRange}%` : ''}
             </div>
           </div>
-          <div className={`text-center text-[9px] font-mono font-bold mt-3 ${
+          <div className={`text-xs font-mono font-bold mt-2 ${
             bot.lastSignal === 'LONG' ? 'text-emerald-400' : 'text-zinc-500'
           }`}>
-            {bot.lastSignal ?? 'WAITING'}
+            Signal: {bot.lastSignal ?? 'WAITING'}
           </div>
         </div>
       </div>
