@@ -1,0 +1,3 @@
+## 2024-05-18 - Missing Accessibility on Icon-Only React Native Web Pressables
+**Learning:** Icon-only `<Pressable>` components in React Native Web lack accessibility labels by default, making them unreadable by screen readers. This is a recurring pattern for modal close buttons ('X' icon) and backdrops.
+**Action:** Always verify that `<Pressable>` components used as buttons (especially those containing only icons) include `accessibilityRole="button"` and a descriptive `accessibilityLabel`.
