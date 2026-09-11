@@ -5,6 +5,8 @@ import { searchNSEStocks as searchSymbols } from '../services/stockPriceFeed';
 import { initVirtualBalance, setVirtualBalanceValue } from '../services/virtualBalanceService';
 import { auth } from '../services/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
+import { ReflectionCallout } from './cognitive/ReflectionCallout';
+import { RiskBoundaryCard } from './cognitive/RiskBoundaryCard';
 
 export interface StockSearchResult {
   symbol:   string;   // e.g. 'RELIANCE.NS'
@@ -881,11 +883,19 @@ export function BotSetupScreen({ onStart }: BotSetupScreenProps) {
         </div>
       </div>
 
-      {errors.length > 0 && (
-        <div className="bg-red-900 border border-red-500 rounded p-3">
-          {errors.map((e, i) => <p key={i} className="text-red-300 text-sm">{e}</p>)}
-        </div>
-      )}
+      {/* COGNITIVE UI INTEGRATION (L23) */}
+      <ReflectionCallout
+        type="mindful"
+        title="Pre-Execution Intent Check"
+        description="Launching an automated strategy requires commitment to risk rules. Ensure your daily loss cap and capital per trade align with your portfolio strategy."
+      />
+
+      <RiskBoundaryCard
+        title="Configured Daily Loss Guard"
+        drawdownLimitPct={Number(((previewConfig.risk.dailyLossCapRupees / previewConfig.capitalRupees) * 100).toFixed(1))}
+        currentDrawdownPct={0}
+        warnings={errors}
+      />
 
       <button
         onClick={handleStart}
