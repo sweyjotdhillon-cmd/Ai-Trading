@@ -1,6 +1,30 @@
+
 # ChartLens
 
 A high-performance, 100% offline-first quantitative trading simulation engine and paper terminal. It processes clean, text-based market data feeds (structured JSON) through a multi-layered deterministic 4-judge rules engine to support modular portfolio testing, balance syncing, and strict performance metrics in a client-side sandbox environment backed by Firebase Firestore.
+
+---
+
+## Table of Contents
+
+- [Features](#features)
+- [Technical Architecture](#technical-architecture)
+- [Core Directory Map](#core-directory-map)
+- [4-Judge Quantitative Core](#4-judge-quantitative-core)
+- [Geometry Alignment & Synchronizations](#geometry-alignment--synchronizations)
+- [Quickstart & Terminal Operations](#quickstart--terminal-operations)
+- [Scripts & Development](#scripts--development)
+- [Tech Stack](#tech-stack)
+
+---
+
+## Features
+
+- **High-Performance Backtesting**: Leverages `Float64Array` buffers to avoid standard garbage-collection overhead.
+- **Isolated Math Pool**: Moves heavy mathematical indicators onto dedicated Web Workers for completely unblocked UI.
+- **Cloud State Synchronization**: Real-time Firestore sync with a cache-first approach using indexedDB for full offline capabilities.
+- **Automated Geometry Bounds**: Physical modeling of candle bounds specifically handles broad bottoms and tops for extreme precision.
+- **Deeper Risk Controls**: Includes a built in 4-judge matrix filtering with auto-detecting Hurst regime balancers to scale signals relative to trend behaviors.
 
 ---
 
@@ -39,12 +63,15 @@ A high-performance, 100% offline-first quantitative trading simulation engine an
 ```
 ├── src/
 │   ├── components/  # Responsive HUDs, dashboards, and portfolio stats models
+│   ├── config/      # Configuration defaults (Feature flags, rulesets)
+│   ├── hooks/       # React Custom hooks driving global application state
 │   ├── quant/       # Indicators, 4-judge matrix, market structure, risk guards
 │   │   ├── indicators.ts      # ADX (DI+/DI-), RSI, Bollinger Bands, HLC/3 VWAP
 │   │   ├── marketStructure.ts # BOS, CHoCH, and Swing Pivot tracking
 │   │   ├── ruleEngine.ts      # Multi-judge validation & scoring invariants
 │   │   └── riskGuard.ts       # Drawdown controls and cooldown mechanisms
 │   ├── services/    # Live ticker feeds, historical proxies, and Firestore bindings
+│   ├── vision/      # Visual analytics and pattern extraction pipelines
 │   ├── workers/     # Multi-threaded background data tasks
 │   └── utils/       # Timezone mappings (IST) and browser storage adapters
 ```
@@ -102,35 +129,57 @@ Analyzes Rescaled Range (R/S) limits to automatically adjust scoring coefficient
 
 ## Quickstart & Terminal Operations
 
-Ensure Node.js `>= 18.0.0` is configured on your workspace machine.
+Ensure Node.js `>= 18.0.0` is configured on your workspace machine. (It is recommended to use `pnpm`).
 
 ### 1. Installation
 ```bash
 git clone https://github.com/sweyjotdhillon-cmd/Ai-Trading.git c-chartlens
 cd c-chartlens
-npm install
+pnpm install
 ```
 
 ### 2. Live Development Terminal
 ```bash
-npm run dev
+pnpm run dev
 ```
 Launches high-performance local web interfaces on port `3000` with instant state reload configurations.
 
 ### 3. Verification Suite
 ```bash
 # Run structural Vitest units
-npx vitest run
+pnpm exec vitest run
 
 # Run strict code pattern linter
-npm run lint
+pnpm run lint
 ```
 
 ### 4. Compiling & Production Bundling
 ```bash
 # Bundle frontend static build and production CJS server
-npm run build
+pnpm run build
 
 # Boot native, self-contained standalone server
-npm run start
+pnpm run start
 ```
+
+---
+
+## Scripts & Development
+
+- `pnpm run dev` - Boot dev servers (TSX hot reload)
+- `pnpm run build` - Vite build & CommonJS node output for `server.ts`
+- `pnpm run lint` - Lint source code
+- `pnpm run preview` - Builds and previews the Cloudflare deployment using Wrangler.
+- `pnpm run deploy:cf` - Deploys straight to Cloudflare.
+- `pnpm run deploy:vercel` - Deploys to Vercel production.
+
+---
+
+## Tech Stack
+
+- **Frontend**: React (18.2.0), Vite, TailwindCSS
+- **Native Support**: React Native Web (`react-native-web`) for robust cross platform capabilities.
+- **Backend / APIs**: Express (5.x), ESBuild
+- **State & Database**: Firebase Firestore (Cache First implementation using `idb-keyval`)
+- **Analysis / Quant Engine**: WebWorkers, Custom Typed Float64Array structures
+- **Testing**: Vitest & Playwright
