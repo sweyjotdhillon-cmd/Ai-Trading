@@ -15,7 +15,7 @@ export default defineConfig({
   },
   server: {
     host: '0.0.0.0',
-    port: 3000,
+    port: process.env.PORT ? parseInt(process.env.PORT, 10) : 3000,
     proxy: {
       '/api/stock': {
         target: 'https://military-jobye-haiqstudios-14f59639.koyeb.app',
@@ -28,6 +28,11 @@ export default defineConfig({
         rewrite: (path) => path.replace(/^\/api\/search/, '/search'),
       },
     },
+  },
+  preview: {
+    host: true,
+    port: process.env.PORT ? parseInt(process.env.PORT, 10) : 3000,
+    allowedHosts: true
   },
   define: {
     'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development'),
