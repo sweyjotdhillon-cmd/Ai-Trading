@@ -405,6 +405,8 @@ function App() {
             <Pressable
               style={({ pressed }) => [styles.clearErrorsButton, { opacity: pressed ? 0.7 : 1 }]}
               onPress={() => setGlobalErrors([])}
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss all errors"
             >
               <XCircle color="#ff4444" size={20} />
               <Text style={styles.clearErrorsText}>Dismiss All</Text>
